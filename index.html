@@ -73,9 +73,9 @@
     border:1px solid rgba(255,255,255,0.3); border-radius:20px; vertical-align:middle;
   }
   .header-right-stack{display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0;}
-  .outlook-connect-btn{background:rgba(255,255,255,0.14); border:1px solid rgba(255,255,255,0.3); color:#fff; padding:4px 11px; border-radius:20px; font-size:10.5px; font-weight:600; cursor:pointer; text-transform:uppercase; letter-spacing:0.03em; font-family:inherit;}
+  .outlook-connect-btn{background:rgba(255,255,255,0.14); border:1px solid rgba(255,255,255,0.3); color:#fff; padding:2px 9px; border-radius:20px; font-size:9.5px; font-weight:600; cursor:pointer; text-transform:uppercase; letter-spacing:0.02em; font-family:inherit; line-height:1.6;}
   .outlook-connect-btn:hover{background:rgba(255,255,255,0.24);}
-  .outlook-connected{display:inline-flex; align-items:center; gap:5px; font-size:10.5px; color:#F7BF4A; cursor:pointer; font-weight:600; padding:4px 2px;}
+  .outlook-connected{display:inline-flex; align-items:center; font-size:9.5px; color:#F7BF4A; cursor:pointer; font-weight:600; line-height:1.6;}
   .outlook-connected:hover{text-decoration:underline;}
   .version-update-warning{display:inline-block; margin-left:5px; color:#F7BF4A; cursor:pointer; font-size:12px; vertical-align:middle; animation:tsWarnPulse 2s ease-in-out infinite;}
   @keyframes tsWarnPulse{0%,100%{opacity:1;}50%{opacity:0.45;}}
@@ -1648,7 +1648,7 @@ function renderOutlookConnectButton(){
   const el = document.getElementById('tsOutlookConnectContainer');
   if(!el) return;
   if(graphAccount){
-    el.innerHTML = `<span class="outlook-connected" title="Click to reconnect a different account">✓ Outlook: ${escHtml(graphAccount.username)}</span>`;
+    el.innerHTML = `<span class="outlook-connected" title="Connected as ${escAttr(graphAccount.username)} — click to reconnect a different account">✓ Outlook</span>`;
     el.querySelector('.outlook-connected').onclick = connectOutlook;
   } else {
     el.innerHTML = '<button type="button" class="outlook-connect-btn" onclick="connectOutlook()">Connect Outlook</button>';
