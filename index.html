@@ -735,6 +735,7 @@
             <button class="btn-amber" onclick="copyRich()">📋 Copy for email</button>
             <button class="btn-ghost" onclick="copyPlain()">Copy as plain text</button>
             <button class="btn-ghost" onclick="openPdfQuotation()" title="Opens a formal letterhead version in a new tab, ready to Print → Save as PDF">📄 View PDF Quotation</button>
+            <button class="btn-ghost" id="draftQuoteOutlookBtn" onclick="draftQuoteInOutlook()" title="Creates a real draft in your connected Outlook mailbox, ready to review and send">✉️ Draft in Outlook</button>
             <span class="status-msg" id="copyStatus">✓ Copied</span>
           </div>
           <div id="profitSummaryQuote"></div>
@@ -1691,6 +1692,100 @@ function renderOutlookConnectButton(){
     el.querySelector('.outlook-connected').onclick = connectOutlook;
   } else {
     el.innerHTML = '<button type="button" class="outlook-connect-btn" onclick="connectOutlook()" title="Connect your Outlook account to draft emails from this app">Outlook</button>';
+  }
+}
+
+// ============ DRAFT IN OUTLOOK — PHASE 2, QUOTE PAGE ONLY ============
+// First real use of the Phase 1 connection — creates an actual draft in the
+// signed-in person's own Outlook mailbox using the exact same HTML already
+// built for "Copy for email", then opens it ready to review and send.
+// Deliberately built for Quote only first, to confirm the whole chain
+// (token, recipient resolution, the Graph call itself, opening the result)
+// actually works before extending it to Enquire/Supply/Customer/Invoice.
+
+// Refreshes a Graph token silently where possible. Only falls back to an
+// interactive redirect if the cached token has genuinely expired beyond
+// silent renewal (rare — MSAL renews well ahead of real expiry) — that
+// fallback is a full page navigation just like the original connect, so
+// it carries the same unsaved-work warning.
+async function getGraphToken(){
+  if(!msalInstance || !graphAccount) throw new Error('Outlook not connected — click Connect Outlook in the header first.');
+  try{
+    const result = await msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES, account: graphAccount });
+    return result.accessToken;
+  }catch(e){
+    if(e && e.name === 'InteractionRequiredAuthError'){
+      if(orderIsDirty){
+        const proceed = confirm('Outlook needs you to sign in again, which means leaving this page and coming back — any unsaved changes to the order you\'re working on will be lost.\n\nSave your order first (Save/Load tab), or press Cancel to stay here.');
+        if(!proceed) throw new Error('cancelled');
+      }
+      await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES, account: graphAccount });
+      throw new Error('redirecting'); // page is navigating away — nothing after this matters
+    }
+    throw e;
+  }
+}
+
+// Selected correspondence contacts only ever store {name, jobTitle} (kept
+// deliberately minimal for Save/Load) — never an email or which parent
+// they came from. Resolved here by re-fetching this order's actual
+// vessel/owner contacts and matching by name+jobTitle — the same approach
+// already used for the Summary tab's contact links.
+async function resolveSelectedContactEmails(selectedContacts){
+  if(!selectedContacts.length || !window.TS || !window.TS.fetchContacts) return [];
+  const { vesselId, ownerId } = currentVesselAndOwnerIds();
+  if(!vesselId && !ownerId) return [];
+  let fetched;
+  try{ fetched = await window.TS.fetchContacts(vesselId, ownerId); }catch(e){ return []; }
+  const all = [...(fetched.vesselContacts||[]), ...(fetched.orgContacts||[])];
+  const emails = [];
+  selectedContacts.forEach(sel=>{
+    const match = all.find(c=>c.name===sel.name && c.jobTitle===sel.jobTitle);
+    if(match && match.email) emails.push(match.email);
+  });
+  return emails;
+}
+
+async function draftQuoteInOutlook(){
+  if(!graphAccount){ alert('Connect Outlook first (button in the header) before drafting an email.'); return; }
+  const btn = document.getElementById('draftQuoteOutlookBtn');
+  const originalLabel = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = 'Drafting…'; }
+  try{
+    const token = await getGraphToken();
+    const toEmails = await resolveSelectedContactEmails(quoteSelectedContacts);
+    if(!toEmails.length){
+      const proceed = confirm('None of the selected contacts have an email on file, so the draft will open with no recipient filled in — you\'ll need to add one yourself in Outlook.\n\nContinue anyway?');
+      if(!proceed){ if(btn){ btn.disabled=false; btn.textContent = originalLabel; } return; }
+    }
+    const vesselName = fv('vessel') || fv('vesselOrder');
+    const quoteRef = fv('quoteRef');
+    const subject = ['Quotation', quoteRef, vesselName].filter(Boolean).join(' — ');
+    const bodyFragment = buildEmailHtml();
+    const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${bodyFragment}</body></html>`;
+    const message = {
+      subject: subject,
+      body: { contentType: 'HTML', content: htmlContent },
+      toRecipients: toEmails.map(e=>({ emailAddress: { address: e } }))
+    };
+    const res = await fetch('https://graph.microsoft.com/v1.0/me/messages', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(message)
+    });
+    if(!res.ok){
+      const errText = await res.text();
+      throw new Error('Graph API returned ' + res.status + ': ' + errText.slice(0, 300));
+    }
+    const created = await res.json();
+    if(created.webLink) window.open(created.webLink, '_blank');
+    else alert('Draft was created in Outlook, but no direct link came back — check your Drafts folder.');
+  }catch(e){
+    if(e && (e.message === 'redirecting' || e.message === 'cancelled')) return; // already handled, nothing more to say
+    console.error('TS: draftQuoteInOutlook failed', e);
+    alert('Could not create the Outlook draft: ' + (e && e.message ? e.message : 'unknown error'));
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
   }
 }
 function showReleaseNotes(){
