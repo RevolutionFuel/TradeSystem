@@ -2513,6 +2513,7 @@ function onRadioChange(containerId, name, renderFnName){
   if(name === 'custSignature'){ custSignatureManuallySet = true; syncInvoiceSignatureFromCustomer(); }
   if(name === 'invoiceSignature') invoiceSignatureManuallySet = true;
   if(name === 'invoiceType') renderInvoicePreviewOnly();
+  if(SIGNATURE_RADIO_NAMES.includes(name)) scheduleSaveFormattingPrefs();
   window[renderFnName || 'render']();
 }
 // The three formatting checkboxes (capitalise headers / remove bold / remove
@@ -2526,6 +2527,84 @@ const FORMATTING_OPTIONS = ['capitaliseHeaders','removeBold','removeBullets','nu
 const FORMATTING_CHAIN = ['Enquire','Quote','Supply','Customer','Invoice'];
 const FORMATTING_RENDER_FN = {Enquire:'renderEnquiry', Quote:'render', Supply:'renderSupply', Customer:'renderCustomer', Invoice:'renderInvoicePreviewOnly'};
 let formattingManuallySet = { capitaliseHeaders:{}, removeBold:{}, removeBullets:{}, numberedNotes:{} };
+
+// ============ FORMATTING & SIGNATURE PREFERENCES — PERSIST PER USER ============
+// Deliberately separate from an order's own saved state (collectQuoteState/
+// applyQuoteState) — this is a standing personal default independent of any
+// particular order, restored once at startup and then kept up to date
+// whenever the person changes a formatting option or signature choice on
+// any page. Loading an actual saved order still wins over this, since
+// applyQuoteState() runs afterwards and overwrites these same fields with
+// whatever that order actually had.
+const SIGNATURE_PAGES = {
+  enquire: {containerId:'enqSignatureGroup', name:'enqSignature', renderFn:'renderEnquiry'},
+  quote:   {containerId:'signatureGroup',    name:'signature',    renderFn:null},
+  supply:  {containerId:'supSignatureGroup', name:'supSignature', renderFn:'renderSupply'},
+  customer:{containerId:'custSignatureGroup',name:'custSignature',renderFn:'renderCustomer'},
+  invoice: {containerId:'invoiceSignatureGroup', name:'invoiceSignature', renderFn:'renderInvoicePreviewOnly'}
+};
+const SIGNATURE_RADIO_NAMES = Object.values(SIGNATURE_PAGES).map(p=>p.name);
+let restoringFormattingPrefs = false;
+let saveFormattingPrefsTimer = null;
+
+function collectFormattingPrefs(){
+  const signatures = {};
+  Object.keys(SIGNATURE_PAGES).forEach(page=>{ signatures[page] = getRadioValue(SIGNATURE_PAGES[page].name); });
+  const formatting = {};
+  FORMATTING_OPTIONS.forEach(opt=>{
+    formatting[opt] = {};
+    FORMATTING_CHAIN.forEach(page=>{
+      const el = document.getElementById(opt+page);
+      formatting[opt][page] = el ? el.checked : false;
+    });
+  });
+  return { signatures, formatting };
+}
+function scheduleSaveFormattingPrefs(){
+  if(restoringFormattingPrefs) return; // applying a saved preference shouldn't immediately re-trigger a save of itself
+  if(!window.TS || !window.TS.saveUserPreferences) return;
+  clearTimeout(saveFormattingPrefsTimer);
+  saveFormattingPrefsTimer = setTimeout(async ()=>{
+    try{ await window.TS.saveUserPreferences(collectFormattingPrefs()); }
+    catch(e){ console.warn('TS: saveUserPreferences failed', e); }
+  }, 800);
+}
+// Called once at startup, before the person has touched anything — applies
+// last time's choices as this session's starting point on every page, in
+// cascade order (enquire first) so a page-specific past divergence (e.g.
+// Invoice set differently from everything before it) still ends up correct
+// even though restoring Enquire's value first would otherwise cascade over it.
+async function loadFormattingPrefs(){
+  if(!window.TS || !window.TS.fetchUserPreferences) return;
+  let prefs;
+  try{ prefs = await window.TS.fetchUserPreferences(); }catch(e){ console.warn('TS: fetchUserPreferences failed', e); return; }
+  if(!prefs) return;
+  restoringFormattingPrefs = true;
+  try{
+    if(prefs.signatures){
+      Object.keys(SIGNATURE_PAGES).forEach(page=>{
+        const val = prefs.signatures[page];
+        if(!val) return;
+        const {containerId, name, renderFn} = SIGNATURE_PAGES[page];
+        const radio = document.querySelector(`input[name="${name}"][value="${val}"]`);
+        if(radio && !radio.checked){ radio.checked = true; onRadioChange(containerId, name, renderFn); }
+      });
+    }
+    if(prefs.formatting){
+      FORMATTING_OPTIONS.forEach(opt=>{
+        FORMATTING_CHAIN.forEach(page=>{
+          const saved = prefs.formatting[opt] && prefs.formatting[opt][page];
+          if(saved === undefined) return;
+          const el = document.getElementById(opt+page);
+          if(el && el.checked !== saved){ el.checked = saved; onFormattingOptionChange(opt, page); }
+        });
+      });
+    }
+  }finally{
+    restoringFormattingPrefs = false;
+  }
+}
+
 function syncFormattingFromPrev(optionName, prevPage, page){
   if(formattingManuallySet[optionName][page]) return;
   const prevEl = document.getElementById(optionName + prevPage);
@@ -2539,6 +2618,7 @@ function onFormattingOptionChange(optionName, pageName){
     syncFormattingFromPrev(optionName, FORMATTING_CHAIN[i-1], FORMATTING_CHAIN[i]);
   }
   FORMATTING_CHAIN.forEach(page => window[FORMATTING_RENDER_FN[page]]());
+  scheduleSaveFormattingPrefs();
 }
 // Used by each page's own scoped "Clear form" — resets that one page's three
 // checkboxes and lets it resume following whichever page precedes it.
@@ -10345,7 +10425,8 @@ async function importQuoteFromText(){
     window.TS.mountUserBadge('tsUserBadgeContainer');
   }
   await loadReleaseNotes();
-  init();
+  await init(); // init() is itself async — must finish (including building the signature radio groups) before restoring saved preferences onto them
+  await loadFormattingPrefs();
   initGraphAuth(); // not awaited — Outlook connect state has no bearing on the main app's own startup
 })();
 </script>
