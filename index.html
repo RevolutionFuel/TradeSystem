@@ -1651,12 +1651,29 @@ async function initGraphAuth(){
 }
 
 function connectOutlook(){
-  if(!msalInstance) return;
+  if(!msalInstance){
+    alert('Outlook connect isn\'t ready yet — try reloading the page fully and waiting a few seconds before pressing Connect Outlook again.');
+    return;
+  }
   if(orderIsDirty){
     const proceed = confirm('Connecting Outlook will leave this page and come back — any unsaved changes to the order you\'re working on will be lost.\n\nSave your order first (Save/Load tab), or press Cancel to stay here.');
     if(!proceed) return;
   }
-  msalInstance.loginRedirect({ scopes: GRAPH_SCOPES }); // navigates away; nothing after this line runs
+  msalInstance.loginRedirect({ scopes: GRAPH_SCOPES }).catch(function(e){
+    // interaction_in_progress: a previous attempt (e.g. one of the earlier
+    // popup failures) left a stuck flag behind, and MSAL silently refuses
+    // any new attempt until it's cleared — this failed with no visible
+    // error at all before this catch existed. Clearing the stuck local
+    // storage entries and asking for one more click is the standard
+    // recovery for this specific, well-documented MSAL error.
+    if(e && e.errorCode === 'interaction_in_progress'){
+      Object.keys(localStorage).filter(function(k){ return k.indexOf('msal') !== -1; }).forEach(function(k){ localStorage.removeItem(k); });
+      alert('That was stuck from an earlier attempt — cleared now. Please press Connect Outlook one more time.');
+    } else {
+      console.error('TS: loginRedirect failed', e);
+      alert('Outlook connect failed to even start: ' + (e && e.errorCode ? e.errorCode : (e && e.message ? e.message : 'unknown error')) + '\n\nIf this keeps happening, it likely needs a look from whoever set this up.');
+    }
+  });
 }
 
 function disconnectOutlook(){
