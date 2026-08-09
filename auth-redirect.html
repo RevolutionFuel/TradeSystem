@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Signing in…</title>
+</head>
+<body>
+<!-- This page exists purely to catch Microsoft's redirect after sign-in
+     when the Trade System itself is opened as a local file (file:// has
+     no address Azure can redirect back to). MSAL detects it's running
+     inside the popup it opened, extracts the token response from the
+     URL, and hands it back to the window that opened it — this page
+     never needs to do anything itself beyond initializing the same
+     client config the main app uses. -->
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.30.0/lib/msal-browser.min.js"></script>
+<script>
+  var msalConfig = {
+    auth: {
+      clientId: '874a4802-15e5-480c-ae6c-ac086215961f',
+      authority: 'https://login.microsoftonline.com/505bde28-ab18-4f24-87a3-d3a00c16f6fd',
+      redirectUri: 'https://revolutionfuel.github.io/TradeSystem/auth-redirect.html'
+    },
+    cache: {
+      cacheLocation: 'localStorage',
+      storeAuthStateInCookie: false
+    }
+  };
+  if (typeof msal !== 'undefined') {
+    var msalInstance = new msal.PublicClientApplication(msalConfig);
+    msalInstance.initialize().then(function () {
+      return msalInstance.handleRedirectPromise();
+    }).catch(function (e) {
+      console.error('Auth redirect handling failed', e);
+    });
+  }
+</script>
+</body>
+</html>
