@@ -1604,12 +1604,22 @@ async function loadReleaseNotes(){
 // Entirely separate sign-in from the Supabase one above — connecting
 // Outlook is a one-time, per-person action, independent of the Trade
 // System login. This phase only covers the connect/sign-in step itself;
-// actually drafting emails via Graph is a later phase, deliberately held
-// back until this foundation is confirmed working for real — the popup
-// flow's interaction with a file:// origin is genuinely untested.
+// actually drafting emails via Graph is a later phase.
+//
+// Uses loginRedirect rather than loginPopup — Microsoft's own guidance is
+// that popup sign-in is unreliable on mobile browsers specifically (confirmed
+// in practice: worked on tablet, failed on phone with block_nested_popups).
+// Redirect is the flow Microsoft recommends for cross-device reliability.
+// The trade-off is a full page navigation away and back, which is why
+// connectOutlook() checks orderIsDirty first — a popup never left the page,
+// so this is a genuinely new way to lose unsaved work that didn't exist
+// before, and needs its own explicit warning rather than relying on the
+// browser's native beforeunload prompt, which isn't consistently shown for
+// JS-initiated navigations across browsers.
 let msalInstance = null;
 let graphAccount = null;
 const GRAPH_SCOPES = ['Mail.ReadWrite', 'User.Read', 'offline_access'];
+const GRAPH_REDIRECT_URI = 'https://revolutionfuel.github.io/TradeSystem/';
 
 async function initGraphAuth(){
   if(typeof msal === 'undefined'){ console.warn('TS: MSAL library failed to load — Outlook connect unavailable'); return; }
@@ -1618,27 +1628,35 @@ async function initGraphAuth(){
       auth: {
         clientId: '874a4802-15e5-480c-ae6c-ac086215961f',
         authority: 'https://login.microsoftonline.com/505bde28-ab18-4f24-87a3-d3a00c16f6fd',
-        redirectUri: 'https://revolutionfuel.github.io/TradeSystem/auth-redirect.html'
+        redirectUri: GRAPH_REDIRECT_URI
       },
       cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false }
     });
     await msalInstance.initialize();
-    const accounts = msalInstance.getAllAccounts();
-    if(accounts.length) graphAccount = accounts[0];
-  }catch(e){ console.warn('TS: MSAL initialization failed', e); }
+    // Handles both cases in one call: returning from a redirect just now
+    // (response is non-null, becomes the active account), or a completely
+    // ordinary page load with no auth in progress (response is null).
+    const response = await msalInstance.handleRedirectPromise();
+    if(response && response.account){
+      graphAccount = response.account;
+    } else {
+      const accounts = msalInstance.getAllAccounts();
+      if(accounts.length) graphAccount = accounts[0];
+    }
+  }catch(e){
+    console.warn('TS: MSAL initialization failed', e);
+    alert('Outlook connect failed: ' + (e && e.message ? e.message : 'unknown error') + '\n\nIf this keeps happening, it likely needs a look from whoever set this up.');
+  }
   renderOutlookConnectButton();
 }
 
-async function connectOutlook(){
+function connectOutlook(){
   if(!msalInstance) return;
-  try{
-    const result = await msalInstance.loginPopup({ scopes: GRAPH_SCOPES });
-    graphAccount = result.account;
-    renderOutlookConnectButton();
-  }catch(e){
-    console.error('TS: Outlook connect failed', e);
-    alert('Could not connect to Outlook: ' + (e && e.message ? e.message : 'unknown error') + '\n\nIf this keeps happening, it likely needs a look from whoever set this up.');
+  if(orderIsDirty){
+    const proceed = confirm('Connecting Outlook will leave this page and come back — any unsaved changes to the order you\'re working on will be lost.\n\nSave your order first (Save/Load tab), or press Cancel to stay here.');
+    if(!proceed) return;
   }
+  msalInstance.loginRedirect({ scopes: GRAPH_SCOPES }); // navigates away; nothing after this line runs
 }
 
 function disconnectOutlook(){
