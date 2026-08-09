@@ -166,6 +166,8 @@
     .brandmark .title .t1, .brandmark .title .t2{font-size:13px;}
     .header-right-stack{gap:2px;}
     .version-badge{font-size:8px; padding:1px 6px;}
+    .outlook-connect-btn{padding:1px 6px !important; font-size:8px !important;}
+    .outlook-connected{font-size:11px !important;}
     .tabs{gap:3px; padding:3px;}
     .tabs button{padding:6px 4px; font-size:9px; letter-spacing:0.02em;}
     .tabs-row{gap:6px;}
@@ -187,6 +189,8 @@
     .brandmark .divider{height:19px;}
     .brandmark .title .t1, .brandmark .title .t2{font-size:11px;}
     .version-badge{font-size:7px; padding:1px 5px;}
+    .outlook-connect-btn{padding:1px 5px !important; font-size:7px !important;}
+    .outlook-connected{font-size:10px !important;}
     .tabs button{padding:5px 3px; font-size:8px;}
     .ts-user-badge .ts-user-signout{padding:4px 7px !important; font-size:8px !important;}
     .order-submenu button{padding:6px 5px 5px; font-size:8px;}
@@ -1648,10 +1652,10 @@ function renderOutlookConnectButton(){
   const el = document.getElementById('tsOutlookConnectContainer');
   if(!el) return;
   if(graphAccount){
-    el.innerHTML = `<span class="outlook-connected" title="Connected as ${escAttr(graphAccount.username)} — click to reconnect a different account">✓ Outlook</span>`;
+    el.innerHTML = `<span class="outlook-connected" title="Outlook connected as ${escAttr(graphAccount.username)} — click to reconnect a different account">✓</span>`;
     el.querySelector('.outlook-connected').onclick = connectOutlook;
   } else {
-    el.innerHTML = '<button type="button" class="outlook-connect-btn" onclick="connectOutlook()">Connect Outlook</button>';
+    el.innerHTML = '<button type="button" class="outlook-connect-btn" onclick="connectOutlook()" title="Connect your Outlook account to draft emails from this app">Outlook</button>';
   }
 }
 function showReleaseNotes(){
