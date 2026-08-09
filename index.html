@@ -1755,7 +1755,10 @@ async function draftQuoteInOutlook(){
     const token = await getGraphToken();
     const toEmails = await resolveSelectedContactEmails(quoteSelectedContacts);
     if(!toEmails.length){
-      const proceed = confirm('None of the selected contacts have an email on file, so the draft will open with no recipient filled in — you\'ll need to add one yourself in Outlook.\n\nContinue anyway?');
+      const msg = quoteSelectedContacts.length
+        ? 'None of the selected contacts have an email on file, so the draft will open with no recipient filled in — you\'ll need to add one yourself in Outlook.\n\nContinue anyway?'
+        : 'No recipient has been picked (see the contact picker above the preview), so the draft will open with no one in the To field — you\'ll need to add someone yourself in Outlook.\n\nContinue anyway?';
+      const proceed = confirm(msg);
       if(!proceed){ if(btn){ btn.disabled=false; btn.textContent = originalLabel; } return; }
     }
     const vesselName = fv('vessel') || fv('vesselOrder');
