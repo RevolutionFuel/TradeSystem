@@ -6627,7 +6627,12 @@ async function renderLetterheadToPdfBlob(fullHtml){
       html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
     };
-    return await window.html2pdf().set(opt).from(container).outputPdf('blob');
+    // .outputPdf() isn't actually a documented public method of this
+    // library (an earlier version of this code called it directly and
+    // produced a blank PDF) — .toPdf().output('blob') is the confirmed,
+    // documented way to get the result as a Blob instead of triggering an
+    // automatic download.
+    return await window.html2pdf().set(opt).from(container).toPdf().output('blob');
   } finally {
     container.remove();
   }
