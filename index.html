@@ -1811,6 +1811,7 @@ async function draftInOutlookGeneric(opts){
           contentType: 'application/pdf',
           contentBytes: base64
         });
+        if(opts.pdfDocType === 'invoice') saveInvoicePdfToOrder(pdfBlob); // fire-and-forget
       }catch(e){
         console.error('TS: PDF attachment generation failed', e);
         const proceed = confirm('Could not generate the PDF to attach (' + (e && e.message ? e.message : 'unknown error') + ').\n\nCreate the draft anyway, without the attachment?');
@@ -6525,6 +6526,31 @@ function selectInvoiceEmailForManualCopy(){
   }
 }
 
+// Uploads the invoice PDF to Storage and references it against the order —
+// silently skipped if the order hasn't been saved yet (no real id to attach
+// it to) or if this fails; never blocks the person from getting their PDF
+// or draft either way, since this is a nice-to-have for the Summary tab,
+// not something the immediate task depends on.
+let lastStoredInvoicePdfPath = null;
+async function saveInvoicePdfToOrder(blob){
+  if(!isRealUuid(currentOrderDbId) || !window.TS || !window.TS.saveInvoicePdf) return;
+  try{
+    const base64 = await blobToBase64(blob);
+    lastStoredInvoicePdfPath = await window.TS.saveInvoicePdf(currentOrderDbId, base64);
+    if(document.getElementById('summaryContent')) renderSummary(); // refresh so the link appears if already viewing Summary
+  }catch(e){
+    console.warn('TS: saveInvoicePdfToOrder failed (non-fatal)', e);
+  }
+}
+async function openStoredInvoicePdf(){
+  if(!lastStoredInvoicePdfPath || !window.TS || !window.TS.getInvoicePdfUrl) return;
+  try{
+    const url = await window.TS.getInvoicePdfUrl(lastStoredInvoicePdfPath);
+    window.open(url, '_blank');
+  }catch(e){
+    alert('Could not open the stored invoice: ' + (e && e.message ? e.message : 'unknown error'));
+  }
+}
 async function openInvoicePdf(btnEl){
   if(getInvoiceType()==='invoice' && confirmProgressStatus('invoice')) markStatus('invoiced');
   const btn = btnEl || null;
@@ -6535,6 +6561,7 @@ async function openInvoicePdf(btnEl){
     const invType = getInvoiceType();
     const label = invType === 'proforma' ? 'Proforma-Invoice' : invType === 'commission' ? 'Commission-Invoice' : 'Invoice';
     await downloadPdfBlob(blob, `${safeFilenamePart(fv('vessel'))}-${label}.pdf`);
+    saveInvoicePdfToOrder(blob); // fire-and-forget, doesn't block the download
   }catch(e){
     console.error('TS: openInvoicePdf failed', e);
     alert('Could not generate the PDF: ' + (e && e.message ? e.message : 'unknown error'));
@@ -9024,6 +9051,7 @@ async function renderSummary(){
     let body = '';
     body += summaryField('Invoice type', invTypeEl ? escHtml(cap(invTypeEl.value)) : '');
     body += summaryField('Final ETA', escHtml(fv('finalETA')));
+    if(lastStoredInvoicePdfPath) body += summaryField('Stored invoice', '<button type="button" class="btn-ghost btn-sm" onclick="openStoredInvoicePdf()">View PDF</button>');
     html.push(summarySection('Invoice', started, body, 'invoice'));
   }
 
