@@ -6588,7 +6588,12 @@ function ensureHtml2Pdf(){
   if(html2pdfLoadPromise) return html2pdfLoadPromise;
   html2pdfLoadPromise = new Promise((resolve, reject)=>{
     const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+    // Pinned to 0.9.3 deliberately, not the newer 0.10.1 — the library's own
+    // README explicitly warns v0.10 has unresolved reported issues, and
+    // 0.10.1 is confirmed (independently, by others hitting the exact same
+    // symptom) to produce a blank PDF via this same API. 0.9.3 is the
+    // version documented to actually work.
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js';
     script.onload = () => resolve();
     script.onerror = () => reject(new Error('Could not load the PDF library \u2014 check your connection and try again.'));
     document.head.appendChild(script);
@@ -6600,27 +6605,6 @@ function ensureHtml2Pdf(){
 // just its style + body content into an off-screen container for html2pdf
 // to convert. Returns a real PDF Blob — used both for direct download and
 // for attaching to an Outlook draft.
-// Samples the canvas's pixel data to check whether it actually rendered
-// anything — catches a silent rendering failure immediately (a clear error
-// naming the real cause) rather than producing another empty-looking PDF
-// with no clue why.
-function canvasHasVisibleContent(canvas){
-  try{
-    const ctx = canvas.getContext('2d');
-    const w = Math.min(canvas.width, 400), h = Math.min(canvas.height, 400);
-    const data = ctx.getImageData(0, 0, w, h).data;
-    for(let i = 0; i < data.length; i += 4){
-      const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
-      if(a > 10 && !(r > 250 && g > 250 && b > 250)) return true; // something non-white and non-transparent
-    }
-    return false;
-  }catch(e){
-    // Can't read pixel data (e.g. a tainted canvas) — don't block the PDF
-    // over this check itself, just let the actual output speak for itself.
-    console.warn('TS: canvasHasVisibleContent check failed, proceeding anyway', e);
-    return true;
-  }
-}
 async function renderLetterheadToPdfBlob(fullHtml){
   await ensureHtml2Pdf();
   const parsed = new DOMParser().parseFromString(fullHtml, 'text/html');
@@ -6636,42 +6620,30 @@ async function renderLetterheadToPdfBlob(fullHtml){
   container.style.cssText = 'position:fixed; top:0; left:0; z-index:-9999; width:794px; background:#fff;';
   container.innerHTML = styleHtml + parsed.body.innerHTML;
   document.body.appendChild(container);
-  // Give the browser a full layout/paint cycle before capturing — html2canvas
-  // racing ahead of newly-inserted content actually being laid out/painted
-  // is a second common cause of blank output, alongside the off-screen
-  // positioning issue above.
+  // Give the browser a full layout/paint cycle before capturing.
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   try{
-    // Calling html2canvas and jsPDF directly rather than through html2pdf.js's
-    // own chained Worker API — two attempts at getting that wrapper's chain
-    // right (outputPdf(), then toPdf().output()) both produced a blank PDF,
-    // so this removes that layer of ambiguity entirely and also lets this
-    // check, directly, whether the canvas itself actually has real content
-    // before going any further — rather than silently producing an empty
-    // file again if something's still wrong.
-    const canvas = await window.html2canvas(container, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-    if(!canvasHasVisibleContent(canvas)){
-      throw new Error('The page rendered as entirely blank — this points to something in the PDF layout itself, not just how the file gets built. Please tell whoever\'s maintaining this app.');
+    const opt = {
+      margin: 10,
+      image: { type:'jpeg', quality:0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
+    };
+    // Back to html2pdf.js's own wrapper (not calling html2canvas directly —
+    // this particular bundle doesn't expose it as a standalone global) —
+    // .toPdf().output('blob') is the exact call confirmed, independently,
+    // to work correctly specifically on v0.9.3, which is why the version
+    // pin above matters as much as this call shape does.
+    const blob = await window.html2pdf().set(opt).from(container).toPdf().output('blob');
+    // A real letterhead PDF is never this small — a near-empty file is the
+    // one thing a size check alone can reliably catch, so it's worth
+    // surfacing as a clear error rather than downloading a bad file with no
+    // explanation, even though it can't tell us anything about content
+    // that IS there but wrong.
+    if(!blob || blob.size < 2000){
+      throw new Error('The generated file looks empty (' + (blob ? blob.size : 0) + ' bytes) — something in the PDF rendering failed silently. Please tell whoever\'s maintaining this app.');
     }
-    const imgData = canvas.toDataURL('image/jpeg', 0.98);
-    const JsPdfCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
-    const pdf = new JsPdfCtor({ unit:'mm', format:'a4', orientation:'portrait' });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const margin = 10;
-    const imgWidth = pageWidth - margin*2;
-    const imgHeight = canvas.height * imgWidth / canvas.width;
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    let heightLeft = imgHeight;
-    let position = margin;
-    pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight);
-    heightLeft -= (pageHeight - margin*2);
-    while(heightLeft > 0){
-      position = heightLeft - imgHeight + margin;
-      pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight);
-      heightLeft -= (pageHeight - margin*2);
-    }
-    return pdf.output('blob');
+    return blob;
   } finally {
     container.remove();
   }
