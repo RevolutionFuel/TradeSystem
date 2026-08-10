@@ -3012,6 +3012,12 @@ let quoteSelectedContacts = [];
 let custSelectedContacts = [];
 let enqSelectedContacts = [];
 let supSelectedContacts = [];
+// "Default, then diverge" for Supply's contacts, same pattern as its
+// payment terms/signature/formatting — Supply starts out following
+// whatever's picked on Enquire (the same supplier, so the same contact is
+// the sensible starting point), until Supply's own contacts are touched
+// directly, after which it stops following.
+let supContactsManuallySet = false;
 
 // Central config for the 4 pages that address a salutation to picked
 // contacts. quote/customer pull from the order's vessel + registered
@@ -3035,12 +3041,18 @@ function setContactsListForPage(page, list){
 }
 
 function contactDisplayName(c){ return c.jobTitle ? (c.jobTitle + ' ' + c.name) : c.name; }
+// For addressing someone directly in a salutation — prefers a short, casual
+// alias if one's set ("Lawrence" rather than "Captain Lawrence Cockx"),
+// since nobody wants an email opening "Dear Captain Lawrence Cockx,".
+// Falls back to the formal display name when no alias exists. The picker
+// checkboxes still show the full formal name (contactDisplayName) for
+// identification — the alias is only for the greeting text itself.
+function contactGreetingName(c){ return c.alias || contactDisplayName(c); }
 // "Dear X," / "Dear X and Y," / "Dear X, Y and Z," — matches the existing
-// single-contact salutation format (job title folded into the name) rather
-// than inventing a new one.
+// single-contact salutation format rather than inventing a new one.
 function buildGreetingFromContacts(contacts){
   if(!contacts.length) return '';
-  const names = contacts.map(contactDisplayName);
+  const names = contacts.map(contactGreetingName);
   if(names.length === 1) return `Dear ${names[0]},`;
   return `Dear ${names.slice(0,-1).join(', ')} and ${names[names.length-1]},`;
 }
@@ -3057,6 +3069,17 @@ function currentSupplierIdForPage(page){
   const name = (page === 'supply' && multiSupplierMode && currentSupplyViewSupplier) ? currentSupplyViewSupplier : fv('supplierName');
   const rec = SUPPLIERS.find(s => s.name.trim().toLowerCase() === (name||'').trim().toLowerCase());
   return rec ? rec.id : null;
+}
+// If a group has exactly one contact and nobody's marked default yet, that
+// one is unambiguous, so it's set automatically. With more than one and no
+// default, this is left for the person to resolve by actually picking
+// someone from the list — which itself sets the default (see
+// toggleContactSelection) — rather than guessing on their behalf.
+async function autoSetSoleDefault(contacts, target){
+  if(contacts.length === 1 && !contacts[0].isPrimary && window.TS && window.TS.setPrimaryContact){
+    try{ await window.TS.setPrimaryContact(contacts[0].id, target); contacts[0].isPrimary = true; }
+    catch(e){ console.warn('TS: auto-setPrimaryContact failed', e); }
+  }
 }
 async function loadContactPicker(page){
   const { containerId, source } = CONTACT_PICKER_PAGES[page];
@@ -3088,6 +3111,8 @@ async function loadContactPicker(page){
     container.innerHTML = '<div class="hint">Could not load contacts right now.</div>';
     return;
   }
+  if(vesselId) await autoSetSoleDefault(result.vesselContacts, {vesselId});
+  if(ownerId) await autoSetSoleDefault(result.orgContacts, {organizationId: ownerId});
   // Auto-select whichever contact is marked default, the first time this
   // loads with nothing already chosen — "the previous contact chosen"
   // becoming the standing starting point, same idea as the formatting/
@@ -3096,7 +3121,7 @@ async function loadContactPicker(page){
   // the same for whoever picks that vessel).
   if(!contactsListForPage(page).length){
     const primary = [...result.vesselContacts, ...result.orgContacts].find(c=>c.isPrimary);
-    if(primary) toggleContactSelection(page, {name:primary.name, jobTitle:primary.jobTitle}, true);
+    if(primary) toggleContactSelection(page, {name:primary.name, jobTitle:primary.jobTitle, alias:primary.alias||''}, true);
   }
   renderContactPicker(page, result);
 }
@@ -3107,15 +3132,18 @@ function renderContactPicker(page, result){
   const selected = contactsListForPage(page);
   const isChecked = c => selected.some(s => s.name === c.name && s.jobTitle === c.jobTitle);
   const group = (title, contacts, targetKind) => {
+    const noDefaultYet = contacts.length > 1 && !contacts.some(c=>c.isPrimary);
     const rows = contacts.length ? contacts.map(c=>`
         <label class="opt-inline" style="display:block; margin-bottom:2px;">
-          <input type="checkbox" ${isChecked(c)?'checked':''} onchange="toggleContactSelection('${page}', ${escAttr(JSON.stringify({name:c.name, jobTitle:c.jobTitle}))}, this.checked)">
-          ${escHtml(contactDisplayName(c))}${c.isPrimary ? ' <span style="color:var(--ink-soft); font-size:11px;">(default)</span>' : ''}
+          <input type="checkbox" ${isChecked(c)?'checked':''} onchange="toggleContactSelection('${page}', ${escAttr(JSON.stringify({id:c.id, name:c.name, jobTitle:c.jobTitle, alias:c.alias||''}))}, this.checked, '${targetKind}')">
+          ${escHtml(contactDisplayName(c))}${c.alias ? ` <span style="color:var(--ink-soft); font-size:11px;">(as "${escHtml(c.alias)}")</span>` : ''}${c.isPrimary ? ' <span style="color:var(--ink-soft); font-size:11px;">(default)</span>' : ''}
         </label>
       `).join('') : `<div class="hint" style="margin:2px 0 6px;">None yet.</div>`;
+    const noDefaultHint = noDefaultYet ? `<div class="hint" style="margin:2px 0 6px;">No default set yet — tick whoever you address most often to make them the standing default.</div>` : '';
     return `<div style="margin-bottom:10px;">
       <div style="font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; color:var(--ink-soft); margin-bottom:4px;">${escHtml(title)}</div>
       ${rows}
+      ${noDefaultHint}
       <button class="btn-ghost btn-sm" type="button" style="margin-top:4px;" onclick="showAddContactForm('${page}','${targetKind}')">+ Add a new contact here</button>
       <div id="addContactForm-${page}-${targetKind}"></div>
     </div>`;
@@ -3130,6 +3158,7 @@ function showAddContactForm(page, targetKind){
   el.innerHTML = `
     <div style="border:1px solid var(--line); border-radius:6px; padding:8px; margin-top:6px;">
       <input type="text" placeholder="Name" id="newContactName-${page}-${targetKind}" style="width:100%; margin-bottom:4px;">
+      <input type="text" placeholder="Alias for emails (optional, e.g. first name only)" id="newContactAlias-${page}-${targetKind}" style="width:100%; margin-bottom:4px;">
       <input type="text" placeholder="Job title (optional)" id="newContactTitle-${page}-${targetKind}" style="width:100%; margin-bottom:4px;">
       <input type="text" placeholder="Phone (optional)" id="newContactPhone-${page}-${targetKind}" style="width:100%; margin-bottom:4px;">
       <input type="text" placeholder="Email (optional)" id="newContactEmail-${page}-${targetKind}" style="width:100%; margin-bottom:6px;">
@@ -3141,6 +3170,7 @@ function showAddContactForm(page, targetKind){
 async function submitNewContact(page, targetKind){
   const name = document.getElementById(`newContactName-${page}-${targetKind}`).value.trim();
   if(!name){ alert('Enter a name first.'); return; }
+  const alias = document.getElementById(`newContactAlias-${page}-${targetKind}`).value.trim();
   const jobTitle = document.getElementById(`newContactTitle-${page}-${targetKind}`).value.trim();
   const phone = document.getElementById(`newContactPhone-${page}-${targetKind}`).value.trim();
   const email = document.getElementById(`newContactEmail-${page}-${targetKind}`).value.trim();
@@ -3157,7 +3187,7 @@ async function submitNewContact(page, targetKind){
     if(targetKind === 'owner' && !ownerId){ alert('This vessel has no linked registered owner yet \u2014 pick or add one on the Order page first.'); return; }
   }
   try{
-    await window.TS.saveContact({name, jobTitle, phone, email}, target);
+    await window.TS.saveContact({name, alias, jobTitle, phone, email}, target);
   }catch(e){
     console.error('TS: saveContact failed', e);
     flashSaveError();
@@ -3166,13 +3196,26 @@ async function submitNewContact(page, targetKind){
   // Auto-select the newly added contact (it belongs on this correspondence,
   // since that's why it was just added) and refresh the picker to show it
   // alongside everyone else already on file.
-  toggleContactSelection(page, {name, jobTitle}, true);
+  toggleContactSelection(page, {name, jobTitle, alias}, true);
   await loadContactPicker(page);
 }
-function toggleContactSelection(page, contact, checked){
+function toggleContactSelection(page, contact, checked, targetKind){
   let list = contactsListForPage(page);
   if(checked){
     if(!list.some(s => s.name === contact.name && s.jobTitle === contact.jobTitle)) list.push(contact);
+    // Picking someone for correspondence is also the natural moment to make
+    // them the standing default for next time — no separate "set as
+    // default" step needed for the common case. contact.id/targetKind are
+    // only present when this came from an actual picker checkbox click
+    // (not from auto-select-on-load or save/load restoration, where
+    // there's nothing new to persist).
+    if(contact.id && targetKind && window.TS && window.TS.setPrimaryContact){
+      let target;
+      if(targetKind === 'vessel') target = {vesselId: currentVesselAndOwnerIds().vesselId};
+      else if(targetKind === 'owner') target = {organizationId: currentVesselAndOwnerIds().ownerId};
+      else target = {organizationId: currentSupplierIdForPage(page)};
+      window.TS.setPrimaryContact(contact.id, target).catch(e=>console.warn('TS: setPrimaryContact on pick failed', e));
+    }
   } else {
     list = list.filter(s => !(s.name === contact.name && s.jobTitle === contact.jobTitle));
   }
@@ -3181,6 +3224,22 @@ function toggleContactSelection(page, contact, checked){
   const greetingText = buildGreetingFromContacts(list);
   if(greetingText) document.getElementById(greetingId).value = greetingText;
   window[renderFn]();
+  // Enquire -> Supply "default, then diverge": a contact picked on Enquire
+  // is the natural starting point for Supply too, since it's the same
+  // supplier — unless Supply's own contacts have already been touched
+  // directly, at which point it stops following.
+  if(page === 'enquire' && !supContactsManuallySet) syncSupContactsFromEnquiry();
+  if(page === 'supply') supContactsManuallySet = true;
+}
+function syncSupContactsFromEnquiry(){
+  if(supContactsManuallySet) return;
+  supSelectedContacts = enqSelectedContacts.slice();
+  const greetingEl = document.getElementById('supGreeting');
+  if(greetingEl) greetingEl.value = buildGreetingFromContacts(supSelectedContacts) || 'Dear Sir/Madam,';
+  renderSupply();
+  if(document.getElementById('contactPickerSupply') && document.getElementById('contactPickerSupply').innerHTML.trim()){
+    loadContactPicker('supply');
+  }
 }
 
 function pickVessel(v){
@@ -3674,6 +3733,7 @@ function pickSupplier(s){
   if(enqGreetingEl) enqGreetingEl.value = 'Dear Sir,';
   enqSelectedContacts = [];
   supSelectedContacts = [];
+  supContactsManuallySet = false;
   hideSupplierList();
   loadContactPicker('enquire');
   loadContactPicker('supply');
@@ -3765,6 +3825,7 @@ function onSupplierViewChange(value){
   const greetingEl = document.getElementById('supGreeting');
   if(greetingEl) greetingEl.value = 'Dear Sir/Madam,';
   supSelectedContacts = [];
+  supContactsManuallySet = false;
   loadContactPicker('supply');
   renderSupply();
 }
@@ -8911,7 +8972,7 @@ function renderItemDetailContactsList(contacts){
     const meta = [c.jobTitle, c.phone, c.email].filter(Boolean).join(' \u00b7 ');
     return `<div class="item-detail-contact-row">
       <div>
-        <div class="item-detail-contact-name">${escHtml(c.name)}${c.isPrimary ? ' <span class="item-detail-contact-primary">Default</span>' : ''}</div>
+        <div class="item-detail-contact-name">${escHtml(c.name)}${c.alias ? ` <span style="color:var(--ink-soft); font-weight:400;">(as "${escHtml(c.alias)}")</span>` : ''}${c.isPrimary ? ' <span class="item-detail-contact-primary">Default</span>' : ''}</div>
         ${meta ? `<div class="item-detail-contact-meta">${escHtml(meta)}</div>` : ''}
       </div>
       <div class="item-detail-contact-actions">
@@ -8939,9 +9000,10 @@ async function setContactAsDefault(contactId){
   await renderItemDetailContacts(item, schema);
 }
 function itemDetailContactFormHtml(contact){
-  const c = contact || {id:'', name:'', jobTitle:'', phone:'', email:''};
+  const c = contact || {id:'', name:'', alias:'', jobTitle:'', phone:'', email:''};
   return `<div class="item-detail-contact-row item-detail-contact-form">
     <input type="text" id="itemDetailContactName" placeholder="Name" value="${escAttr(c.name)}">
+    <input type="text" id="itemDetailContactAlias" placeholder="Alias for emails (optional, e.g. first name only)" value="${escAttr(c.alias||'')}">
     <input type="text" id="itemDetailContactJobTitle" placeholder="Job title (optional)" value="${escAttr(c.jobTitle)}">
     <input type="text" id="itemDetailContactPhone" placeholder="Phone" value="${escAttr(c.phone)}">
     <input type="text" id="itemDetailContactEmail" placeholder="Email" value="${escAttr(c.email)}">
@@ -8976,6 +9038,7 @@ async function saveContactEdit(contactId){
   const target = schema.contactsFor(item);
   const contact = {
     name: document.getElementById('itemDetailContactName').value.trim(),
+    alias: document.getElementById('itemDetailContactAlias').value.trim(),
     jobTitle: document.getElementById('itemDetailContactJobTitle').value.trim(),
     phone: document.getElementById('itemDetailContactPhone').value.trim(),
     email: document.getElementById('itemDetailContactEmail').value.trim()
@@ -9720,6 +9783,11 @@ async function applyQuoteState(data){
   custSelectedContacts = Array.isArray(data.custSelectedContacts) ? data.custSelectedContacts : [];
   enqSelectedContacts = Array.isArray(data.enqSelectedContacts) ? data.enqSelectedContacts : [];
   supSelectedContacts = Array.isArray(data.supSelectedContacts) ? data.supSelectedContacts : [];
+  // A loaded order's own supply contacts are treated as already-established
+  // (equivalent to having been manually diverged) — otherwise touching
+  // Enquire's contacts afterward in this same session would silently
+  // overwrite what was just loaded via the cascade.
+  supContactsManuallySet = supSelectedContacts.length > 0;
   // Re-render the picker only if it was already showing (i.e. someone had
   // fetched it before saving) — otherwise leave it collapsed as normal,
   // matching the "Show available contacts" button's own on-demand loading.
@@ -10018,19 +10086,19 @@ function quoteStateToReadableText(state){
   field('Show order total', fmtYesNo(state.showOrderTotal));
   if(state.quoteSelectedContacts.length){
     lines.push('Quote selected contacts:');
-    state.quoteSelectedContacts.forEach(c=> lines.push(`  - ${[c.name||'', c.jobTitle||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
+    state.quoteSelectedContacts.forEach(c=> lines.push(`  - ${[c.name||'', c.jobTitle||'', c.alias||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
   } else field('Quote selected contacts', '(none)');
   if(state.custSelectedContacts.length){
     lines.push('Customer selected contacts:');
-    state.custSelectedContacts.forEach(c=> lines.push(`  - ${[c.name||'', c.jobTitle||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
+    state.custSelectedContacts.forEach(c=> lines.push(`  - ${[c.name||'', c.jobTitle||'', c.alias||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
   } else field('Customer selected contacts', '(none)');
   if(state.enqSelectedContacts.length){
     lines.push('Enquire selected contacts:');
-    state.enqSelectedContacts.forEach(c=> lines.push(`  - ${[c.name||'', c.jobTitle||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
+    state.enqSelectedContacts.forEach(c=> lines.push(`  - ${[c.name||'', c.jobTitle||'', c.alias||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
   } else field('Enquire selected contacts', '(none)');
   if(state.supSelectedContacts.length){
     lines.push('Supply selected contacts:');
-    state.supSelectedContacts.forEach(c=> lines.push(`  - ${[c.name||'', c.jobTitle||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
+    state.supSelectedContacts.forEach(c=> lines.push(`  - ${[c.name||'', c.jobTitle||'', c.alias||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
   } else field('Supply selected contacts', '(none)');
 
   section('Operational Notes');
@@ -10258,10 +10326,10 @@ function parseReadableQuoteText(text){
           if(mode==='fees' && currentProduct) currentProduct.fees.push(parseFeeLine(val));
           else if(mode==='costFees' && currentProduct) currentProduct.costFees.push(parseFeeLine(val, true));
           else if(mode==='tickedNotes') data.checkedNoteTexts.push(val);
-          else if(mode==='quoteSelectedContacts'){ const parts=val.split('|'); data.quoteSelectedContacts.push({name:parts[0]||'', jobTitle:parts[1]||''}); }
-          else if(mode==='custSelectedContacts'){ const parts=val.split('|'); data.custSelectedContacts.push({name:parts[0]||'', jobTitle:parts[1]||''}); }
-          else if(mode==='enqSelectedContacts'){ const parts=val.split('|'); data.enqSelectedContacts.push({name:parts[0]||'', jobTitle:parts[1]||''}); }
-          else if(mode==='supSelectedContacts'){ const parts=val.split('|'); data.supSelectedContacts.push({name:parts[0]||'', jobTitle:parts[1]||''}); }
+          else if(mode==='quoteSelectedContacts'){ const parts=val.split('|'); data.quoteSelectedContacts.push({name:parts[0]||'', jobTitle:parts[1]||'', alias:parts[2]||''}); }
+          else if(mode==='custSelectedContacts'){ const parts=val.split('|'); data.custSelectedContacts.push({name:parts[0]||'', jobTitle:parts[1]||'', alias:parts[2]||''}); }
+          else if(mode==='enqSelectedContacts'){ const parts=val.split('|'); data.enqSelectedContacts.push({name:parts[0]||'', jobTitle:parts[1]||'', alias:parts[2]||''}); }
+          else if(mode==='supSelectedContacts'){ const parts=val.split('|'); data.supSelectedContacts.push({name:parts[0]||'', jobTitle:parts[1]||'', alias:parts[2]||''}); }
           else if(mode==='customNotes') data.customNotes.push(val);
           else if(mode==='tickedConditions') data.checkedConditionTexts.push(val);
           else if(mode==='tickedSupNotes') data.supCheckedNoteTexts.push(val);
