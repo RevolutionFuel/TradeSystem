@@ -6600,6 +6600,27 @@ function ensureHtml2Pdf(){
 // just its style + body content into an off-screen container for html2pdf
 // to convert. Returns a real PDF Blob — used both for direct download and
 // for attaching to an Outlook draft.
+// Samples the canvas's pixel data to check whether it actually rendered
+// anything — catches a silent rendering failure immediately (a clear error
+// naming the real cause) rather than producing another empty-looking PDF
+// with no clue why.
+function canvasHasVisibleContent(canvas){
+  try{
+    const ctx = canvas.getContext('2d');
+    const w = Math.min(canvas.width, 400), h = Math.min(canvas.height, 400);
+    const data = ctx.getImageData(0, 0, w, h).data;
+    for(let i = 0; i < data.length; i += 4){
+      const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
+      if(a > 10 && !(r > 250 && g > 250 && b > 250)) return true; // something non-white and non-transparent
+    }
+    return false;
+  }catch(e){
+    // Can't read pixel data (e.g. a tainted canvas) — don't block the PDF
+    // over this check itself, just let the actual output speak for itself.
+    console.warn('TS: canvasHasVisibleContent check failed, proceeding anyway', e);
+    return true;
+  }
+}
 async function renderLetterheadToPdfBlob(fullHtml){
   await ensureHtml2Pdf();
   const parsed = new DOMParser().parseFromString(fullHtml, 'text/html');
@@ -6621,18 +6642,36 @@ async function renderLetterheadToPdfBlob(fullHtml){
   // positioning issue above.
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   try{
-    const opt = {
-      margin: 10,
-      image: { type:'jpeg', quality:0.98 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
-    };
-    // .outputPdf() isn't actually a documented public method of this
-    // library (an earlier version of this code called it directly and
-    // produced a blank PDF) — .toPdf().output('blob') is the confirmed,
-    // documented way to get the result as a Blob instead of triggering an
-    // automatic download.
-    return await window.html2pdf().set(opt).from(container).toPdf().output('blob');
+    // Calling html2canvas and jsPDF directly rather than through html2pdf.js's
+    // own chained Worker API — two attempts at getting that wrapper's chain
+    // right (outputPdf(), then toPdf().output()) both produced a blank PDF,
+    // so this removes that layer of ambiguity entirely and also lets this
+    // check, directly, whether the canvas itself actually has real content
+    // before going any further — rather than silently producing an empty
+    // file again if something's still wrong.
+    const canvas = await window.html2canvas(container, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+    if(!canvasHasVisibleContent(canvas)){
+      throw new Error('The page rendered as entirely blank — this points to something in the PDF layout itself, not just how the file gets built. Please tell whoever\'s maintaining this app.');
+    }
+    const imgData = canvas.toDataURL('image/jpeg', 0.98);
+    const JsPdfCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    const pdf = new JsPdfCtor({ unit:'mm', format:'a4', orientation:'portrait' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const margin = 10;
+    const imgWidth = pageWidth - margin*2;
+    const imgHeight = canvas.height * imgWidth / canvas.width;
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    let heightLeft = imgHeight;
+    let position = margin;
+    pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight);
+    heightLeft -= (pageHeight - margin*2);
+    while(heightLeft > 0){
+      position = heightLeft - imgHeight + margin;
+      pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight);
+      heightLeft -= (pageHeight - margin*2);
+    }
+    return pdf.output('blob');
   } finally {
     container.remove();
   }
