@@ -1196,14 +1196,8 @@
     <div class="panel" id="mgmtPanelVessels">
       <div class="panel-body">
         <div class="mgmt-add-row">
-          <div class="field"><label>Vessel</label><input type="text" id="newVName" placeholder="Name"></div>
-          <div class="field"><label>IMO</label><input type="text" id="newVIMO"></div>
-          <div class="field"><label>Flag</label><input type="text" id="newVFlag"></div>
-          <div class="field"><label>Registered owner</label><select id="newVOwnerId"><option value="">— none —</option></select></div>
-          <div class="field"><label>Fuel fitting</label><input type="text" id="newVFitting"></div>
-          <button class="btn-primary btn-sm" onclick="addVesselRow()">+ Add vessel</button>
+          <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('vessel')">+ Add new vessel</button>
         </div>
-        <div class="hint" style="margin:-6px 0 10px;">Owner not in the list? Add it first under the <strong>Registered owners</strong> tab, then come back here to select it — vessels can share the same owner.</div>
         <div class="mgmt-search"><input type="text" id="vesselSearch" placeholder="Search vessels…" oninput="renderVesselTable()"></div>
         <div class="mgmt-count" id="vesselCount"></div>
         <div class="table-wrap">
@@ -1218,15 +1212,7 @@
     <div class="panel" id="mgmtPanelRegisteredowners" style="display:none;">
       <div class="panel-body">
         <div class="mgmt-add-row">
-          <div class="field"><label>Name</label><input type="text" id="newROName" placeholder="Registered owner name"></div>
-          <div class="field"><label>Address line 1</label><input type="text" id="newROAddrLine1"></div>
-          <div class="field"><label>Address line 2</label><input type="text" id="newROAddrLine2"></div>
-          <div class="field"><label>City</label><input type="text" id="newROAddrCity"></div>
-          <div class="field"><label>Postal code</label><input type="text" id="newROAddrPostal"></div>
-          <div class="field"><label>Country</label><input type="text" id="newROAddrCountry"></div>
-          <div class="field"><label>VAT number</label><input type="text" id="newROVat"></div>
-          <div class="field"><label>UBO nationality</label><input type="text" id="newROUbo"></div>
-          <button class="btn-primary btn-sm" onclick="addOwnerRow()">+ Add owner</button>
+          <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('owner')">+ Add new registered owner</button>
         </div>
         <div class="mgmt-search"><input type="text" id="ownerSearch" placeholder="Search registered owners…" oninput="renderOwnerTable()"></div>
         <div class="mgmt-count" id="ownerCount"></div>
@@ -1242,14 +1228,7 @@
     <div class="panel" id="mgmtPanelSuppliers" style="display:none;">
       <div class="panel-body">
         <div class="mgmt-add-row">
-          <div class="field"><label>Name</label><input type="text" id="newSupName" placeholder="Supplier name"></div>
-          <div class="field"><label>Address line 1</label><input type="text" id="newSupAddrLine1"></div>
-          <div class="field"><label>Address line 2</label><input type="text" id="newSupAddrLine2"></div>
-          <div class="field"><label>City</label><input type="text" id="newSupAddrCity"></div>
-          <div class="field"><label>Postal code</label><input type="text" id="newSupAddrPostal"></div>
-          <div class="field"><label>Country</label><input type="text" id="newSupAddrCountry"></div>
-          <div class="field"><label>VAT number</label><input type="text" id="newSupVat"></div>
-          <button class="btn-primary btn-sm" onclick="addSupplierRow()">+ Add supplier</button>
+          <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('supplier')">+ Add new supplier</button>
         </div>
         <div class="mgmt-search"><input type="text" id="supplierSearch" placeholder="Search suppliers…" oninput="renderSupplierTable()"></div>
         <div class="mgmt-count" id="supplierCount"></div>
@@ -1265,12 +1244,7 @@
     <div class="panel" id="mgmtPanelAgents" style="display:none;">
       <div class="panel-body">
         <div class="mgmt-add-row">
-          <div class="field"><label>Company name</label><input type="text" id="newAgentName" placeholder="Agent company name"></div>
-          <div class="field"><label>Contact name</label><input type="text" id="newAgentContact"></div>
-          <div class="field"><label>Telephone</label><input type="text" id="newAgentPhone"></div>
-          <div class="field"><label>Email</label><input type="text" id="newAgentEmail"></div>
-          <div class="field" style="flex:2;"><label>Notes</label><textarea id="newAgentNotes" rows="3" style="width:100%; font-family:inherit; font-size:13px; padding:8px; border:1px solid var(--line); border-radius:6px;"></textarea></div>
-          <button class="btn-primary btn-sm" onclick="addAgentRow()">+ Add agent</button>
+          <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('agent')">+ Add new agent</button>
         </div>
         <div class="mgmt-search"><input type="text" id="agentSearch" placeholder="Search agents…" oninput="renderAgentTable()"></div>
         <div class="mgmt-count" id="agentCount"></div>
@@ -1286,8 +1260,7 @@
     <div class="panel" id="mgmtPanelPorts" style="display:none;">
       <div class="panel-body">
         <div class="mgmt-add-row">
-          <div class="field"><label>Port</label><input type="text" id="newPortName" placeholder="Name"></div>
-          <button class="btn-primary btn-sm" onclick="addPortRow()">+ Add port</button>
+          <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('port')">+ Add new port</button>
         </div>
         <div class="mgmt-search"><input type="text" id="portSearch" placeholder="Search ports…" oninput="renderPortTable()"></div>
         <div class="mgmt-count" id="portCount"></div>
@@ -1303,14 +1276,8 @@
     <div class="panel" id="mgmtPanelProducts" style="display:none;">
       <div class="panel-body">
         <div class="mgmt-add-row">
-          <div class="field"><label>Product name</label><input type="text" id="newPName"></div>
-          <div class="field"><label>Category</label>
-            <select id="newPCategory"><option>Fuel</option><option>Other Products</option></select>
-          </div>
-          <div class="field"><label>Sub type</label><input type="text" id="newPSubType" list="productSubTypeDatalist" placeholder="e.g. Diesel, Petrol, Fluids and Lubricants"></div>
-          <button class="btn-primary btn-sm" onclick="addProductRow()">+ Add product</button>
+          <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('product')">+ Add new product</button>
         </div>
-        <datalist id="productSubTypeDatalist"></datalist>
         <div class="mgmt-search"><input type="text" id="productSearch" placeholder="Search products…" oninput="renderProductTable()"></div>
         <div class="mgmt-count" id="productCount"></div>
         <div class="table-wrap">
@@ -8668,7 +8635,7 @@ const ITEM_DETAIL_SCHEMAS = {
     onSaved: () => { renderProductTable(); }
   }
 };
-let itemDetailState = { kind:null, id:null, editMode:false, returnViewId:null };
+let itemDetailState = { kind:null, id:null, editMode:false, returnViewId:null, isNew:false };
 function itemDetailFieldValue(item, key){
   if(key.indexOf('.') === -1) return item[key];
   const [a,b] = key.split('.');
@@ -8688,7 +8655,7 @@ function openItemDetail(kind, id){
   // was opened from a link on the Summary tab (see summaryEntityLink()).
   const currentView = document.querySelector('.view.active');
   const returnViewId = currentView ? currentView.id : 'viewManage';
-  itemDetailState = { kind, id, editMode:false, returnViewId };
+  itemDetailState = { kind, id, editMode:false, returnViewId, isNew:false };
   itemDetailContactEditingId = null;
   if(currentView) currentView.classList.remove('active');
   document.getElementById('viewItemDetail').classList.add('active');
@@ -8698,11 +8665,43 @@ function openItemDetail(kind, id){
   updatePanelHeightLock();
   scheduleStickyOffsetUpdate();
 }
+// Default role assigned to a brand new record for kinds that need one —
+// matches what the old per-kind "add new" quick-forms used to set.
+const NEW_ITEM_ROLE = { owner: 'owner_customer', supplier: 'supplier', agent: 'agent' };
+function addNewItemAndOpen(kind){
+  const schema = ITEM_DETAIL_SCHEMAS[kind];
+  if(!schema) return;
+  // A temporary non-UUID id, just so this isn't literally blank/falsy (see
+  // openItemDetail's guard) — upsertRow already treats any non-UUID id as
+  // "insert new", so this becomes a real UUID the moment it's first saved,
+  // exactly like every other locally-created record in this app.
+  const item = { id: 'new_' + Date.now().toString(36) + Math.random().toString(36).slice(2) };
+  schema.fields.forEach(f => itemDetailSetFieldValue(item, f.key, f.type === 'select' ? (f.options[0]||'') : ''));
+  if(NEW_ITEM_ROLE[kind]) item.roles = [NEW_ITEM_ROLE[kind]];
+  if(kind === 'agent') item.primaryContactId = '';
+  if(kind === 'port'){ item.latitude=''; item.longitude=''; item.coordsVerified=false; item.googleMapsUrl=''; }
+  schema.getList().push(item);
+  openItemDetail(kind, item.id);
+  itemDetailState.isNew = true;
+  toggleItemDetailEdit();
+}
+
+// Save is actually pressed — backing out or cancelling before that removes
+// it again rather than leaving a blank, unnamed ghost entry behind.
+function discardUnsavedNewItem(){
+  if(!itemDetailState.isNew || !itemDetailState.kind) return;
+  const schema = ITEM_DETAIL_SCHEMAS[itemDetailState.kind];
+  if(!schema) return;
+  const list = schema.getList();
+  const idx = list.findIndex(x => x.id === itemDetailState.id);
+  if(idx !== -1) list.splice(idx, 1);
+}
 function closeItemDetail(){
+  discardUnsavedNewItem();
   document.getElementById('viewItemDetail').classList.remove('active');
   const returnViewId = itemDetailState.returnViewId || 'viewManage';
   document.getElementById(returnViewId).classList.add('active');
-  itemDetailState = { kind:null, id:null, editMode:false, returnViewId:null };
+  itemDetailState = { kind:null, id:null, editMode:false, returnViewId:null, isNew:false };
   itemDetailContactEditingId = null;
   if(itemDetailMapInstance){ itemDetailMapInstance.remove(); itemDetailMapInstance = null; }
   updatePanelHeightLock();
@@ -8713,6 +8712,7 @@ function toggleItemDetailEdit(){
   renderItemDetail();
 }
 function cancelItemDetailEdit(){
+  if(itemDetailState.isNew){ closeItemDetail(); return; }
   itemDetailState.editMode = false;
   renderItemDetail();
 }
@@ -8785,6 +8785,10 @@ async function saveItemDetail(){
     const raw = el.value;
     itemDetailSetFieldValue(item, f.key, typeof raw === 'string' ? raw.trim() : raw);
   });
+  if(schema.fields.some(f=>f.key==='name') && !item.name){
+    alert('Enter a name before saving.');
+    return;
+  }
   // The map (not a text field) is how a port's location gets set — whatever
   // the map is centered on when Save is pressed becomes the new coordinates.
   if(schema.hasMap && itemDetailMapInstance){
@@ -8799,6 +8803,7 @@ async function saveItemDetail(){
   // its current id, or the render below would fail to find it and the
   // page would incorrectly close right after a successful save.
   itemDetailState.id = item.id;
+  itemDetailState.isNew = false;
   if(schema.onSaved) schema.onSaved();
   itemDetailState.editMode = false;
   renderItemDetail();
@@ -9316,66 +9321,12 @@ function renderAgentTable(){
     tbody.appendChild(tr);
   });
 }
-async function editAgent(i, field, value){
-  AGENTS[i][field] = value;
-  await saveList('ql-agents', AGENTS);
-  if(field === 'name' || field === 'notes'){
-    await saveReferenceItemRemote('agent', AGENTS[i]);
-  } else if(field === 'contactName' || field === 'telephone' || field === 'email'){
-    await saveAgentPrimaryContact(AGENTS[i]);
-    await saveList('ql-agents', AGENTS);
-  }
-}
-// An agent's phone/email/contact-name live on its primary contact rather
-// than the organization row directly, same as everyone else's contact info
-// in this schema \u2014 needs a real organization id to attach to, so this is a
-// no-op until the agent's own row has actually been saved at least once.
-// Kept as a one-time creation convenience only (see addAgentRow below) — an
-// agent's contact fields are otherwise managed entirely through the
-// Contacts section on its item detail page, same as vessels/owners/
-// suppliers. Marks the contact as default since it's the only one that
-// exists at the moment an agent is first created this way.
-async function saveAgentPrimaryContact(agent){
-  if(!window.TS || !window.TS.saveContact || !isRealUuid(agent.id)) return;
-  try{
-    const newContactId = await window.TS.saveContact(
-      {name: agent.contactName, jobTitle: '', phone: agent.telephone, email: agent.email, isPrimary: true},
-      {organizationId: agent.id},
-      agent.primaryContactId || null
-    );
-    if(newContactId && !isRealUuid(agent.primaryContactId)) agent.primaryContactId = newContactId;
-  }catch(e){
-    console.error('TS: saveAgentPrimaryContact failed', e);
-    flashSaveError();
-  }
-}
 async function deleteAgent(i){
   if(!confirm('Delete this agent?')) return;
   const removed = AGENTS[i];
   AGENTS.splice(i,1);
   await saveList('ql-agents', AGENTS);
   await deleteReferenceItemRemote('agent', removed.id);
-  renderAgentTable();
-}
-async function addAgentRow(){
-  const name = document.getElementById('newAgentName').value.trim();
-  if(!name) return;
-  const newAgent = {
-    id: '', name,
-    contactName: document.getElementById('newAgentContact').value.trim(),
-    telephone: document.getElementById('newAgentPhone').value.trim(),
-    email: document.getElementById('newAgentEmail').value.trim(),
-    notes: document.getElementById('newAgentNotes').value.trim(),
-    primaryContactId: '', roles: ['agent']
-  };
-  AGENTS.push(newAgent);
-  await saveList('ql-agents', AGENTS);
-  await saveReferenceItemRemote('agent', newAgent);
-  if(newAgent.contactName || newAgent.telephone || newAgent.email){
-    await saveAgentPrimaryContact(newAgent);
-    await saveList('ql-agents', AGENTS);
-  }
-  ['newAgentName','newAgentContact','newAgentPhone','newAgentEmail','newAgentNotes'].forEach(id=>document.getElementById(id).value='');
   renderAgentTable();
 }
 
