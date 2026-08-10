@@ -9199,10 +9199,12 @@ const ITEM_DETAIL_SCHEMAS = {
     kindLabel: 'Vessel', listKey: 'ql-vessels', getList: () => VESSELS,
     fields: [
       {key:'name', label:'Vessel name', type:'text'},
-      {key:'imo', label:'IMO number', type:'text'},
+      {key:'imo', label:'IMO number (or official number, if no IMO)', type:'text'},
+      {key:'mmsi', label:'MMSI', type:'text'},
       {key:'flag', label:'Flag', type:'text'},
       {key:'ownerId', label:'Registered owner', type:'owner-select'},
       {key:'fitting', label:'Fuel fitting', type:'text'},
+      {key:'trackAis', label:'Track AIS position (logs position history periodically)', type:'checkbox'},
       {key:'notes', label:'Notes', type:'textarea'}
     ],
     afterSave: async (item) => { await saveReferenceItemRemote('vessel', item); },
@@ -9433,6 +9435,14 @@ function renderItemDetail(){
   const fieldsHtml = schema.fields.map(f=>{
     const value = itemDetailFieldValue(item, f.key) || '';
     if(!itemDetailState.editMode){
+      if(f.type === 'checkbox'){
+        if(!value) return ''; // only show when true, same "hide empties" logic as other fields
+        anyFieldShown = true;
+        return `<div class="item-detail-field">
+          <span class="item-detail-label">${escHtml(f.label)}</span>
+          <div class="item-detail-value">Yes</div>
+        </div>`;
+      }
       let displayValue = value;
       if(f.type === 'owner-select') displayValue = ownerName(value) || '';
       // View mode only shows fields that actually have something in them —
@@ -9453,6 +9463,10 @@ function renderItemDetail(){
       inputHtml = `<select id="${fid}">${f.options.map(o=>`<option ${o===value?'selected':''}>${escHtml(o)}</option>`).join('')}</select>`;
     } else if(f.type === 'owner-select'){
       inputHtml = `<select id="${fid}">${ownerOptionsHtml(value)}</select>`;
+    } else if(f.type === 'checkbox'){
+      return `<div class="item-detail-field">
+        <label class="opt-inline"><input type="checkbox" id="${fid}" ${value?'checked':''}> ${escHtml(f.label)}</label>
+      </div>`;
     } else {
       inputHtml = `<input type="text" id="${fid}" value="${escAttr(value)}">`;
     }
@@ -9487,7 +9501,7 @@ async function saveItemDetail(){
   schema.fields.forEach(f=>{
     const el = document.getElementById(itemDetailInputId(f.key));
     if(!el) return;
-    const raw = el.value;
+    const raw = f.type === 'checkbox' ? el.checked : el.value;
     itemDetailSetFieldValue(item, f.key, typeof raw === 'string' ? raw.trim() : raw);
   });
   if(schema.fields.some(f=>f.key==='name') && !item.name){
