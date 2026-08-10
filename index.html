@@ -1795,10 +1795,20 @@ async function generatePdfViaBackend(docType, html){
   const client = window.TS.getClient();
   const { data: { session } } = await client.auth.getSession();
   if(!session) throw new Error('Not signed in.');
+  // Strip the "Print / Save as PDF" bar before sending — it has no purpose
+  // once generation is automated, and left in, it renders directly into the
+  // output since the backend renderer doesn't apply this page's own
+  // @media print rules by default. Different letterhead builders mark it
+  // slightly differently (some only as .print-bar, not always also
+  // .no-print), so both are targeted directly rather than relying on one
+  // consistent marker class across all of them.
+  const parsed = new DOMParser().parseFromString(html, 'text/html');
+  parsed.querySelectorAll('.no-print, .print-bar').forEach(el => el.remove());
+  const cleanedHtml = '<!DOCTYPE html>' + parsed.documentElement.outerHTML;
   const res = await fetch('https://dxaajzdolalessivlseg.supabase.co/functions/v1/generate-pdf', {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ orderId: currentOrderDbId, docType, html })
+    body: JSON.stringify({ orderId: currentOrderDbId, docType, html: cleanedHtml })
   });
   let result;
   try{ result = await res.json(); }catch(e){ throw new Error('Unexpected response from the PDF service.'); }
