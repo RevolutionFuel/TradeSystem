@@ -749,7 +749,7 @@
           <div class="copybar">
             <button class="btn-amber" id="draftQuoteOutlookBtn" onclick="draftQuoteInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
             <button class="btn-ghost" onclick="copyRich()">📋 Copy for email</button>
-            <button class="btn-ghost" onclick="openPdfQuotation('quotation', this)" title="Opens a formal letterhead version in a new tab, ready to Print → Save as PDF">📄 View PDF Quotation</button>
+            <button class="btn-ghost" onclick="openPdfQuotation('quotation', this)" title="Generates and downloads a real PDF (via headless Chrome), saved for later viewing too">📄 Download PDF Quotation</button>
             <span class="status-msg" id="copyStatus">✓ Copied</span>
           </div>
           <div id="profitSummaryQuote"></div>
@@ -922,7 +922,7 @@
             <div class="copybar">
               <button class="btn-amber" id="draftSupplyOutlookBtn" onclick="draftSupplyInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
               <button class="btn-ghost" onclick="copySupplyRich()">📋 Copy for email</button>
-              <button class="btn-ghost" onclick="openPdfQuotation('supplier', this)" title="Opens a formal letterhead version in a new tab, ready to Print → Save as PDF">📄 View PDF Supplier Confirmation</button>
+              <button class="btn-ghost" onclick="openPdfQuotation('supplier', this)" title="Generates and downloads a real PDF (via headless Chrome), saved for later viewing too">📄 Download PDF Supplier Confirmation</button>
               <span class="status-msg" id="supplyCopyStatus">✓ Copied</span>
             </div>
             <div id="profitSummarySupply"></div>
@@ -1065,7 +1065,7 @@
             <div class="copybar">
               <button class="btn-amber" id="draftCustomerOutlookBtn" onclick="draftCustomerInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
               <button class="btn-ghost" onclick="copyCustomerRich()">📋 Copy for email</button>
-              <button class="btn-ghost" onclick="openPdfQuotation('customer', this)" title="Opens a formal letterhead version in a new tab, ready to Print → Save as PDF">📄 View PDF Order Confirmation</button>
+              <button class="btn-ghost" onclick="openPdfQuotation('customer', this)" title="Generates and downloads a real PDF (via headless Chrome), saved for later viewing too">📄 Download PDF Order Confirmation</button>
               <span class="status-msg" id="customerCopyStatus">✓ Copied</span>
             </div>
             <div id="profitSummaryCustomer"></div>
@@ -1165,7 +1165,7 @@
             <div class="copybar">
               <button class="btn-amber" id="draftInvoiceOutlookBtn" onclick="draftInvoiceInOutlook()" title="Creates a real draft in your connected Outlook mailbox, with the invoice PDF attached">✉️ Draft in Outlook</button>
               <button class="btn-ghost" onclick="copyInvoiceEmailRich()">📋 Copy for email</button>
-              <button class="btn-ghost" onclick="openInvoicePdf(this)" id="invoicePdfButton" title="Opens a formal letterhead version in a new tab, ready to Print → Save as PDF">📄 View PDF</button>
+              <button class="btn-ghost" onclick="openInvoicePdf(this)" id="invoicePdfButton" title="Generates and downloads a real PDF (via headless Chrome), saved for later viewing too">📄 Download PDF</button>
               <span class="status-msg" id="invoiceCopyStatus">✓ Copied</span>
             </div>
             <div id="invoiceSummaryPreview"></div>
@@ -1779,6 +1779,32 @@ function blobToBase64(blob){
     reader.readAsDataURL(blob);
   });
 }
+function base64ToBlob(base64, contentType){
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for(let i=0; i<byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  return new Blob([new Uint8Array(byteNumbers)], {type: contentType});
+}
+// Calls the generate-pdf edge function, which renders the given HTML with
+// real headless Chrome (via PDFShift) and — when the order has already been
+// saved (a real database id exists) — stores the result permanently against
+// it, so it can be viewed again later from the Summary tab. Returns
+// {ok, path, size, pdfBase64}.
+async function generatePdfViaBackend(docType, html){
+  if(!window.TS || !window.TS.getClient) throw new Error('Database connection not available.');
+  const client = window.TS.getClient();
+  const { data: { session } } = await client.auth.getSession();
+  if(!session) throw new Error('Not signed in.');
+  const res = await fetch('https://dxaajzdolalessivlseg.supabase.co/functions/v1/generate-pdf', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderId: currentOrderDbId, docType, html })
+  });
+  let result;
+  try{ result = await res.json(); }catch(e){ throw new Error('Unexpected response from the PDF service.'); }
+  if(!res.ok || result.error) throw new Error(result.error || ('PDF service returned ' + res.status));
+  return result;
+}
 async function draftInOutlookGeneric(opts){
   if(!graphAccount){ alert('Connect Outlook first (button in the header) before drafting an email.'); return; }
   const btn = document.getElementById(opts.btnId);
@@ -1803,15 +1829,15 @@ async function draftInOutlookGeneric(opts){
     if(shouldAttachPdf && opts.pdfDocType){
       if(btn) btn.textContent = 'Generating PDF…';
       try{
-        const pdfBlob = await renderTextPdfBlob(opts.pdfDocType);
-        const base64 = await blobToBase64(pdfBlob);
+        const html = opts.pdfDocType === 'invoice' ? buildInvoicePdfHtml() : buildPdfQuotationHtml(opts.pdfDocType);
+        const result = await generatePdfViaBackend(opts.pdfDocType, html);
         attachments.push({
           '@odata.type': '#microsoft.graph.fileAttachment',
           name: `${safeFilenamePart(fv('vessel'))}-${opts.pdfDocType}.pdf`,
           contentType: 'application/pdf',
-          contentBytes: base64
+          contentBytes: result.pdfBase64
         });
-        if(opts.pdfDocType === 'invoice') saveInvoicePdfToOrder(pdfBlob); // fire-and-forget
+        if(result.path){ lastStoredPdfPaths[opts.pdfDocType] = result.path; if(document.getElementById('summaryContent')) renderSummary(); }
       }catch(e){
         console.error('TS: PDF attachment generation failed', e);
         const proceed = confirm('Could not generate the PDF to attach (' + (e && e.message ? e.message : 'unknown error') + ').\n\nCreate the draft anyway, without the attachment?');
@@ -6531,36 +6557,36 @@ function selectInvoiceEmailForManualCopy(){
 // it to) or if this fails; never blocks the person from getting their PDF
 // or draft either way, since this is a nice-to-have for the Summary tab,
 // not something the immediate task depends on.
-let lastStoredInvoicePdfPath = null;
-async function saveInvoicePdfToOrder(blob){
-  if(!isRealUuid(currentOrderDbId) || !window.TS || !window.TS.saveInvoicePdf) return;
+let lastStoredPdfPaths = { quotation:null, supplier:null, customer:null, invoice:null };
+async function openStoredPdf(docType){
+  const path = lastStoredPdfPaths[docType];
+  if(!path || !window.TS || !window.TS.getInvoicePdfUrl) return;
   try{
-    const base64 = await blobToBase64(blob);
-    lastStoredInvoicePdfPath = await window.TS.saveInvoicePdf(currentOrderDbId, base64);
-    if(document.getElementById('summaryContent')) renderSummary(); // refresh so the link appears if already viewing Summary
-  }catch(e){
-    console.warn('TS: saveInvoicePdfToOrder failed (non-fatal)', e);
-  }
-}
-async function openStoredInvoicePdf(){
-  if(!lastStoredInvoicePdfPath || !window.TS || !window.TS.getInvoicePdfUrl) return;
-  try{
-    const url = await window.TS.getInvoicePdfUrl(lastStoredInvoicePdfPath);
+    const url = await window.TS.getInvoicePdfUrl(path);
     window.open(url, '_blank');
   }catch(e){
-    alert('Could not open the stored invoice: ' + (e && e.message ? e.message : 'unknown error'));
+    alert('Could not open the stored PDF: ' + (e && e.message ? e.message : 'unknown error'));
   }
 }
-function openInvoicePdf(btnEl){
+async function openInvoicePdf(btnEl){
   if(getInvoiceType()==='invoice' && confirmProgressStatus('invoice')) markStatus('invoiced');
-  const html = buildInvoicePdfHtml();
-  const blob = new Blob([html], {type: 'text/html'});
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank');
-  if(!win){
-    alert('Your browser blocked the new tab. Please allow pop-ups for this site and try again.');
+  const btn = btnEl || null;
+  const originalLabel = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF…'; }
+  try{
+    const html = buildInvoicePdfHtml();
+    const result = await generatePdfViaBackend('invoice', html);
+    const invType = getInvoiceType();
+    const label = invType === 'proforma' ? 'Proforma-Invoice' : invType === 'commission' ? 'Commission-Invoice' : 'Invoice';
+    const blob = base64ToBlob(result.pdfBase64, 'application/pdf');
+    await downloadPdfBlob(blob, `${safeFilenamePart(fv('vessel'))}-${label}.pdf`);
+    if(result.path){ lastStoredPdfPaths.invoice = result.path; if(document.getElementById('summaryContent')) renderSummary(); }
+  }catch(e){
+    console.error('TS: openInvoicePdf failed', e);
+    alert('Could not generate the PDF: ' + (e && e.message ? e.message : 'unknown error'));
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
   }
-  setTimeout(()=>URL.revokeObjectURL(url), 60000);
 }
 // A simple on-screen recap — the Invoice page's real output is the PDF, not a
 // copyable email like the other pages, so this just confirms what's about to
@@ -6925,25 +6951,27 @@ async function downloadPdfBlob(blob, filename){
   setTimeout(()=>URL.revokeObjectURL(url), 60000);
 }
 
-function openPdfQuotation(docType, btnEl){
+async function openPdfQuotation(docType, btnEl){
   docType = docType || 'quotation';
   if(docType==='quotation' && confirmProgressStatus('quote')) markStatus('quoted');
   if(docType==='supplier') markSupplierConfirmedForCurrentView();
   if(docType==='customer' && confirmProgressStatus('customer')) markStatus('customerConfirmed');
-  // Opens the full letterhead HTML in a new tab for the browser's own Print
-  // -> Save as PDF — confirmed working well, including on mobile. If the
-  // filename/date shows up in the printed margins, that's the browser's
-  // print dialog "Headers and footers" option (usually under "More
-  // settings") — turning that off is a one-time setting on the device
-  // doing the printing, not something this page's own HTML/CSS can control.
-  const html = buildPdfQuotationHtml(docType);
-  const blob = new Blob([html], {type: 'text/html'});
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank');
-  if(!win){
-    alert('Your browser blocked the new tab. Please allow pop-ups for this site and try again.');
+  const label = { quotation:'Quotation', supplier:'Supplier-Confirmation', customer:'Customer-Confirmation' }[docType] || 'Document';
+  const btn = btnEl || null;
+  const originalLabel = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF…'; }
+  try{
+    const html = buildPdfQuotationHtml(docType);
+    const result = await generatePdfViaBackend(docType, html);
+    const blob = base64ToBlob(result.pdfBase64, 'application/pdf');
+    await downloadPdfBlob(blob, `${safeFilenamePart(fv('vessel'))}-${label}.pdf`);
+    if(result.path){ lastStoredPdfPaths[docType] = result.path; if(document.getElementById('summaryContent')) renderSummary(); }
+  }catch(e){
+    console.error('TS: openPdfQuotation failed', e);
+    alert('Could not generate the PDF: ' + (e && e.message ? e.message : 'unknown error'));
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
   }
-  setTimeout(()=>URL.revokeObjectURL(url), 60000);
 }
 
 
@@ -9023,6 +9051,7 @@ async function renderSummary(){
     body += summaryField('Payment terms', escHtml(getPaymentLine()));
     body += summaryField('Validity', fv('validityMins') ? escHtml(fv('validityMins')) + ' minutes' : '');
     if(quoteSelectedContacts.length) body += summaryField('Contacts', quoteSelectedContacts.map(contactLinkHtml).join(', '));
+    if(lastStoredPdfPaths.quotation) body += summaryField('Stored PDF', '<button type="button" class="btn-ghost btn-sm" onclick="openStoredPdf(\'quotation\')">View PDF</button>');
     html.push(summarySection('Quote', started, body, 'quote'));
   }
 
@@ -9035,6 +9064,7 @@ async function renderSummary(){
     body += summaryField('Order number', escHtml(orderNumberVal));
     body += summaryField('Payment terms', escHtml(getSupPaymentLine()));
     if(multiSupplierMode) body += summaryField('Multi-supplier mode', `On — ${confirmedSupplierNames.length} supplier(s) confirmed`);
+    if(lastStoredPdfPaths.supplier) body += summaryField('Stored PDF', '<button type="button" class="btn-ghost btn-sm" onclick="openStoredPdf(\'supplier\')">View PDF</button>');
     html.push(summarySection('Supply / Nominate', started, body, 'supply'));
   }
 
@@ -9044,6 +9074,7 @@ async function renderSummary(){
     let body = '';
     body += summaryField('Payment terms', escHtml(getCustPaymentLine()));
     if(custSelectedContacts.length) body += summaryField('Contacts', custSelectedContacts.map(contactLinkHtml).join(', '));
+    if(lastStoredPdfPaths.customer) body += summaryField('Stored PDF', '<button type="button" class="btn-ghost btn-sm" onclick="openStoredPdf(\'customer\')">View PDF</button>');
     html.push(summarySection('Customer / Confirm', started, body, 'customer'));
   }
 
@@ -9054,7 +9085,7 @@ async function renderSummary(){
     let body = '';
     body += summaryField('Invoice type', invTypeEl ? escHtml(cap(invTypeEl.value)) : '');
     body += summaryField('Final ETA', escHtml(fv('finalETA')));
-    if(lastStoredInvoicePdfPath) body += summaryField('Stored invoice', '<button type="button" class="btn-ghost btn-sm" onclick="openStoredInvoicePdf()">View PDF</button>');
+    if(lastStoredPdfPaths.invoice) body += summaryField('Stored PDF', '<button type="button" class="btn-ghost btn-sm" onclick="openStoredPdf(\'invoice\')">View PDF</button>');
     html.push(summarySection('Invoice', started, body, 'invoice'));
   }
 
