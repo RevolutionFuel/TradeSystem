@@ -9207,7 +9207,8 @@ const ITEM_DETAIL_SCHEMAS = {
     ],
     afterSave: async (item) => { await saveReferenceItemRemote('vessel', item); },
     onSaved: () => { renderVesselTable(); },
-    contactsFor: (item) => ({ vesselId: item.id })
+    contactsFor: (item) => ({ vesselId: item.id }),
+    hasMainImage: true, hasLogo: true, entityType: 'vessels'
   },
   owner: {
     kindLabel: 'Registered owner', listKey: 'ql-registered-owners', getList: () => REGISTERED_OWNERS,
@@ -9242,7 +9243,8 @@ const ITEM_DETAIL_SCHEMAS = {
     afterSave: async (item) => { await saveReferenceItemRemote('supplier', item); },
     onSaved: () => { renderSupplierTable(); },
     roleListName: 'SUPPLIERS',
-    contactsFor: (item) => ({ organizationId: item.id })
+    contactsFor: (item) => ({ organizationId: item.id }),
+    hasLogo: true, entityType: 'organizations'
   },
   agent: {
     kindLabel: 'Agent', listKey: 'ql-agents', getList: () => AGENTS,
@@ -9276,7 +9278,8 @@ const ITEM_DETAIL_SCHEMAS = {
     ],
     afterSave: async (item) => { await saveReferenceItemRemote('port', item); },
     onSaved: () => { renderPortTable(); },
-    hasMap: true
+    hasMap: true,
+    hasMainImage: true, entityType: 'ports'
   },
   product: {
     kindLabel: 'Product', listKey: 'ql-products', getList: () => PRODUCTS,
@@ -9370,6 +9373,52 @@ function cancelItemDetailEdit(){
   itemDetailState.editMode = false;
   renderItemDetail();
 }
+// Shows the current image (if any) plus an upload control — available
+// whether or not the rest of the form is in edit mode, since adding a photo
+// is a one-off action, not something that needs the full edit/save cycle.
+// kind is 'main' or 'logo'; pathField distinguishes which item property to
+// read/write so vessels (which have both) don't collide with each other.
+function itemDetailImageFieldHtml(item, kind, label){
+  const pathField = kind === 'main' ? 'mainImagePath' : 'logoPath';
+  const path = item[pathField];
+  const url = (path && window.TS && window.TS.getItemImageUrl) ? window.TS.getItemImageUrl(path) : null;
+  const inputId = 'itemDetailImageInput-' + kind;
+  const previewHtml = url
+    ? `<img src="${escAttr(url)}" alt="${escAttr(label)}" style="max-width:100%; max-height:180px; border-radius:8px; display:block; margin-bottom:8px; object-fit:contain; background:#F5F1E8;">`
+    : `<div class="hint" style="margin-bottom:8px;">No ${escHtml(label.toLowerCase())} yet.</div>`;
+  return `<div class="item-detail-field">
+    <span class="item-detail-label">${escHtml(label)}</span>
+    ${previewHtml}
+    <input type="file" id="${inputId}" accept="image/*" style="display:none;" onchange="uploadItemDetailImage('${kind}', this)">
+    <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${url ? 'Replace' : 'Upload'} ${escHtml(label.toLowerCase())}</button>
+  </div>`;
+}
+async function uploadItemDetailImage(kind, inputEl){
+  const file = inputEl.files && inputEl.files[0];
+  if(!file) return;
+  const schema = ITEM_DETAIL_SCHEMAS[itemDetailState.kind];
+  const list = schema.getList();
+  const item = list.find(x => x.id === itemDetailState.id);
+  if(!item) return;
+  if(!isRealUuid(item.id)){
+    alert('Save this record once (with a name) before adding an image \u2014 the image needs somewhere real to attach to.');
+    inputEl.value = '';
+    return;
+  }
+  try{
+    const base64 = await blobToBase64(file);
+    const extension = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
+    const path = await window.TS.uploadItemImage(schema.entityType, item.id, kind, base64, file.type || 'image/jpeg', extension);
+    if(kind === 'main') item.mainImagePath = path; else item.logoPath = path;
+    await schema.afterSave(item);
+    renderItemDetail();
+  }catch(e){
+    console.error('TS: image upload failed', e);
+    alert('Could not upload the image: ' + (e && e.message ? e.message : 'unknown error'));
+  }finally{
+    inputEl.value = '';
+  }
+}
 function renderItemDetail(){
   if(!itemDetailState.kind) return;
   const schema = ITEM_DETAIL_SCHEMAS[itemDetailState.kind];
@@ -9419,11 +9468,13 @@ function renderItemDetail(){
       ${roleTogglesHtml(item, schema.roleListName)}
     </div>` : '';
   const mapSectionHtml = schema.hasMap ? `<div class="item-detail-field" id="itemDetailMapSection"></div>` : '';
+  const imageSectionHtml = schema.hasMainImage ? itemDetailImageFieldHtml(item, 'main', 'Main image') : '';
+  const logoSectionHtml = schema.hasLogo ? itemDetailImageFieldHtml(item, 'logo', 'Logo') : '';
   const contactsSectionHtml = schema.contactsFor ? `<div class="item-detail-field">
       <span class="item-detail-label">Contacts</span>
       <div id="itemDetailContactsSection"><div class="hint">Loading\u2026</div></div>
     </div>` : '';
-  document.getElementById('itemDetailFields').innerHTML = fieldsHtml + emptyStateHtml + rolesHtml + mapSectionHtml + contactsSectionHtml;
+  document.getElementById('itemDetailFields').innerHTML = imageSectionHtml + logoSectionHtml + fieldsHtml + emptyStateHtml + rolesHtml + mapSectionHtml + contactsSectionHtml;
   if(schema.hasMap) renderItemDetailMap(item);
   if(schema.contactsFor) renderItemDetailContacts(item, schema);
 }
