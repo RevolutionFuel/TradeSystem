@@ -749,7 +749,7 @@
           <div class="copybar">
             <button class="btn-amber" id="draftQuoteOutlookBtn" onclick="draftQuoteInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
             <button class="btn-ghost" onclick="copyRich()">📋 Copy for email</button>
-            <button class="btn-ghost" onclick="openPdfQuotation()" title="Opens a formal letterhead version in a new tab, ready to Print → Save as PDF">📄 View PDF Quotation</button>
+            <button class="btn-ghost" onclick="openPdfQuotation('quotation', this)" title="Downloads a formal letterhead PDF">📄 Download PDF Quotation</button>
             <span class="status-msg" id="copyStatus">✓ Copied</span>
           </div>
           <div id="profitSummaryQuote"></div>
@@ -922,7 +922,7 @@
             <div class="copybar">
               <button class="btn-amber" id="draftSupplyOutlookBtn" onclick="draftSupplyInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
               <button class="btn-ghost" onclick="copySupplyRich()">📋 Copy for email</button>
-              <button class="btn-ghost" onclick="openPdfQuotation('supplier')" title="Opens a formal letterhead version in a new tab, ready to Print → Save as PDF">📄 View PDF Supplier Confirmation</button>
+              <button class="btn-ghost" onclick="openPdfQuotation('supplier', this)" title="Downloads a formal letterhead PDF">📄 Download PDF Supplier Confirmation</button>
               <span class="status-msg" id="supplyCopyStatus">✓ Copied</span>
             </div>
             <div id="profitSummarySupply"></div>
@@ -1065,7 +1065,7 @@
             <div class="copybar">
               <button class="btn-amber" id="draftCustomerOutlookBtn" onclick="draftCustomerInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
               <button class="btn-ghost" onclick="copyCustomerRich()">📋 Copy for email</button>
-              <button class="btn-ghost" onclick="openPdfQuotation('customer')" title="Opens a formal letterhead version in a new tab, ready to Print → Save as PDF">📄 View PDF Order Confirmation</button>
+              <button class="btn-ghost" onclick="openPdfQuotation('customer', this)" title="Downloads a formal letterhead PDF">📄 Download PDF Order Confirmation</button>
               <span class="status-msg" id="customerCopyStatus">✓ Copied</span>
             </div>
             <div id="profitSummaryCustomer"></div>
@@ -1165,7 +1165,7 @@
             <div class="copybar">
               <button class="btn-amber" id="draftInvoiceOutlookBtn" onclick="draftInvoiceInOutlook()" title="Creates a real draft in your connected Outlook mailbox, with the invoice PDF attached">✉️ Draft in Outlook</button>
               <button class="btn-ghost" onclick="copyInvoiceEmailRich()">📋 Copy for email</button>
-              <button class="btn-ghost" onclick="openInvoicePdf()" id="invoicePdfButton" title="Opens a formal letterhead version in a new tab, ready to Print → Save as PDF">📄 View PDF</button>
+              <button class="btn-ghost" onclick="openInvoicePdf(this)" id="invoicePdfButton" title="Downloads a formal letterhead PDF">📄 Download PDF</button>
               <span class="status-msg" id="invoiceCopyStatus">✓ Copied</span>
             </div>
             <div id="invoiceSummaryPreview"></div>
@@ -6481,16 +6481,23 @@ function selectInvoiceEmailForManualCopy(){
   }
 }
 
-function openInvoicePdf(){
+async function openInvoicePdf(btnEl){
   if(getInvoiceType()==='invoice' && confirmProgressStatus('invoice')) markStatus('invoiced');
-  const html = buildInvoicePdfHtml();
-  const blob = new Blob([html], {type: 'text/html'});
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank');
-  if(!win){
-    alert('Your browser blocked the new tab. Please allow pop-ups for this site and try again.');
+  const btn = btnEl || null;
+  const originalLabel = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF…'; }
+  try{
+    const html = buildInvoicePdfHtml();
+    const blob = await renderLetterheadToPdfBlob(html);
+    const invType = getInvoiceType();
+    const label = invType === 'proforma' ? 'Proforma-Invoice' : invType === 'commission' ? 'Commission-Invoice' : 'Invoice';
+    await downloadPdfBlob(blob, `${safeFilenamePart(fv('vessel'))}-${label}.pdf`);
+  }catch(e){
+    console.error('TS: openInvoicePdf failed', e);
+    alert('Could not generate the PDF: ' + (e && e.message ? e.message : 'unknown error'));
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
   }
-  setTimeout(()=>URL.revokeObjectURL(url), 60000);
 }
 // A simple on-screen recap — the Invoice page's real output is the PDF, not a
 // copyable email like the other pages, so this just confirms what's about to
@@ -6558,19 +6565,84 @@ async function clearInvoiceFields(){
   renderInvoicePreviewOnly();
 }
 
-function openPdfQuotation(docType){
+// ============ REAL PDF GENERATION ============
+// Previously this opened the letterhead HTML in a new tab and relied on the
+// browser's own Print -> Save as PDF: that's what stamped the filename/date
+// into the margins (a browser print-dialog setting, not something CSS can
+// control), and mobile browsers' print-to-PDF flows are unreliable to the
+// point of not really working at all. html2pdf.js renders the exact same
+// letterhead HTML/CSS already built for this app directly into a real PDF
+// file and triggers a download — no browser print dialog involved anywhere,
+// so it behaves identically on desktop and mobile. Loaded on first use
+// rather than up front, since it's a sizeable library most sessions won't
+// need immediately.
+let html2pdfLoadPromise = null;
+function ensureHtml2Pdf(){
+  if(window.html2pdf) return Promise.resolve();
+  if(html2pdfLoadPromise) return html2pdfLoadPromise;
+  html2pdfLoadPromise = new Promise((resolve, reject)=>{
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Could not load the PDF library \u2014 check your connection and try again.'));
+    document.head.appendChild(script);
+  });
+  return html2pdfLoadPromise;
+}
+// Takes the same full standalone-HTML-document string the old print flow
+// used, strips the now-unneeded "Print / Save as PDF" button, and renders
+// just its style + body content into an off-screen container for html2pdf
+// to convert. Returns a real PDF Blob — used both for direct download and
+// for attaching to an Outlook draft.
+async function renderLetterheadToPdfBlob(fullHtml){
+  await ensureHtml2Pdf();
+  const parsed = new DOMParser().parseFromString(fullHtml, 'text/html');
+  parsed.querySelectorAll('button').forEach(b=>b.remove());
+  const styleHtml = Array.from(parsed.querySelectorAll('style')).map(s=>s.outerHTML).join('');
+  const container = document.createElement('div');
+  container.style.cssText = 'position:fixed; left:-9999px; top:0; width:794px; background:#fff;';
+  container.innerHTML = styleHtml + parsed.body.innerHTML;
+  document.body.appendChild(container);
+  try{
+    const opt = {
+      margin: 10,
+      image: { type:'jpeg', quality:0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
+    };
+    return await window.html2pdf().set(opt).from(container).outputPdf('blob');
+  } finally {
+    container.remove();
+  }
+}
+async function downloadPdfBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 60000);
+}
+function safeFilenamePart(s){ return (s||'').trim().replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,'') || 'Document'; }
+
+async function openPdfQuotation(docType, btnEl){
   docType = docType || 'quotation';
   if(docType==='quotation' && confirmProgressStatus('quote')) markStatus('quoted');
   if(docType==='supplier') markSupplierConfirmedForCurrentView();
   if(docType==='customer' && confirmProgressStatus('customer')) markStatus('customerConfirmed');
-  const html = buildPdfQuotationHtml(docType);
-  const blob = new Blob([html], {type: 'text/html'});
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank');
-  if(!win){
-    alert('Your browser blocked the new tab. Please allow pop-ups for this site and try again.');
+  const label = { quotation:'Quotation', supplier:'Supplier-Confirmation', customer:'Customer-Confirmation' }[docType] || 'Document';
+  const btn = btnEl || null;
+  const originalLabel = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF…'; }
+  try{
+    const html = buildPdfQuotationHtml(docType);
+    const blob = await renderLetterheadToPdfBlob(html);
+    await downloadPdfBlob(blob, `${safeFilenamePart(fv('vessel'))}-${label}.pdf`);
+  }catch(e){
+    console.error('TS: openPdfQuotation failed', e);
+    alert('Could not generate the PDF: ' + (e && e.message ? e.message : 'unknown error'));
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
   }
-  setTimeout(()=>URL.revokeObjectURL(url), 60000);
 }
 
 function formatDateForQuote(isoDate){
