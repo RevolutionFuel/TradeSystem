@@ -3581,26 +3581,34 @@ function productBlockName(b){
   if(b.kind === 'fuel') return b.grade === 'other' ? (b.otherFuel||'') : (b.grade||'');
   return b.otherProductName === '__custom' ? (b.otherProductCustom||'') : (b.otherProductName||'');
 }
-// A best-effort rollup for filtering/reporting later, not a precision
-// financial total (fee amounts are summed at face value here, without the
-// fixed/integer/density unit-kind scaling the app's own displayed totals
-// apply) — the authoritative figures always remain the actual
-// order_products/order_product_fees rows, this is just a cheap cached guide.
+// The order-level totals actually saved to the database (sales_total,
+// purchase_total, etc.) — built from computeOrderTotals(), the same
+// unit-aware calculation the Order Summary box already used correctly, so
+// this is no longer a separate, simpler approximation that could disagree
+// with it. A genuinely mixed-currency order (rare) still needs a single
+// number for these particular DB columns, so the largest currency's total
+// is used for that case — full multi-currency detail lives in the saved
+// state's own productBlocks either way, this is just the at-a-glance figure.
 function computeOrderSaveTotals(){
-  let totalLitres = 0, salesTotal = 0, salesCurrency = '', purchaseTotal = 0, purchaseCurrency = '';
-  (productBlocks||[]).forEach(b=>{
+  let totalLitres = 0;
+  productBlocks.forEach(b=>{
     const qty = parseFloat(b.quantity) || 0;
     if(qty && CORE_VOLUME_LITRES_PER[b.unit]) totalLitres += qty * CORE_VOLUME_LITRES_PER[b.unit];
-    const sellPrice = parseFloat(b.sellingPrice) || 0;
-    if(sellPrice && qty){ salesTotal += sellPrice * qty; if(!salesCurrency) salesCurrency = b.currency || ''; }
-    (b.fees||[]).forEach(f=>{ salesTotal += parseFloat(f.amount) || 0; });
-    const costPrice = parseFloat(b.costPrice) || 0;
-    if(costPrice && qty){ purchaseTotal += costPrice * qty; if(!purchaseCurrency) purchaseCurrency = b.costCurrency || ''; }
-    (b.costFees||[]).forEach(f=>{ purchaseTotal += parseFloat(f.amount) || 0; });
   });
+  const dominantCurrencyTotal = (byCurrency) => {
+    const currencies = Object.keys(byCurrency);
+    if(!currencies.length) return { total: null, currency: null };
+    const currency = currencies.reduce((a,b)=> byCurrency[b] > byCurrency[a] ? b : a);
+    return { total: byCurrency[currency], currency };
+  };
+  const sale = computeOrderTotals('sale');
+  const cost = computeOrderTotals('cost');
+  const saleDom = dominantCurrencyTotal(sale.byCurrency);
+  const costDom = dominantCurrencyTotal(cost.byCurrency);
   return {
-    totalVolumeLitres: totalLitres || null, salesTotal: salesTotal || null, salesCurrency: salesCurrency || null,
-    purchaseTotal: purchaseTotal || null, purchaseCurrency: purchaseCurrency || null
+    totalVolumeLitres: totalLitres || null,
+    salesTotal: saleDom.total, salesCurrency: saleDom.currency,
+    purchaseTotal: costDom.total, purchaseCurrency: costDom.currency
   };
 }
 function buildOrderProductLines(){
@@ -4051,13 +4059,25 @@ function getSupplyViewProducts(){
 // "Supplier Confirmed" only advances once every distinct supplier has had
 // their own confirmation copied/PDF'd — in single-supplier mode there's only
 // ever one to confirm, so this behaves exactly as before.
-function markSupplierConfirmedForCurrentView(){
+// Auto-assigns the next order number the first time either confirmation
+// actually happens, if the order doesn't already have one — orders that
+// never got a manually-typed number no longer stay blank indefinitely.
+// Never overwrites an existing number (manually typed or already assigned).
+async function ensureOrderNumberAssigned(){
+  const current = fv('orderNumberSupply') || fv('orderNumberCustomer') || fv('orderNumberInvoice');
+  if(current) return;
+  await assignNextOrderNumber();
+}
+async function confirmCustomerAndAssignOrderNumber(){
+  if(confirmProgressStatus('customer')){ markStatus('customerConfirmed'); await ensureOrderNumberAssigned(); }
+}
+async function markSupplierConfirmedForCurrentView(){
   if(!multiSupplierMode){
     // Single-supplier mode — exactly the original behavior, completely
     // unaffected by the multi-supplier tracking below (which requires at
     // least one named supplier to ever complete, and shouldn't block the
     // ordinary single-supplier flow when no supplier has been named yet).
-    if(confirmProgressStatus('supply')) markStatus('supplierConfirmed');
+    if(confirmProgressStatus('supply')){ markStatus('supplierConfirmed'); await ensureOrderNumberAssigned(); }
     return;
   }
   const supplierName = getCurrentSupplierName();
@@ -4066,7 +4086,7 @@ function markSupplierConfirmedForCurrentView(){
   }
   const distinct = getDistinctSuppliers();
   const allDone = distinct.length > 0 && distinct.every(s => confirmedSupplierNames.includes(s));
-  if(allDone && confirmProgressStatus('supply')) markStatus('supplierConfirmed');
+  if(allDone && confirmProgressStatus('supply')){ markStatus('supplierConfirmed'); await ensureOrderNumberAssigned(); }
 }
 
 async function addNewVesselFromForm(inputId){
@@ -5492,7 +5512,21 @@ function calcFeeTotal(fee, productQty, productUnit, convFactorField){
   }
   return calcLineTotal(productQty, productUnit, fee.amount, feeUnit, fee[convFactorField]);
 }
-function computeOrderTotals(){
+// The single source of truth for order totals — sale side by default, or
+// pass 'cost' for the purchase-side equivalent. Anything needing an order
+// total (the Order Summary box, the saved/DB total, the Summary tab) should
+// call this rather than recalculating independently — a previous separate
+// calculation elsewhere (computeOrderSaveTotals) used plain quantity×price
+// with no unit conversion, which was silently wrong whenever a product's
+// price was quoted in a different unit than its quantity.
+function computeOrderTotals(side){
+  side = side === 'cost' ? 'cost' : 'sale';
+  const priceField = side === 'cost' ? 'costPrice' : 'sellingPrice';
+  const priceUnitField = side === 'cost' ? 'costPriceUnit' : 'sellingPriceUnit';
+  const convFactorField = side === 'cost' ? 'costConversionFactor' : 'sellingConversionFactor';
+  const currencyField = side === 'cost' ? 'costCurrency' : 'currency';
+  const feesField = side === 'cost' ? 'costFees' : 'fees';
+  const feeConvField = side === 'cost' ? 'costFeeConversionFactor' : 'sellingConversionFactor';
   const byCurrency = {};
   let hasExcluded = false;
   const add = (currency, amount) => {
@@ -5500,31 +5534,31 @@ function computeOrderTotals(){
     byCurrency[currency] = (byCurrency[currency] || 0) + amount;
   };
   productBlocks.forEach(b=>{
-    if(b.quantity && b.sellingPrice){
-      const lineTotal = calcLineTotal(b.quantity, b.unit, b.sellingPrice, b.sellingPriceUnit || b.unit, b.sellingConversionFactor);
-      if(lineTotal !== null) add(b.currency, lineTotal);
+    if(b.quantity && b[priceField]){
+      const lineTotal = calcLineTotal(b.quantity, b.unit, b[priceField], b[priceUnitField] || b.unit, b[convFactorField]);
+      if(lineTotal !== null) add(b[currencyField], lineTotal);
       else hasExcluded = true;
     }
-    (b.fees||[]).forEach(f=>{
+    (b[feesField]||[]).forEach(f=>{
       const amt = parseNum(f.amount);
       if(amt === null) return; // nothing entered for this fee yet — nothing to add
       const feeUnit = f.unit || 'Lumpsum';
       if(feeUnit === 'Lumpsum'){
-        add(b.currency, amt); // flat charge, not a rate — added directly, no quantity multiplication
+        add(b[currencyField], amt); // flat charge, not a rate — added directly, no quantity multiplication
       } else {
         // A per-unit fee (e.g. "$0.15 per litre") needs multiplying across the
         // product's full quantity, converting first if the units don't match —
         // exactly the same maths as the product's own price line.
-        const feeTotal = calcFeeTotal(f, b.quantity, b.unit, 'sellingConversionFactor');
-        if(feeTotal !== null) add(b.currency, feeTotal);
+        const feeTotal = calcFeeTotal(f, b.quantity, b.unit, feeConvField);
+        if(feeTotal !== null) add(b[currencyField], feeTotal);
         else hasExcluded = true;
       }
     });
   });
   return {byCurrency, hasExcluded};
 }
-function formatOrderTotalLine(){
-  const {byCurrency, hasExcluded} = computeOrderTotals();
+function formatOrderTotalLine(side){
+  const {byCurrency, hasExcluded} = computeOrderTotals(side);
   const currencies = Object.keys(byCurrency);
   if(currencies.length === 0) return null;
   const parts = currencies.map(c => `${c} ${formatNumberDisplay(byCurrency[c].toFixed(2))}`);
@@ -5741,8 +5775,21 @@ function buildProfitSummaryHtml(){
   });
 
   const totalsLine = (byCurrency) => Object.keys(byCurrency).map(c => `${c} ${formatNumberDisplay(byCurrency[c].toFixed(2))}`).join(' + ');
-  const buyTotalsHtml = totalsLine(byCurrencyBuy);
-  const sellTotalsHtml = totalsLine(byCurrencySell);
+  // Sale/purchase grand totals now come from computeOrderTotals() — the same
+  // single-source-of-truth calculation the Order Summary box and the saved
+  // order total use — rather than this box's own separate accumulation,
+  // which only counted a product once profit was fully resolvable (both
+  // sides present, no missing exchange rate). That meant a product with a
+  // sale price but no purchase price yet, or an unresolved exchange rate,
+  // silently vanished from "Total sale value" here even though the Order
+  // Summary box correctly still counted its sale side. Total profit below
+  // still uses this box's own per-row figures, since profit genuinely can't
+  // be shown for a row that isn't fully resolvable — but the sale/purchase
+  // totals shouldn't have depended on that same restriction.
+  const saleTotals = computeOrderTotals('sale');
+  const costTotals = computeOrderTotals('cost');
+  const buyTotalsHtml = totalsLine(costTotals.byCurrency);
+  const sellTotalsHtml = totalsLine(saleTotals.byCurrency);
   const grandProfit = Object.values(byCurrencyProfit).reduce((a,b)=>a+b,0);
   const profitLabel = grandProfit < 0 ? 'Total loss' : 'Total profit';
   const profitTotalsHtml = totalsLine(byCurrencyProfit);
@@ -6976,7 +7023,7 @@ async function openPdfQuotation(docType, btnEl){
   docType = docType || 'quotation';
   if(docType==='quotation' && confirmProgressStatus('quote')) markStatus('quoted');
   if(docType==='supplier') markSupplierConfirmedForCurrentView();
-  if(docType==='customer' && confirmProgressStatus('customer')) markStatus('customerConfirmed');
+  if(docType==='customer') await confirmCustomerAndAssignOrderNumber();
   const label = { quotation:'Quotation', supplier:'Supplier-Confirmation', customer:'Customer-Confirmation' }[docType] || 'Document';
   const btn = btnEl || null;
   const originalLabel = btn ? btn.textContent : '';
@@ -8504,7 +8551,7 @@ function selectSupplyForManualCopy(){
 
 /* ===================== CUSTOMER CONFIRMATION COPY ===================== */
 async function copyCustomerRich(){
-  if(confirmProgressStatus('customer')) markStatus('customerConfirmed');
+  confirmCustomerAndAssignOrderNumber();
   const fragment = buildCustomerEmailHtml();
   const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${fragment}</body></html>`;
   const plain = buildCustomerPlainText();
@@ -8525,12 +8572,12 @@ async function copyCustomerRich(){
   }
 }
 async function copyCustomerPlain(){
-  if(confirmProgressStatus('customer')) markStatus('customerConfirmed');
+  confirmCustomerAndAssignOrderNumber();
   try{ await navigator.clipboard.writeText(buildCustomerPlainText()); flash('customerCopyStatus'); }
   catch(e){ selectCustomerForManualCopy(); }
 }
 function selectCustomerForManualCopy(){
-  if(confirmProgressStatus('customer')) markStatus('customerConfirmed');
+  confirmCustomerAndAssignOrderNumber();
   const hiddenEl = document.getElementById('customerHtmlSource');
   hiddenEl.innerHTML = buildCustomerEmailHtml();
   let copied = false;
@@ -9053,6 +9100,20 @@ async function renderSummary(){
       body += `<div class="item-detail-field"><span class="item-detail-label">Products</span><table class="summary-products-table"><tbody>${rows}</tbody></table></div>`;
     }
     html.push(summarySection('Vessel & Order Details', started, body, 'order'));
+  }
+
+  // ---- Pricing ----
+  // Reuses buildOrderSummaryTableHtml() and buildProfitSummaryHtml() as-is —
+  // the same functions already confirmed correct (unit-aware) elsewhere —
+  // rather than computing anything fresh here, so this can never drift from
+  // what the Order Summary box or the profit box themselves show. Plain
+  // styling for now; formatting to be refined later.
+  {
+    const pricingStarted = productBlocks.some(pb => pb.sellingPrice || pb.costPrice);
+    const orderTableHtml = buildOrderSummaryTableHtml('selling', true);
+    const profitHtml = buildProfitSummaryHtml();
+    const body = (orderTableHtml || '') + (profitHtml || '');
+    html.push(summarySection('Pricing', pricingStarted, body, 'quote'));
   }
 
   // ---- Enquire ----
