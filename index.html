@@ -6493,8 +6493,7 @@ async function openInvoicePdf(btnEl){
   const originalLabel = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF…'; }
   try{
-    const html = buildInvoicePdfHtml();
-    const blob = await renderLetterheadToPdfBlob(html);
+    const blob = await renderTextPdfBlob('invoice');
     const invType = getInvoiceType();
     const label = invType === 'proforma' ? 'Proforma-Invoice' : invType === 'commission' ? 'Commission-Invoice' : 'Invoice';
     await downloadPdfBlob(blob, `${safeFilenamePart(fv('vessel'))}-${label}.pdf`);
@@ -6571,82 +6570,285 @@ async function clearInvoiceFields(){
   renderInvoicePreviewOnly();
 }
 
-// ============ REAL PDF GENERATION ============
-// Previously this opened the letterhead HTML in a new tab and relied on the
-// browser's own Print -> Save as PDF: that's what stamped the filename/date
-// into the margins (a browser print-dialog setting, not something CSS can
-// control), and mobile browsers' print-to-PDF flows are unreliable to the
-// point of not really working at all. html2pdf.js renders the exact same
-// letterhead HTML/CSS already built for this app directly into a real PDF
-// file and triggers a download — no browser print dialog involved anywhere,
-// so it behaves identically on desktop and mobile. Loaded on first use
-// rather than up front, since it's a sizeable library most sessions won't
-// need immediately.
-let html2pdfLoadPromise = null;
-function ensureHtml2Pdf(){
-  if(window.html2pdf) return Promise.resolve();
-  if(html2pdfLoadPromise) return html2pdfLoadPromise;
-  html2pdfLoadPromise = new Promise((resolve, reject)=>{
+// ============ REAL TEXT-BASED PDF GENERATION (jsPDF) ============
+// Deliberately not a screenshot of the page — real, selectable, copyable
+// text, which matters most for something like the bank details on an
+// invoice. Three attempts at rendering the existing HTML letterhead via
+// html2canvas all failed in different ways (blank output, then a library
+// version bug, then that CDN bundle not exposing what was needed) — and
+// even a working version of that approach would still have rasterized
+// everything into an image, losing selectable text either way. This is a
+// simpler layout than the old HTML letterhead (single column, no page
+// background flourishes), in exchange for output that's actually reliable
+// and has real text in it. jsPDF + autoTable are pinned to specific LTS-ish
+// releases and loaded directly — no wrapper library involved this time.
+let pdfLibsLoadPromise = null;
+function loadScriptOnce(src){
+  return new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    // Pinned to 0.9.3 deliberately, not the newer 0.10.1 — the library's own
-    // README explicitly warns v0.10 has unresolved reported issues, and
-    // 0.10.1 is confirmed (independently, by others hitting the exact same
-    // symptom) to produce a blank PDF via this same API. 0.9.3 is the
-    // version documented to actually work.
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.9.3/html2pdf.bundle.min.js';
+    script.src = src;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Could not load the PDF library \u2014 check your connection and try again.'));
+    script.onerror = () => reject(new Error('Could not load a required script \u2014 check your connection and try again.'));
     document.head.appendChild(script);
   });
-  return html2pdfLoadPromise;
 }
-// Takes the same full standalone-HTML-document string the old print flow
-// used, strips the now-unneeded "Print / Save as PDF" button, and renders
-// just its style + body content into an off-screen container for html2pdf
-// to convert. Returns a real PDF Blob — used both for direct download and
-// for attaching to an Outlook draft.
-async function renderLetterheadToPdfBlob(fullHtml){
-  await ensureHtml2Pdf();
-  const parsed = new DOMParser().parseFromString(fullHtml, 'text/html');
-  parsed.querySelectorAll('button').forEach(b=>b.remove());
-  const styleHtml = Array.from(parsed.querySelectorAll('style')).map(s=>s.outerHTML).join('');
-  const container = document.createElement('div');
-  // html2canvas has a well-documented limitation: elements positioned
-  // off-screen (e.g. left:-9999px) render as blank, since it effectively
-  // works within the document's actual layout bounds rather than truly
-  // rendering arbitrary off-screen content. Kept on-screen instead, just
-  // hidden behind everything else via a negative z-index — invisible to
-  // the person, but still something the renderer actually paints.
-  container.style.cssText = 'position:fixed; top:0; left:0; z-index:-9999; width:794px; background:#fff;';
-  container.innerHTML = styleHtml + parsed.body.innerHTML;
-  document.body.appendChild(container);
-  // Give the browser a full layout/paint cycle before capturing.
-  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  try{
-    const opt = {
-      margin: 10,
-      image: { type:'jpeg', quality:0.98 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit:'mm', format:'a4', orientation:'portrait' }
-    };
-    // Back to html2pdf.js's own wrapper (not calling html2canvas directly —
-    // this particular bundle doesn't expose it as a standalone global) —
-    // .toPdf().output('blob') is the exact call confirmed, independently,
-    // to work correctly specifically on v0.9.3, which is why the version
-    // pin above matters as much as this call shape does.
-    const blob = await window.html2pdf().set(opt).from(container).toPdf().output('blob');
-    // A real letterhead PDF is never this small — a near-empty file is the
-    // one thing a size check alone can reliably catch, so it's worth
-    // surfacing as a clear error rather than downloading a bad file with no
-    // explanation, even though it can't tell us anything about content
-    // that IS there but wrong.
-    if(!blob || blob.size < 2000){
-      throw new Error('The generated file looks empty (' + (blob ? blob.size : 0) + ' bytes) — something in the PDF rendering failed silently. Please tell whoever\'s maintaining this app.');
+function ensurePdfLibs(){
+  if(window.jspdf && window.jspdf.jsPDF) return Promise.resolve();
+  if(pdfLibsLoadPromise) return pdfLibsLoadPromise;
+  pdfLibsLoadPromise = (async () => {
+    await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js');
+    await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+  })();
+  return pdfLibsLoadPromise;
+}
+function safeFilenamePart(s){ return (s||'').trim().replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,'') || 'Document'; }
+
+// A small layout helper wrapping jsPDF's raw text-positioning API — tracks
+// the current vertical cursor, wraps text, and pages automatically.
+function createPdfCursor(doc, margin){
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const maxWidth = pageWidth - margin*2;
+  let y = margin;
+  function ensureRoom(needed){ if(y + needed > pageHeight - margin){ doc.addPage(); y = margin; } }
+  return {
+    pageWidth, maxWidth, margin,
+    y: () => y,
+    space(mm){ y += mm; },
+    rule(color){ ensureRoom(4); doc.setDrawColor(color || '#DAD3C1'); doc.line(margin, y, pageWidth-margin, y); y += 4; },
+    text(str, opts){
+      opts = opts || {};
+      doc.setFont('helvetica', opts.bold ? 'bold' : 'normal');
+      doc.setFontSize(opts.size || 10);
+      doc.setTextColor(opts.color || '#0F2A3F');
+      const wrapWidth = opts.width || maxWidth;
+      const lines = doc.splitTextToSize(String(str), wrapWidth);
+      lines.forEach(line => {
+        ensureRoom(5.2);
+        doc.text(line, opts.x || margin, y);
+        y += (opts.lineHeight || 5.2);
+      });
+    },
+    heading(str){
+      this.space(3); this.rule('#DAD3C1');
+      this.text(str, { bold:true, size:12.5, color:'#1F064F' });
+      this.space(1);
+    },
+    setY(newY){ y = newY; }
+  };
+}
+
+// Extracts the document's content once, shared across all 4 types — mirrors
+// the same docType branching the old HTML builder used, so the underlying
+// business rules (which recipient block, which notes list, which
+// signature) stay identical; only how it's laid out on the page changed.
+function buildPdfContentModel(docType){
+  const cfg = PDF_DOC_CONFIG[docType] || PDF_DOC_CONFIG.quotation;
+  const isConfirmation = (docType === 'supplier' || docType === 'customer');
+  const vesselName = fv('vessel') || fv('vesselOrder') || '';
+  const quoteRefVal = fv('quoteRef') || `RFM-${new Date().getFullYear()}-DRAFT`;
+  const orderNum = docType === 'supplier' ? getSupplyOrderNumberForView() : (fv('orderNumberSupply') || fv('orderNumberCustomer'));
+  const ref = (docType !== 'quotation' && orderNum) ? orderNum : quoteRefVal;
+  const dateIssued = formatDateForQuote(fv('quoteDate')) || formatDateForQuote(new Date().toISOString().slice(0,10));
+  const contactNameFromGreeting = (greeting) => (greeting || '').replace(/^\s*Dear\s+/i, '').replace(/,\s*$/, '').trim();
+
+  const recipientLines = [];
+  if(docType === 'supplier'){
+    const supplierNameText = getCurrentSupplierName();
+    if(supplierNameText){
+      const supContact = contactNameFromGreeting(fv('supGreeting'));
+      if(supContact) recipientLines.push(`Contact: ${supContact}`);
+      recipientLines.push(supplierNameText);
+      const supplierRecord = SUPPLIERS.find(s => s.name.trim().toLowerCase() === supplierNameText.trim().toLowerCase());
+      if(supplierRecord && supplierRecord.address) formatAddressLines(supplierRecord.address).forEach(l=>recipientLines.push(l));
+    } else {
+      recipientLines.push('(No supplier selected)');
     }
-    return blob;
-  } finally {
-    container.remove();
+  } else {
+    const vesselRecord = VESSELS.find(v => v.name.trim().toLowerCase() === vesselName.trim().toLowerCase());
+    const owner = vesselRecord ? ownerRecord(vesselRecord.ownerId) : null;
+    const ownerDisplayName = fv('vOwner');
+    if(docType === 'customer'){
+      const custContact = contactNameFromGreeting(fv('custGreeting'));
+      if(custContact) recipientLines.push(`Contact: ${custContact}`);
+    }
+    if(vesselName){
+      recipientLines.push(`Master, Owner and Operator of: ${vesselName}`);
+      if(ownerDisplayName) recipientLines.push(`and: ${ownerDisplayName}`);
+      if(owner && owner.address) formatAddressLines(owner.address).forEach(l=>recipientLines.push(l));
+    }
   }
+
+  const sigKey = docType === 'supplier' ? getSupSignatureKey() : docType === 'customer' ? getCustSignatureKey() : getSignatureKey();
+  const issuedByLines = [];
+  issuedByLines.push('Revolution Fuel (Marine) Limited');
+  issuedByLines.push('45 Fitzroy Street, London, W1T 6EB');
+  if(sigKey !== 'blank' && SIGNATURES[sigKey] && SIGNATURES[sigKey].name){
+    issuedByLines.push(`Authorised Signatory: ${SIGNATURES[sigKey].name}`);
+  }
+
+  const productSourceBlocks = docType === 'supplier' ? getSupplyViewProducts() : productBlocks;
+  const productSections = productSourceBlocks.map(b=>{
+    const d = productBlockText(b, false, false);
+    const label = d.isOther ? (d.name||'Other Product') : (d.grade||'Product');
+    const items = [];
+    if(!d.isOther){
+      if(d.quantity){
+        let q = `${formatNumberDisplay(d.quantity)} ${d.unit}`;
+        if(d.tolerance) q += ` (+/- ${d.tolerance}%)`;
+        items.push(`Quantity: ${q}`);
+      }
+      if(d.delivery){
+        let dl = d.delivery;
+        if(d.mastersReq) dl += " (to master's requirements)";
+        items.push(`Delivery method: ${dl}`);
+      }
+      d.specs.forEach(([k,v])=> items.push(`${k}: ${v}`));
+    } else {
+      if(d.quantity) items.push(`Quantity: ${formatNumberDisplay(d.quantity)} ${d.unit}`);
+      d.specs.forEach(([k,v])=> items.push(`${k}: ${v}`));
+    }
+    if(d.specsAttached && docType === 'quotation') items.push('(specifications attached)');
+    return { label, items };
+  });
+
+  const paymentLine = docType === 'supplier' ? getSupPaymentLine() : docType === 'customer' ? getCustPaymentLine() : getPaymentLine();
+  let notes, customList, conditions;
+  if(docType === 'supplier'){ notes = getSupCheckedNotes(); customList = getSupCustomNotes(); conditions = []; }
+  else if(docType === 'customer'){ notes = getCustCheckedNotes(); customList = []; conditions = getCustCheckedConditions(); }
+  else { notes = getCheckedNotes(); customList = getCustomNotes(); conditions = []; }
+
+  let introText;
+  if(docType === 'supplier') introText = getSupOpeningLine();
+  else if(docType === 'customer') introText = getCustOpeningLine();
+  else introText = getOpeningLine();
+
+  const deliveryLines = [], vesselLines = [];
+  if(isConfirmation){
+    if(fv('port')) deliveryLines.push(`Port: ${fv('port')}`);
+    if(fv('portLocation')) deliveryLines.push(`Location: ${fv('portLocation')}`);
+    if(fv('eta')) deliveryLines.push(`ETA: ${getEtaDisplayText()}`);
+    if(fv('deliveryTime')) deliveryLines.push(`Time of Delivery: ${fv('deliveryTime')}`);
+    if(vesselName) vesselLines.push(`Vessel: ${vesselName}`);
+    if(fv('vIMO')) vesselLines.push(`IMO: ${fv('vIMO')}`);
+    if(fv('vFlag')) vesselLines.push(`Flag: ${flagName(fv('vFlag'))}`);
+    if(fv('vOwner')) vesselLines.push(`Registered Owner: ${fv('vOwner')}`);
+    if(fv('vFitting')) vesselLines.push(`Fuel Fitting: ${fv('vFitting')}`);
+  }
+  const agentInfo = isConfirmation ? getAgentInfo() : null;
+
+  // Pricing rows for the autoTable summary — plain values, not the HTML
+  // table markup the old builder produced.
+  const priceRows = productSourceBlocks.map(b=>{
+    const d = productBlockText(b, false, true);
+    const label = d.isOther ? (d.name||'Other Product') : (d.grade||'Product');
+    const qty = d.quantity ? `${formatNumberDisplay(d.quantity)} ${d.unit}` : '';
+    const priceVal = cfg.priceMode === 'selling' ? b.sellingPrice : b.costPrice;
+    const priceCur = cfg.priceMode === 'selling' ? b.currency : b.costCurrency;
+    const priceUnit = cfg.priceMode === 'selling' ? b.sellingPriceUnit : b.costPriceUnit;
+    const price = priceVal ? `${priceCur||''} ${formatNumberDisplay(priceVal)} / ${priceUnit||''}` : '';
+    return [label, qty, price];
+  });
+
+  return { cfg, docType, isConfirmation, vesselName, ref, dateIssued, recipientLines, issuedByLines,
+    productSections, priceRows, paymentLine, notes, customList, conditions, introText,
+    deliveryLines, vesselLines, agentInfo };
+}
+
+async function renderTextPdfBlob(docType){
+  await ensurePdfLibs();
+  const model = buildPdfContentModel(docType);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit:'mm', format:'a4' });
+  const c = createPdfCursor(doc, 18);
+
+  c.text('REVOLUTION FUEL', { bold:true, size:16, color:'#1F064F' });
+  c.text(model.cfg.title.toUpperCase(), { bold:true, size:12, color:'#4B6072' });
+  c.text(`Ref: ${model.ref}    Date: ${model.dateIssued}`, { size:9, color:'#8A8577' });
+  c.rule('#1F064F');
+  c.space(2);
+
+  if(model.introText) c.text(model.introText, { size:10 });
+  c.space(2);
+
+  if(model.recipientLines.length){
+    c.heading(model.docType === 'supplier' ? 'To' : 'For the Attention Of');
+    model.recipientLines.forEach(l => c.text(l, { size:10 }));
+  }
+  if(model.vesselLines.length || model.deliveryLines.length){
+    c.heading('Vessel & Delivery');
+    model.vesselLines.forEach(l => c.text(l, { size:10 }));
+    model.deliveryLines.forEach(l => c.text(l, { size:10 }));
+  }
+  if(model.agentInfo){
+    c.heading('Local Agent');
+    c.text(`Company: ${model.agentInfo.name}`, { size:10 });
+    if(model.agentInfo.contactName) c.text(`Contact: ${model.agentInfo.contactName}`, { size:10 });
+    if(model.agentInfo.telephone) c.text(`Telephone: ${model.agentInfo.telephone}`, { size:10 });
+    if(model.agentInfo.email) c.text(`Email: ${model.agentInfo.email}`, { size:10 });
+  }
+
+  model.productSections.forEach(sec=>{
+    c.heading(sec.label);
+    sec.items.forEach(item => c.text('\u2022 ' + item, { size:9.5 }));
+  });
+
+  if(model.priceRows.length){
+    c.space(3);
+    doc.autoTable({
+      startY: c.y(),
+      margin: { left: c.margin, right: c.margin },
+      head: [['Product', 'Quantity', 'Price']],
+      body: model.priceRows,
+      styles: { font:'helvetica', fontSize:9.5, textColor:'#0F2A3F' },
+      headStyles: { fillColor:'#1F064F', textColor:'#ffffff' },
+      theme: 'grid'
+    });
+    c.setY(doc.lastAutoTable.finalY + 6);
+  }
+
+  if(model.paymentLine){ c.heading('Payment Terms'); c.text(model.paymentLine, { size:10 }); }
+
+  if(model.notes.length || model.customList.length){
+    c.heading('Operational Notes');
+    model.notes.forEach(n => c.text('\u2022 ' + n, { size:9.5 }));
+    model.customList.forEach(n => c.text('\u2022 ' + n, { size:9.5 }));
+  }
+  if(model.conditions.length){
+    c.heading('Conditions of Sale');
+    model.conditions.forEach(n => c.text('\u2022 ' + n, { size:9.5 }));
+  }
+
+  // Invoice always gets bank details, in full, as real text — the whole
+  // point of this rewrite was so a customer can actually copy these.
+  if(model.docType === 'invoice'){
+    const currency = fv('salesCurrency') || fv('costAdjustmentCurrency') || 'USD';
+    const bank = BANK_DETAILS[currency] || BANK_DETAILS.USD;
+    c.heading(`Please Make All ${currency} Payments To`);
+    c.text(`Account Name: ${bank.accountName}`, { size:10 });
+    c.text(`Bank: ${bank.bankName}`, { size:10 });
+    c.text(`Bank Address: ${bank.bankAddress}`, { size:10 });
+    c.text(`Account Number: ${bank.account}`, { size:10 });
+    c.text(`IBAN: ${bank.iban}`, { size:10 });
+    c.text(`SWIFT/BIC: ${bank.swift}`, { size:10 });
+  }
+
+  c.space(4);
+  c.heading('Issued By');
+  model.issuedByLines.forEach(l => c.text(l, { size:10 }));
+
+  const pageCount = doc.internal.getNumberOfPages();
+  for(let i=1; i<=pageCount; i++){
+    doc.setPage(i);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor('#8A8577');
+    doc.text(`Page ${i} of ${pageCount}`, c.pageWidth/2, doc.internal.pageSize.getHeight()-10, { align:'center' });
+  }
+
+  const blob = doc.output('blob');
+  if(!blob || blob.size < 500){
+    throw new Error('The generated file looks empty (' + (blob ? blob.size : 0) + ' bytes). Please tell whoever\'s maintaining this app.');
+  }
+  return blob;
 }
 async function downloadPdfBlob(blob, filename){
   const url = URL.createObjectURL(blob);
@@ -6655,7 +6857,6 @@ async function downloadPdfBlob(blob, filename){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 60000);
 }
-function safeFilenamePart(s){ return (s||'').trim().replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,'') || 'Document'; }
 
 async function openPdfQuotation(docType, btnEl){
   docType = docType || 'quotation';
@@ -6667,8 +6868,7 @@ async function openPdfQuotation(docType, btnEl){
   const originalLabel = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF…'; }
   try{
-    const html = buildPdfQuotationHtml(docType);
-    const blob = await renderLetterheadToPdfBlob(html);
+    const blob = await renderTextPdfBlob(docType);
     await downloadPdfBlob(blob, `${safeFilenamePart(fv('vessel'))}-${label}.pdf`);
   }catch(e){
     console.error('TS: openPdfQuotation failed', e);
@@ -6677,6 +6877,7 @@ async function openPdfQuotation(docType, btnEl){
     if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
   }
 }
+
 
 function formatDateForQuote(isoDate){
   if(!isoDate) return '';
