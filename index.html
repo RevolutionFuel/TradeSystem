@@ -1804,6 +1804,12 @@ async function draftInOutlookGeneric(opts){
     }
     const created = await res.json();
     const openCb = document.getElementById(opts.openCheckboxId);
+    // Reset the button before opening a new tab, not after — opening a tab
+    // can background this one, and some mobile browsers throttle JS in a
+    // backgrounded tab enough that the finally block below would otherwise
+    // sit queued indefinitely, leaving the button visibly stuck saying
+    // "Drafting…" even though the draft itself was created successfully.
+    if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
     if(!openCb || openCb.checked){
       if(created.webLink) window.open(created.webLink, '_blank');
       else alert('Draft was created in Outlook, but no direct link came back — check your Drafts folder.');
@@ -6600,9 +6606,20 @@ async function renderLetterheadToPdfBlob(fullHtml){
   parsed.querySelectorAll('button').forEach(b=>b.remove());
   const styleHtml = Array.from(parsed.querySelectorAll('style')).map(s=>s.outerHTML).join('');
   const container = document.createElement('div');
-  container.style.cssText = 'position:fixed; left:-9999px; top:0; width:794px; background:#fff;';
+  // html2canvas has a well-documented limitation: elements positioned
+  // off-screen (e.g. left:-9999px) render as blank, since it effectively
+  // works within the document's actual layout bounds rather than truly
+  // rendering arbitrary off-screen content. Kept on-screen instead, just
+  // hidden behind everything else via a negative z-index — invisible to
+  // the person, but still something the renderer actually paints.
+  container.style.cssText = 'position:fixed; top:0; left:0; z-index:-9999; width:794px; background:#fff;';
   container.innerHTML = styleHtml + parsed.body.innerHTML;
   document.body.appendChild(container);
+  // Give the browser a full layout/paint cycle before capturing — html2canvas
+  // racing ahead of newly-inserted content actually being laid out/painted
+  // is a second common cause of blank output, alongside the off-screen
+  // positioning issue above.
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   try{
     const opt = {
       margin: 10,
