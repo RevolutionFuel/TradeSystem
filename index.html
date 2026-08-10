@@ -1771,6 +1771,14 @@ function flashDraftSaved(btnId){
 // PDF attachment (Quote/Supply/Customer's checkbox, always-on for Invoice)
 // isn't wired in yet — that depends on replacing how PDFs are generated in
 // this app first (see the PDF work happening alongside this).
+function blobToBase64(blob){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result).split(',')[1]); // strip the data: prefix, Graph wants raw base64
+    reader.onerror = () => reject(new Error('Could not read the generated PDF for attaching.'));
+    reader.readAsDataURL(blob);
+  });
+}
 async function draftInOutlookGeneric(opts){
   if(!graphAccount){ alert('Connect Outlook first (button in the header) before drafting an email.'); return; }
   const btn = document.getElementById(opts.btnId);
@@ -1786,6 +1794,31 @@ async function draftInOutlookGeneric(opts){
       const proceed = confirm(msg);
       if(!proceed){ if(btn){ btn.disabled=false; btn.textContent = originalLabel; } return; }
     }
+
+    // PDF attachment — either the page's own checkbox, or always-on for
+    // invoices (the bank details there matter enough that it isn't optional).
+    const attachments = [];
+    const attachCb = opts.attachCheckboxId ? document.getElementById(opts.attachCheckboxId) : null;
+    const shouldAttachPdf = opts.alwaysAttachPdf || (attachCb && attachCb.checked);
+    if(shouldAttachPdf && opts.pdfDocType){
+      if(btn) btn.textContent = 'Generating PDF…';
+      try{
+        const pdfBlob = await renderTextPdfBlob(opts.pdfDocType);
+        const base64 = await blobToBase64(pdfBlob);
+        attachments.push({
+          '@odata.type': '#microsoft.graph.fileAttachment',
+          name: `${safeFilenamePart(fv('vessel'))}-${opts.pdfDocType}.pdf`,
+          contentType: 'application/pdf',
+          contentBytes: base64
+        });
+      }catch(e){
+        console.error('TS: PDF attachment generation failed', e);
+        const proceed = confirm('Could not generate the PDF to attach (' + (e && e.message ? e.message : 'unknown error') + ').\n\nCreate the draft anyway, without the attachment?');
+        if(!proceed){ if(btn){ btn.disabled=false; btn.textContent = originalLabel; } return; }
+      }
+      if(btn) btn.textContent = 'Drafting…';
+    }
+
     const bodyFragment = opts.buildHtml();
     const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${bodyFragment}</body></html>`;
     const message = {
@@ -1793,6 +1826,7 @@ async function draftInOutlookGeneric(opts){
       body: { contentType: 'HTML', content: htmlContent },
       toRecipients: toEmails.map(e=>({ emailAddress: { address: e } }))
     };
+    if(attachments.length) message.attachments = attachments;
     const res = await fetch('https://graph.microsoft.com/v1.0/me/messages', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
@@ -1835,28 +1869,32 @@ function draftQuoteInOutlook(){
   return draftInOutlookGeneric({
     btnId: 'draftQuoteOutlookBtn', openCheckboxId: 'openDraftToSendQuote',
     contacts: quoteSelectedContacts, buildHtml: buildEmailHtml,
-    subject: buildDraftSubject('Quotation', false)
+    subject: buildDraftSubject('Quotation', false),
+    pdfDocType: 'quotation', attachCheckboxId: 'attachPdfQuote'
   });
 }
 function draftSupplyInOutlook(){
   return draftInOutlookGeneric({
     btnId: 'draftSupplyOutlookBtn', openCheckboxId: 'openDraftToSendSupply',
     contacts: supSelectedContacts, buildHtml: buildSupplyEmailHtml,
-    subject: buildDraftSubject('Nomination', false)
+    subject: buildDraftSubject('Nomination', false),
+    pdfDocType: 'supplier', attachCheckboxId: 'attachPdfSupply'
   });
 }
 function draftCustomerInOutlook(){
   return draftInOutlookGeneric({
     btnId: 'draftCustomerOutlookBtn', openCheckboxId: 'openDraftToSendCustomer',
     contacts: custSelectedContacts, buildHtml: buildCustomerEmailHtml,
-    subject: buildDraftSubject('Fuel Confirmation', true)
+    subject: buildDraftSubject('Fuel Confirmation', true),
+    pdfDocType: 'customer', attachCheckboxId: 'attachPdfCustomer'
   });
 }
 function draftInvoiceInOutlook(){
   return draftInOutlookGeneric({
     btnId: 'draftInvoiceOutlookBtn', openCheckboxId: 'openDraftToSendInvoice',
     contacts: custSelectedContacts, buildHtml: buildInvoiceEmailHtml,
-    subject: buildDraftSubject('Fuel Invoice', true)
+    subject: buildDraftSubject('Fuel Invoice', true),
+    pdfDocType: 'invoice', alwaysAttachPdf: true
   });
 }
 function showReleaseNotes(){
