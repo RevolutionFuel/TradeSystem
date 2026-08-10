@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""
+Periodic vessel identity/specs refresh, via VesselAPI.
+
+Unlike ais_listener.py (a persistent process), this is a short-lived script
+meant to run on a schedule (a Render Cron Job, not a Background Worker) —
+it does its work and exits. Two jobs in one pass, since both need the same
+per-vessel API call anyway:
+
+  1. Resolves MMSI from IMO for any vessel that doesn't have one yet
+     (fills in mmsi_verified_at when it does).
+  2. Refreshes callsign, dimensions, tonnage, and year built for every
+     vessel with a valid IMO — cheap to keep current since we're already
+     calling the API for MMSI resolution anyway, and genuinely useful for
+     a fuel broker (draught/length/beam matter for port and berth
+     suitability).
+
+Only ever touches vessels with a real, checksum-valid IMO — MMSI can't be
+looked up from the "official numbers" some smaller yachts use instead of a
+genuine IMO, and there's no reliable way to resolve those automatically.
+
+Run this every few months (quarterly is a reasonable default) via Render's
+Cron Job service — see README.md for setup. It is NOT meant to run
+continuously; that's what ais_listener.py is for.
+"""
+
+import os
+import re
+import sys
+import time
+from datetime import datetime, timezone
+
+import requests
+from supabase import create_client, Client
+
+SUPABASE_URL = "https://dxaajzdolalessivlseg.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+VESSELAPI_KEY = os.environ.get("VESSELAPI_KEY")
+
+VESSELAPI_BASE = "https://api.vesselapi.com/v1"
+REQUEST_DELAY_SECONDS = 0.5  # be a reasonable neighbour on the free tier
+
+if not SUPABASE_SERVICE_ROLE_KEY:
+    print("FATAL: SUPABASE_SERVICE_ROLE_KEY environment variable is not set.", file=sys.stderr)
+    sys.exit(1)
+if not VESSELAPI_KEY:
+    print("FATAL: VESSELAPI_KEY environment variable is not set.", file=sys.stderr)
+    sys.exit(1)
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+
+def is_valid_imo(imo: str | None) -> bool:
+    """The real IMO check-digit rule: 7 digits, where the 7th is a checksum
+    of the first 6 (each multiplied by its position weight 7..2, summed,
+    mod 10). This is the actual validity test - NOT a numeric-range guess,
+    which is unreliable (confirmed the hard way earlier in this project)."""
+    if not imo or not re.match(r"^\d{7}$", imo):
+        return False
+    digits = [int(c) for c in imo]
+    checksum = sum(digits[i] * (7 - i) for i in range(6))
+    return checksum % 10 == digits[6]
+
+
+def fetch_vessel_details(imo: str) -> dict | None:
+    """Looks up a vessel by IMO via VesselAPI's vessel lookup endpoint.
+    Returns None if not found or on error (never raises - a single bad
+    lookup shouldn't stop the whole batch)."""
+    try:
+        res = requests.get(
+            f"{VESSELAPI_BASE}/vessels",
+            headers={"Authorization": f"Bearer {VESSELAPI_KEY}"},
+            params={"filter.imo": imo, "pagination.limit": 1},
+            timeout=15,
+        )
+        if res.status_code == 404:
+            return None
+        if not res.ok:
+            print(f"[warn] VesselAPI returned {res.status_code} for IMO {imo}: {res.text[:200]}")
+            return None
+        data = res.json()
+        results = data.get("data") or data.get("results") or []
+        if not results:
+            return None
+        return results[0]
+    except requests.RequestException as e:
+        print(f"[warn] request failed for IMO {imo}: {e}")
+        return None
+
+
+def main() -> None:
+    res = (
+        supabase.table("vessels")
+        .select("id, name, imo, mmsi")
+        .is_("deleted_at", "null")
+        .execute()
+    )
+    all_vessels = res.data
+
+    candidates = [v for v in all_vessels if is_valid_imo(v.get("imo"))]
+    skipped_invalid_imo = len(all_vessels) - len(candidates)
+    print(f"{len(all_vessels)} total vessels, {len(candidates)} have a valid-checksum IMO "
+          f"({skipped_invalid_imo} skipped - no usable IMO to look up by)")
+
+    updated = 0
+    not_found = 0
+    for v in candidates:
+        details = fetch_vessel_details(v["imo"])
+        time.sleep(REQUEST_DELAY_SECONDS)
+        if details is None:
+            not_found += 1
+            continue
+
+        update_row: dict = {"specs_updated_at": datetime.now(timezone.utc).isoformat()}
+
+        new_mmsi = details.get("mmsi")
+        if new_mmsi:
+            new_mmsi = str(new_mmsi)
+            if new_mmsi != v.get("mmsi"):
+                update_row["mmsi"] = new_mmsi
+                update_row["mmsi_verified_at"] = datetime.now(timezone.utc).isoformat()
+
+        if details.get("callsign"):
+            update_row["callsign"] = details["callsign"]
+        if details.get("length") is not None:
+            update_row["length_m"] = details["length"]
+        if details.get("beam") is not None:
+            update_row["beam_m"] = details["beam"]
+        if details.get("draught") is not None:
+            update_row["draught_m"] = details["draught"]
+        if details.get("grossTonnage") is not None:
+            update_row["gross_tonnage"] = details["grossTonnage"]
+        if details.get("deadweight") is not None:
+            update_row["deadweight_tonnes"] = details["deadweight"]
+        if details.get("yearBuilt") is not None:
+            update_row["year_built"] = details["yearBuilt"]
+
+        try:
+            supabase.table("vessels").update(update_row).eq("id", v["id"]).execute()
+            updated += 1
+            print(f"[ok] {v['name']} (IMO {v['imo']}) - {len(update_row) - 1} field(s) refreshed"
+                  + (f", MMSI {'set' if not v.get('mmsi') else 'changed'} to {update_row.get('mmsi')}" if "mmsi" in update_row else ""))
+        except Exception as e:
+            print(f"[error] failed to update {v['name']} ({v['id']}): {e}")
+
+    print(f"\nDone. {updated} vessels updated, {not_found} not found in VesselAPI, "
+          f"{skipped_invalid_imo} skipped (no valid IMO).")
+
+
+if __name__ == "__main__":
+    main()

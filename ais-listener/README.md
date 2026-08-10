@@ -56,3 +56,38 @@ export SUPABASE_SERVICE_ROLE_KEY="..."
 export AISSTREAM_API_KEY="..."
 python3 ais_listener.py
 ```
+
+## Vessel identity/specs refresh (`refresh_vessel_specs.py`)
+
+A separate, short-lived script — resolves MMSI from IMO for any vessel that
+doesn't have one yet, and refreshes callsign/dimensions/tonnage/year-built
+for every vessel with a valid IMO. Uses [VesselAPI](https://vesselapi.com)
+rather than AISStream, since this is identity/specs lookup, not live
+position tracking.
+
+This is **not** part of the always-on listener — it does its work and
+exits, so it belongs in a Render **Cron Job**, not a Background Worker.
+
+### Deploying the Cron Job on Render
+
+1. Render dashboard → **New +** → **Cron Job**.
+2. Connect the same `RevolutionFuel/TradeSystem` repo.
+3. **Root Directory**: `ais-listener`
+4. **Runtime**: Python 3
+5. **Build Command**: `pip install -r requirements.txt`
+6. **Command**: `python3 refresh_vessel_specs.py`
+7. **Schedule**: `0 3 1 */3 *` (03:00 UTC on the 1st of every 3rd month —
+   quarterly is a reasonable refresh cadence for data that rarely changes;
+   adjust freely).
+8. **Instance Type**: the free/smallest tier is fine here — this only runs
+   briefly a few times a year, unlike the listener which needs to stay up
+   permanently.
+9. Environment variables — same `SUPABASE_SERVICE_ROLE_KEY` as the
+   listener, plus a new one:
+   - `VESSELAPI_KEY` — from your VesselAPI.com dashboard.
+
+Only ever touches vessels with a genuinely checksum-valid IMO (see
+`is_valid_imo()` in the script) — the "official numbers" some smaller
+yachts have instead of a real IMO can't be resolved this way, and there's
+no reliable way to auto-detect those; they need a value entered by hand
+or left blank.
