@@ -9205,6 +9205,13 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'ownerId', label:'Registered owner', type:'owner-select'},
       {key:'fitting', label:'Fuel fitting', type:'text'},
       {key:'trackAis', label:'Track AIS position (logs position history periodically)', type:'checkbox'},
+      {key:'callsign', label:'Callsign', type:'text'},
+      {key:'lengthM', label:'Length (m)', type:'text'},
+      {key:'beamM', label:'Beam (m)', type:'text'},
+      {key:'draughtM', label:'Draught (m)', type:'text'},
+      {key:'grossTonnage', label:'Gross tonnage', type:'text'},
+      {key:'deadweightTonnes', label:'Deadweight (tonnes)', type:'text'},
+      {key:'yearBuilt', label:'Year built', type:'text'},
       {key:'notes', label:'Notes', type:'textarea'}
     ],
     afterSave: async (item) => { await saveReferenceItemRemote('vessel', item); },
