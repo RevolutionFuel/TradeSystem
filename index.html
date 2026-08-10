@@ -282,7 +282,8 @@
   .status-msg.show{display:flex;}
   .manifest{background:#fff; padding:24px 22px; position:relative;}
   .manifest .stamp{position:absolute; top:16px; right:20px; font-family:var(--mono); font-size:10.5px; letter-spacing:0.12em; color:var(--amber); border:1.5px solid var(--amber); padding:3px 8px; border-radius:3px; transform:rotate(3deg); text-transform:uppercase; opacity:0.85;}
-  .copybar{position:sticky; bottom:0; background:linear-gradient(180deg, rgba(255,255,255,0) 0%, var(--panel) 30%); padding:12px 0 4px; margin-top:6px; display:flex; gap:8px; flex-wrap:nowrap; overflow-x:auto; align-items:center;}
+  .copybar{position:sticky; bottom:0; background:linear-gradient(180deg, rgba(255,255,255,0) 0%, var(--panel) 30%); padding:12px 0 4px; margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  .draft-options{display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; font-size:12.5px; color:var(--ink-soft); margin-top:4px;}
   .copybar button{flex-shrink:0; white-space:nowrap;}
   .footer-note{text-align:center; font-size:11px; color:rgba(255,255,255,0.75); margin-top:18px; text-shadow:0 1px 3px rgba(0,0,0,0.4);}
   .mgmt-tabs{display:flex; gap:6px; margin-bottom:14px;}
@@ -583,9 +584,12 @@
           </div>
           <div class="panel-body" style="padding-top:0;">
             <div id="missingDataWarningEnquire"></div>
+            <div class="draft-options">
+              <label class="opt-inline"><input type="checkbox" id="openDraftToSendEnquire" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
+            </div>
             <div class="copybar">
-              <button class="btn-amber" onclick="copyEnquiryRich()">📋 Copy for email</button>
-              <button class="btn-ghost" onclick="copyEnquiryPlain()">Copy as plain text</button>
+              <button class="btn-amber" id="draftEnquireOutlookBtn" onclick="draftEnquireInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
+              <button class="btn-ghost" onclick="copyEnquiryRich()">📋 Copy for email</button>
               <span class="status-msg" id="enquiryCopyStatus">✓ Copied</span>
             </div>
           </div>
@@ -738,10 +742,14 @@
         </div>
         <div class="panel-body" style="padding-top:0;">
           <div id="missingDataWarningQuote"></div>
+          <div class="draft-options">
+            <label class="opt-inline"><input type="checkbox" id="openDraftToSendQuote" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
+            <label class="opt-inline"><input type="checkbox" id="attachPdfQuote" onchange="onDraftOptionChange()"> Attach PDF to the draft</label>
+          </div>
           <div class="copybar">
-            <button class="btn-amber" onclick="copyRich()">📋 Copy for email</button>
+            <button class="btn-amber" id="draftQuoteOutlookBtn" onclick="draftQuoteInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
+            <button class="btn-ghost" onclick="copyRich()">📋 Copy for email</button>
             <button class="btn-ghost" onclick="openPdfQuotation()" title="Opens a formal letterhead version in a new tab, ready to Print → Save as PDF">📄 View PDF Quotation</button>
-            <button class="btn-ghost" id="draftQuoteOutlookBtn" onclick="draftQuoteInOutlook()" title="Creates a real draft in your connected Outlook mailbox, ready to review and send">✉️ Draft in Outlook</button>
             <span class="status-msg" id="copyStatus">✓ Copied</span>
           </div>
           <div id="profitSummaryQuote"></div>
@@ -907,9 +915,13 @@
           </div>
           <div class="panel-body" style="padding-top:0;">
             <div id="missingDataWarningSupply"></div>
+            <div class="draft-options">
+              <label class="opt-inline"><input type="checkbox" id="openDraftToSendSupply" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
+              <label class="opt-inline"><input type="checkbox" id="attachPdfSupply" onchange="onDraftOptionChange()"> Attach PDF to the draft</label>
+            </div>
             <div class="copybar">
-              <button class="btn-amber" onclick="copySupplyRich()">📋 Copy for email</button>
-              <button class="btn-ghost" onclick="copySupplyPlain()">Copy as plain text</button>
+              <button class="btn-amber" id="draftSupplyOutlookBtn" onclick="draftSupplyInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
+              <button class="btn-ghost" onclick="copySupplyRich()">📋 Copy for email</button>
               <button class="btn-ghost" onclick="openPdfQuotation('supplier')" title="Opens a formal letterhead version in a new tab, ready to Print → Save as PDF">📄 View PDF Supplier Confirmation</button>
               <span class="status-msg" id="supplyCopyStatus">✓ Copied</span>
             </div>
@@ -1046,9 +1058,13 @@
           </div>
           <div class="panel-body" style="padding-top:0;">
             <div id="missingDataWarningCustomer"></div>
+            <div class="draft-options">
+              <label class="opt-inline"><input type="checkbox" id="openDraftToSendCustomer" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
+              <label class="opt-inline"><input type="checkbox" id="attachPdfCustomer" onchange="onDraftOptionChange()"> Attach PDF to the draft</label>
+            </div>
             <div class="copybar">
-              <button class="btn-amber" onclick="copyCustomerRich()">📋 Copy for email</button>
-              <button class="btn-ghost" onclick="copyCustomerPlain()">Copy as plain text</button>
+              <button class="btn-amber" id="draftCustomerOutlookBtn" onclick="draftCustomerInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
+              <button class="btn-ghost" onclick="copyCustomerRich()">📋 Copy for email</button>
               <button class="btn-ghost" onclick="openPdfQuotation('customer')" title="Opens a formal letterhead version in a new tab, ready to Print → Save as PDF">📄 View PDF Order Confirmation</button>
               <span class="status-msg" id="customerCopyStatus">✓ Copied</span>
             </div>
@@ -1142,9 +1158,13 @@
           </div>
           <div class="panel-body" style="padding-top:0;">
             <div id="missingDataWarningInvoice"></div>
+            <div class="draft-options">
+              <label class="opt-inline"><input type="checkbox" id="openDraftToSendInvoice" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
+              <span class="hint" style="margin:0;">The PDF is always attached to invoice drafts.</span>
+            </div>
             <div class="copybar">
-              <button class="btn-amber" onclick="copyInvoiceEmailRich()">📋 Copy for email</button>
-              <button class="btn-ghost" onclick="copyInvoiceEmailPlain()">Copy as plain text</button>
+              <button class="btn-amber" id="draftInvoiceOutlookBtn" onclick="draftInvoiceInOutlook()" title="Creates a real draft in your connected Outlook mailbox, with the invoice PDF attached">✉️ Draft in Outlook</button>
+              <button class="btn-ghost" onclick="copyInvoiceEmailRich()">📋 Copy for email</button>
               <button class="btn-ghost" onclick="openInvoicePdf()" id="invoicePdfButton" title="Opens a formal letterhead version in a new tab, ready to Print → Save as PDF">📄 View PDF</button>
               <span class="status-msg" id="invoiceCopyStatus">✓ Copied</span>
             </div>
@@ -1724,28 +1744,52 @@ async function resolveSelectedContactEmails(selectedContacts){
   return emails;
 }
 
-async function draftQuoteInOutlook(){
+// Subject formats, exactly as specified: "[Vessel] [Port] {Word} - Revolution
+// Fuel" — "Fuel" is dropped from the word itself when the order has no fuel
+// products (only applies to Customer Confirmation and Invoice).
+function orderHasFuelProducts(){
+  return productBlocks.some(b => b.kind === 'fuel');
+}
+function buildDraftSubject(word, dropFuelIfNoFuel){
+  const vesselName = fv('vessel') || fv('vesselOrder') || '';
+  const port = fv('port') || '';
+  let w = word;
+  if(dropFuelIfNoFuel && !orderHasFuelProducts()) w = w.replace('Fuel ', '');
+  return [vesselName, port, w].filter(Boolean).join(' ') + ' - Revolution Fuel';
+}
+function flashDraftSaved(btnId){
+  const btn = document.getElementById(btnId);
+  if(!btn) return;
+  const original = btn.textContent;
+  btn.textContent = '✓ Draft saved';
+  setTimeout(()=>{ if(document.getElementById(btnId)) document.getElementById(btnId).textContent = original; }, 1800);
+}
+// Shared engine behind all 5 "Draft in Outlook" buttons. Whether the draft
+// opens in a new tab afterward (to review and hit Send) or is left quietly
+// sitting in the Drafts folder is controlled by that page's own "Open draft
+// to review & send" checkbox — unchecked just confirms it was saved.
+// PDF attachment (Quote/Supply/Customer's checkbox, always-on for Invoice)
+// isn't wired in yet — that depends on replacing how PDFs are generated in
+// this app first (see the PDF work happening alongside this).
+async function draftInOutlookGeneric(opts){
   if(!graphAccount){ alert('Connect Outlook first (button in the header) before drafting an email.'); return; }
-  const btn = document.getElementById('draftQuoteOutlookBtn');
+  const btn = document.getElementById(opts.btnId);
   const originalLabel = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Drafting…'; }
   try{
     const token = await getGraphToken();
-    const toEmails = await resolveSelectedContactEmails(quoteSelectedContacts);
+    const toEmails = await resolveSelectedContactEmails(opts.contacts);
     if(!toEmails.length){
-      const msg = quoteSelectedContacts.length
+      const msg = opts.contacts.length
         ? 'None of the selected contacts have an email on file, so the draft will open with no recipient filled in — you\'ll need to add one yourself in Outlook.\n\nContinue anyway?'
-        : 'No recipient has been picked (see the contact picker above the preview), so the draft will open with no one in the To field — you\'ll need to add someone yourself in Outlook.\n\nContinue anyway?';
+        : 'No recipient has been picked, so the draft will open with no one in the To field — you\'ll need to add someone yourself in Outlook.\n\nContinue anyway?';
       const proceed = confirm(msg);
       if(!proceed){ if(btn){ btn.disabled=false; btn.textContent = originalLabel; } return; }
     }
-    const vesselName = fv('vessel') || fv('vesselOrder');
-    const quoteRef = fv('quoteRef');
-    const subject = ['Quotation', quoteRef, vesselName].filter(Boolean).join(' — ');
-    const bodyFragment = buildEmailHtml();
+    const bodyFragment = opts.buildHtml();
     const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${bodyFragment}</body></html>`;
     const message = {
-      subject: subject,
+      subject: opts.subject,
       body: { contentType: 'HTML', content: htmlContent },
       toRecipients: toEmails.map(e=>({ emailAddress: { address: e } }))
     };
@@ -1759,15 +1803,55 @@ async function draftQuoteInOutlook(){
       throw new Error('Graph API returned ' + res.status + ': ' + errText.slice(0, 300));
     }
     const created = await res.json();
-    if(created.webLink) window.open(created.webLink, '_blank');
-    else alert('Draft was created in Outlook, but no direct link came back — check your Drafts folder.');
+    const openCb = document.getElementById(opts.openCheckboxId);
+    if(!openCb || openCb.checked){
+      if(created.webLink) window.open(created.webLink, '_blank');
+      else alert('Draft was created in Outlook, but no direct link came back — check your Drafts folder.');
+    } else {
+      flashDraftSaved(opts.btnId);
+    }
   }catch(e){
     if(e && (e.message === 'redirecting' || e.message === 'cancelled')) return; // already handled, nothing more to say
-    console.error('TS: draftQuoteInOutlook failed', e);
+    console.error('TS: draftInOutlookGeneric failed', e);
     alert('Could not create the Outlook draft: ' + (e && e.message ? e.message : 'unknown error'));
   }finally{
     if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
   }
+}
+function draftEnquireInOutlook(){
+  return draftInOutlookGeneric({
+    btnId: 'draftEnquireOutlookBtn', openCheckboxId: 'openDraftToSendEnquire',
+    contacts: enqSelectedContacts, buildHtml: buildEnquiryEmailHtml,
+    subject: buildDraftSubject('Enquiry', false)
+  });
+}
+function draftQuoteInOutlook(){
+  return draftInOutlookGeneric({
+    btnId: 'draftQuoteOutlookBtn', openCheckboxId: 'openDraftToSendQuote',
+    contacts: quoteSelectedContacts, buildHtml: buildEmailHtml,
+    subject: buildDraftSubject('Quotation', false)
+  });
+}
+function draftSupplyInOutlook(){
+  return draftInOutlookGeneric({
+    btnId: 'draftSupplyOutlookBtn', openCheckboxId: 'openDraftToSendSupply',
+    contacts: supSelectedContacts, buildHtml: buildSupplyEmailHtml,
+    subject: buildDraftSubject('Nomination', false)
+  });
+}
+function draftCustomerInOutlook(){
+  return draftInOutlookGeneric({
+    btnId: 'draftCustomerOutlookBtn', openCheckboxId: 'openDraftToSendCustomer',
+    contacts: custSelectedContacts, buildHtml: buildCustomerEmailHtml,
+    subject: buildDraftSubject('Fuel Confirmation', true)
+  });
+}
+function draftInvoiceInOutlook(){
+  return draftInOutlookGeneric({
+    btnId: 'draftInvoiceOutlookBtn', openCheckboxId: 'openDraftToSendInvoice',
+    contacts: custSelectedContacts, buildHtml: buildInvoiceEmailHtml,
+    subject: buildDraftSubject('Fuel Invoice', true)
+  });
 }
 function showReleaseNotes(){
   document.getElementById('releaseNotesOverlay')?.remove();
@@ -2526,6 +2610,12 @@ const SIGNATURE_RADIO_NAMES = Object.values(SIGNATURE_PAGES).map(p=>p.name);
 let restoringFormattingPrefs = false;
 let saveFormattingPrefsTimer = null;
 
+const DRAFT_OPTION_IDS = ['openDraftToSendEnquire','openDraftToSendQuote','openDraftToSendSupply','openDraftToSendCustomer','openDraftToSendInvoice','attachPdfQuote','attachPdfSupply','attachPdfCustomer'];
+function collectDraftOptions(){
+  const out = {};
+  DRAFT_OPTION_IDS.forEach(id=>{ const el = document.getElementById(id); if(el) out[id] = el.checked; });
+  return out;
+}
 function collectFormattingPrefs(){
   const signatures = {};
   Object.keys(SIGNATURE_PAGES).forEach(page=>{ signatures[page] = getRadioValue(SIGNATURE_PAGES[page].name); });
@@ -2537,8 +2627,12 @@ function collectFormattingPrefs(){
       formatting[opt][page] = el ? el.checked : false;
     });
   });
-  return { signatures, formatting };
+  return { signatures, formatting, draftOptions: collectDraftOptions() };
 }
+// Both formatting/signature changes and draft-option checkbox changes save
+// through this one function, into one shared preferences blob — two
+// separate save paths each doing their own overwrite would silently wipe
+// out whatever the other one had just saved.
 function scheduleSaveFormattingPrefs(){
   if(restoringFormattingPrefs) return; // applying a saved preference shouldn't immediately re-trigger a save of itself
   if(!window.TS || !window.TS.saveUserPreferences) return;
@@ -2547,6 +2641,9 @@ function scheduleSaveFormattingPrefs(){
     try{ await window.TS.saveUserPreferences(collectFormattingPrefs()); }
     catch(e){ console.warn('TS: saveUserPreferences failed', e); }
   }, 800);
+}
+function onDraftOptionChange(){
+  scheduleSaveFormattingPrefs();
 }
 // Called once at startup, before the person has touched anything — applies
 // last time's choices as this session's starting point on every page, in
@@ -2577,6 +2674,14 @@ async function loadFormattingPrefs(){
           const el = document.getElementById(opt+page);
           if(el && el.checked !== saved){ el.checked = saved; onFormattingOptionChange(opt, page); }
         });
+      });
+    }
+    if(prefs.draftOptions){
+      DRAFT_OPTION_IDS.forEach(id=>{
+        const saved = prefs.draftOptions[id];
+        if(saved === undefined) return;
+        const el = document.getElementById(id);
+        if(el) el.checked = saved;
       });
     }
   }finally{
