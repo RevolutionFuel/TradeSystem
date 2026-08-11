@@ -62,6 +62,17 @@ if not AISSTREAM_API_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+
+def write_alert(source: str, message: str) -> None:
+    """Best-effort - if this itself fails, log it but don't let alerting
+    problems interrupt the actual listener."""
+    try:
+        supabase.table("system_alerts").insert({
+            "source": source, "severity": "error", "message": message
+        }).execute()
+    except Exception as e:
+        print(f"[warn] could not write alert to database: {e}")
+
 # In-memory state, seeded from the database at startup.
 mmsi_to_vessel: dict[str, str] = {}   # MMSI (string) -> vessel id
 last_historical_save: dict[str, datetime] = {}  # vessel id -> ais_timestamp of last saved historical row
@@ -187,8 +198,14 @@ def handle_position_report(vessel_id: str, mmsi: str, report: dict, ais_ts: date
 
 async def run_connection(mmsi_group: list[str], group_index: int) -> None:
     """One persistent WebSocket connection, subscribed to up to 50 MMSIs.
-    Reconnects with exponential backoff on any error or disconnect."""
+    Reconnects with exponential backoff on any error or disconnect. If
+    failures are sustained (backoff hits its ceiling - roughly 6+
+    consecutive failures within minutes, not just one network blip), writes
+    a database alert once per failure streak, since that pattern usually
+    means something systematic is wrong (e.g. an invalid/revoked
+    AISSTREAM_API_KEY) rather than an ordinary transient disconnect."""
     backoff = 5
+    already_alerted = False
     while True:
         try:
             async with websockets.connect(AISSTREAM_URI, ping_interval=20, ping_timeout=20) as ws:
@@ -201,6 +218,7 @@ async def run_connection(mmsi_group: list[str], group_index: int) -> None:
                 await ws.send(json.dumps(subscribe_msg))
                 print(f"[group {group_index}] subscribed to {len(mmsi_group)} MMSIs")
                 backoff = 5  # reset once a connection succeeds
+                already_alerted = False
                 async for raw in ws:
                     try:
                         msg = json.loads(raw)
@@ -218,6 +236,13 @@ async def run_connection(mmsi_group: list[str], group_index: int) -> None:
                     handle_position_report(vessel_id, mmsi, report, ais_ts)
         except Exception as e:
             print(f"[group {group_index}] connection error: {e} - reconnecting in {backoff}s")
+            if backoff >= 300 and not already_alerted:
+                write_alert("aisstream", f"The AIS listener (connection group {group_index}) has "
+                            f"been failing to connect repeatedly for several minutes - this usually "
+                            f"means AISSTREAM_API_KEY is invalid or has been revoked. Check/replace "
+                            f"it in the 'ais-listener' Background Worker's environment variables on "
+                            f"Render. Last error: {e}")
+                already_alerted = True
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 300)
 

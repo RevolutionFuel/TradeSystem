@@ -45,14 +45,6 @@ VESSELAPI_KEY = os.environ.get("VESSELAPI_KEY")
 
 VESSELAPI_BASE = "https://api.vesselapi.com/v1"
 REQUEST_DELAY_SECONDS = 0.5  # be a reasonable neighbour on the free tier
-# VesselAPI keys expire after 90 days. This script can't know that on its
-# own - VESSELAPI_KEY_CREATED_AT is an optional env var you set to the date
-# you generated/rotated the key (YYYY-MM-DD), and every run checks how
-# close it is to expiring. Without this var set, only the reactive
-# auth-failure detection below applies - you'd find out when it actually
-# breaks rather than ahead of time.
-VESSELAPI_KEY_EXPIRY_DAYS = 90
-VESSELAPI_KEY_WARNING_DAYS = 14  # start warning this many days before expiry
 # Hard cap on lookups per run - VesselAPI's free tier is 150 calls/month,
 # and this script has no visibility into how many have already been used
 # this month (including by other runs, or manual testing). Defaulting well
@@ -147,41 +139,18 @@ def fetch_vessel_details(imo: str, debug: bool = False) -> dict | None:
         return None
 
 
-def check_key_expiry() -> None:
-    """Optional proactive check - only runs if VESSELAPI_KEY_CREATED_AT is
-    set (format YYYY-MM-DD). Prints an unmissable warning as the 90-day
-    expiry approaches or has passed, well before the reactive
-    VesselApiAuthError would ever trigger."""
-    created_str = os.environ.get("VESSELAPI_KEY_CREATED_AT")
-    if not created_str:
-        print("[info] VESSELAPI_KEY_CREATED_AT is not set - can't proactively warn about the "
-              "90-day key expiry. Set it (format YYYY-MM-DD, the date you generated/rotated the "
-              "key) to get an advance warning here instead of only finding out when it breaks.")
-        return
+def write_alert(source: str, message: str) -> None:
+    """Best-effort - if this itself fails, log it but don't let alerting
+    problems crash the actual work the script is doing."""
     try:
-        created = datetime.strptime(created_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    except ValueError:
-        print(f"[warn] VESSELAPI_KEY_CREATED_AT={created_str!r} isn't in YYYY-MM-DD format - skipping expiry check.")
-        return
-    days_old = (datetime.now(timezone.utc) - created).days
-    days_left = VESSELAPI_KEY_EXPIRY_DAYS - days_old
-    if days_left <= 0:
-        print("=" * 70)
-        print(f"[EXPIRY WARNING] Your VesselAPI key is {days_old} days old and has likely "
-              f"EXPIRED (keys are valid ~{VESSELAPI_KEY_EXPIRY_DAYS} days). Generate a new one "
-              f"at vesselapi.com, update VESSELAPI_KEY here, and update VESSELAPI_KEY_CREATED_AT "
-              f"to today's date.")
-        print("=" * 70)
-    elif days_left <= VESSELAPI_KEY_WARNING_DAYS:
-        print("=" * 70)
-        print(f"[EXPIRY WARNING] Your VesselAPI key expires in ~{days_left} day(s). "
-              f"Plan to generate a new one at vesselapi.com soon and update both "
-              f"VESSELAPI_KEY and VESSELAPI_KEY_CREATED_AT here.")
-        print("=" * 70)
+        supabase.table("system_alerts").insert({
+            "source": source, "severity": "error", "message": message
+        }).execute()
+    except Exception as e:
+        print(f"[warn] could not write alert to database: {e}")
 
 
 def main() -> None:
-    check_key_expiry()
     res = (
         supabase.table("vessels")
         .select("id, name, imo, mmsi, specs_updated_at")
@@ -212,6 +181,11 @@ def main() -> None:
             print(f"Processed {i} of {len(candidates)} vessels before this happened; "
                   f"{updated} updated, {not_found} not found so far this run.")
             print("=" * 70)
+            write_alert("vesselapi", f"VesselAPI key was rejected during the monthly vessel "
+                        f"specs refresh - it's likely expired (keys last ~90 days) or revoked. "
+                        f"Generate a new one at vesselapi.com and update VESSELAPI_KEY in the "
+                        f"'Update Vessel Details' Cron Job's environment variables on Render. "
+                        f"Detail: {e}")
             return
         time.sleep(REQUEST_DELAY_SECONDS)
         if details is None:
