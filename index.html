@@ -411,7 +411,7 @@
       <button class="btn-ghost btn-sm" onclick="loadDashboardData()">Refresh</button>
     </div>
     <div class="dashboard-filter-bar" id="dashboardFilterBar"></div>
-    <div id="dashboardListContainer"><div class="hint">Loading\u2026</div></div>
+    <div id="dashboardListContainer"><div class="hint">Loading...</div></div>
   </div>
 
   <!-- ============ BUILD VIEW ============ -->
@@ -441,13 +441,13 @@
               <legend>Vessel &amp; Supplier <span style="font-weight:400; text-transform:none; color:var(--ink-soft);">(optional)</span></legend>
               <div class="field autocomplete">
                 <label for="vesselOrder">Vessel</label>
-                <input type="text" id="vesselOrder" placeholder="Start typing a vessel name…" autocomplete="off"
+                <input type="text" id="vesselOrder" placeholder="Start typing a vessel name..." autocomplete="off"
                   oninput="onVesselInput('vesselOrder','vesselListOrder')" onfocus="onVesselInput('vesselOrder','vesselListOrder')" onkeydown="handleAutocompleteKeydown(event,'vesselListOrder')" onblur="setTimeout(hideVesselList,150)">
                 <div class="ac-list" id="vesselListOrder"></div>
               </div>
               <div class="field autocomplete">
                 <label for="supplierNameOrder">Supplier</label>
-                <input type="text" id="supplierNameOrder" placeholder="Start typing a supplier name…" autocomplete="off"
+                <input type="text" id="supplierNameOrder" placeholder="Start typing a supplier name..." autocomplete="off"
                   oninput="onSupplierInput('supplierNameOrder','supplierListOrder')" onfocus="onSupplierInput('supplierNameOrder','supplierListOrder')" onkeydown="handleAutocompleteKeydown(event,'supplierListOrder')" onblur="setTimeout(hideSupplierList,150)">
                 <div class="ac-list" id="supplierListOrder"></div>
               </div>
@@ -459,7 +459,7 @@
               <div class="row">
                 <div class="field autocomplete">
                   <label for="port">Port</label>
-                  <input type="text" id="port" placeholder="Start typing a port…" autocomplete="off"
+                  <input type="text" id="port" placeholder="Start typing a port..." autocomplete="off"
                     oninput="onPortInput()" onfocus="onPortInput()" onkeydown="handleAutocompleteKeydown(event,'portList')" onblur="setTimeout(hidePortList,150)">
                   <div class="ac-list" id="portList"></div>
                 </div>
@@ -632,7 +632,7 @@
             <legend>Customer details</legend>
             <div class="field autocomplete">
               <label for="vessel">Vessel</label>
-              <input type="text" id="vessel" placeholder="Start typing a vessel name…" autocomplete="off"
+              <input type="text" id="vessel" placeholder="Start typing a vessel name..." autocomplete="off"
                 oninput="onVesselInput()" onfocus="onVesselInput()" onkeydown="handleAutocompleteKeydown(event,'vesselList')" onblur="setTimeout(hideVesselList,150)">
               <div class="ac-list" id="vesselList"></div>
               <div class="vessel-meta-line" id="vesselMetaLine"></div>
@@ -646,7 +646,7 @@
             </div>
             <div class="field autocomplete">
               <label for="vOwner">Registered owner</label>
-              <input type="text" id="vOwner" placeholder="Start typing an owner name…" autocomplete="off"
+              <input type="text" id="vOwner" placeholder="Start typing an owner name..." autocomplete="off"
                 oninput="onOwnerInput()" onfocus="onOwnerInput()" onkeydown="handleAutocompleteKeydown(event,'ownerListOrder')" onblur="setTimeout(hideOwnerList,150)">
               <div class="ac-list" id="ownerListOrder"></div>
               <label class="opt-inline" style="margin-top:6px; font-size:12px;">
@@ -793,7 +793,7 @@
               <legend>Supplier</legend>
               <div class="field autocomplete">
                 <label for="supplierName">Supplier</label>
-                <input type="text" id="supplierName" placeholder="Start typing a supplier name…" autocomplete="off"
+                <input type="text" id="supplierName" placeholder="Start typing a supplier name..." autocomplete="off"
                   oninput="onSupplierInput()" onfocus="onSupplierInput()" onkeydown="handleAutocompleteKeydown(event,'supplierList')" onblur="setTimeout(hideSupplierList,150)">
                 <div class="ac-list" id="supplierList"></div>
               </div>
@@ -821,7 +821,7 @@
               <legend>Local Agent <span style="font-weight:400; text-transform:none; color:var(--ink-soft);">(optional)</span></legend>
               <div class="field autocomplete">
                 <label for="agentNameSupply">Agent name</label>
-                <input type="text" id="agentNameSupply" placeholder="Start typing an agent name…" autocomplete="off"
+                <input type="text" id="agentNameSupply" placeholder="Start typing an agent name..." autocomplete="off"
                   oninput="onAgentInput('agentNameSupply','agentListSupply')" onfocus="onAgentInput('agentNameSupply','agentListSupply')" onkeydown="handleAutocompleteKeydown(event,'agentListSupply')" onblur="setTimeout(hideAgentList,150)">
                 <div class="ac-list" id="agentListSupply"></div>
               </div>
@@ -965,7 +965,7 @@
               <legend>Local Agent <span style="font-weight:400; text-transform:none; color:var(--ink-soft);">(optional)</span></legend>
               <div class="field autocomplete">
                 <label for="agentNameCustomer">Agent name</label>
-                <input type="text" id="agentNameCustomer" placeholder="Start typing an agent name…" autocomplete="off"
+                <input type="text" id="agentNameCustomer" placeholder="Start typing an agent name..." autocomplete="off"
                   oninput="onAgentInput('agentNameCustomer','agentListCustomer')" onfocus="onAgentInput('agentNameCustomer','agentListCustomer')" onkeydown="handleAutocompleteKeydown(event,'agentListCustomer')" onblur="setTimeout(hideAgentList,150)">
                 <div class="ac-list" id="agentListCustomer"></div>
               </div>
@@ -1227,7 +1227,7 @@
         <div class="mgmt-add-row">
           <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('vessel')">+ Add new vessel</button>
         </div>
-        <div class="mgmt-search"><input type="text" id="vesselSearch" placeholder="Search vessels…" oninput="renderVesselTable()"></div>
+        <div class="mgmt-search"><input type="text" id="vesselSearch" placeholder="Search vessels..." oninput="renderVesselTable()"></div>
         <div class="mgmt-count" id="vesselCount"></div>
         <div class="table-wrap">
           <table class="mgmt-table">
@@ -1243,7 +1243,7 @@
         <div class="mgmt-add-row">
           <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('owner')">+ Add new registered owner</button>
         </div>
-        <div class="mgmt-search"><input type="text" id="ownerSearch" placeholder="Search registered owners…" oninput="renderOwnerTable()"></div>
+        <div class="mgmt-search"><input type="text" id="ownerSearch" placeholder="Search registered owners..." oninput="renderOwnerTable()"></div>
         <div class="mgmt-count" id="ownerCount"></div>
         <div class="table-wrap">
           <table class="mgmt-table">
@@ -1259,7 +1259,7 @@
         <div class="mgmt-add-row">
           <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('supplier')">+ Add new supplier</button>
         </div>
-        <div class="mgmt-search"><input type="text" id="supplierSearch" placeholder="Search suppliers…" oninput="renderSupplierTable()"></div>
+        <div class="mgmt-search"><input type="text" id="supplierSearch" placeholder="Search suppliers..." oninput="renderSupplierTable()"></div>
         <div class="mgmt-count" id="supplierCount"></div>
         <div class="table-wrap">
           <table class="mgmt-table">
@@ -1275,7 +1275,7 @@
         <div class="mgmt-add-row">
           <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('agent')">+ Add new agent</button>
         </div>
-        <div class="mgmt-search"><input type="text" id="agentSearch" placeholder="Search agents…" oninput="renderAgentTable()"></div>
+        <div class="mgmt-search"><input type="text" id="agentSearch" placeholder="Search agents..." oninput="renderAgentTable()"></div>
         <div class="mgmt-count" id="agentCount"></div>
         <div class="table-wrap">
           <table class="mgmt-table">
@@ -1291,7 +1291,7 @@
         <div class="mgmt-add-row">
           <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('port')">+ Add new port</button>
         </div>
-        <div class="mgmt-search"><input type="text" id="portSearch" placeholder="Search ports…" oninput="renderPortTable()"></div>
+        <div class="mgmt-search"><input type="text" id="portSearch" placeholder="Search ports..." oninput="renderPortTable()"></div>
         <div class="mgmt-count" id="portCount"></div>
         <div class="table-wrap">
           <table class="mgmt-table">
@@ -1307,7 +1307,7 @@
         <div class="mgmt-add-row">
           <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('product')">+ Add new product</button>
         </div>
-        <div class="mgmt-search"><input type="text" id="productSearch" placeholder="Search products…" oninput="renderProductTable()"></div>
+        <div class="mgmt-search"><input type="text" id="productSearch" placeholder="Search products..." oninput="renderProductTable()"></div>
         <div class="mgmt-count" id="productCount"></div>
         <div class="table-wrap">
           <table class="mgmt-table">
@@ -1381,7 +1381,7 @@
 
         <div class="field" style="margin-top:16px;">
           <label for="importTextArea">Or paste saved text</label>
-          <textarea id="importTextArea" placeholder="Paste the text you copied earlier…" style="min-height:90px;"></textarea>
+          <textarea id="importTextArea" placeholder="Paste the text you copied earlier..." style="min-height:90px;"></textarea>
           <button class="btn-ghost btn-sm" style="margin-top:8px;" onclick="importQuoteFromText()">Load from pasted text</button>
         </div>
 
@@ -1828,7 +1828,7 @@ async function draftInOutlookGeneric(opts){
   if(!graphAccount){ alert('Connect Outlook first (button in the header) before drafting an email.'); return; }
   const btn = document.getElementById(opts.btnId);
   const originalLabel = btn ? btn.textContent : '';
-  if(btn){ btn.disabled = true; btn.textContent = 'Drafting…'; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Drafting...'; }
   try{
     const token = await getGraphToken();
     const toEmails = await resolveSelectedContactEmails(opts.contacts);
@@ -1846,7 +1846,7 @@ async function draftInOutlookGeneric(opts){
     const attachCb = opts.attachCheckboxId ? document.getElementById(opts.attachCheckboxId) : null;
     const shouldAttachPdf = opts.alwaysAttachPdf || (attachCb && attachCb.checked);
     if(shouldAttachPdf && opts.pdfDocType){
-      if(btn) btn.textContent = 'Generating PDF…';
+      if(btn) btn.textContent = 'Generating PDF...';
       try{
         const html = opts.pdfDocType === 'invoice' ? buildInvoicePdfHtml() : buildPdfQuotationHtml(opts.pdfDocType);
         const result = await generatePdfViaBackend(opts.pdfDocType, html);
@@ -1862,7 +1862,7 @@ async function draftInOutlookGeneric(opts){
         const proceed = confirm('Could not generate the PDF to attach (' + (e && e.message ? e.message : 'unknown error') + ').\n\nCreate the draft anyway, without the attachment?');
         if(!proceed){ if(btn){ btn.disabled=false; btn.textContent = originalLabel; } return; }
       }
-      if(btn) btn.textContent = 'Drafting…';
+      if(btn) btn.textContent = 'Drafting...';
     }
 
     const bodyFragment = opts.buildHtml();
@@ -1888,7 +1888,7 @@ async function draftInOutlookGeneric(opts){
     // can background this one, and some mobile browsers throttle JS in a
     // backgrounded tab enough that the finally block below would otherwise
     // sit queued indefinitely, leaving the button visibly stuck saying
-    // "Drafting…" even though the draft itself was created successfully.
+    // "Drafting..." even though the draft itself was created successfully.
     if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
     if(!openCb || openCb.checked){
       if(created.webLink) window.open(created.webLink, '_blank');
@@ -2542,7 +2542,7 @@ function buildRadioGroup(containerId, name, options, defaultValue, renderFnName)
     let inner = `<input type="radio" name="${name}" value="${opt.value}" ${checked?'checked':''} onchange="onRadioChange('${containerId}','${name}','${renderFnName}')">`;
     inner += `<span style="flex:1;">${escHtml(opt.label)}`;
     if(opt.custom){
-      inner += `<input type="text" class="opt-sub" id="${opt.customId}" placeholder="Type custom text…" oninput="${renderFnName}()" onclick="event.stopPropagation()">`;
+      inner += `<input type="text" class="opt-sub" id="${opt.customId}" placeholder="Type custom text..." oninput="${renderFnName}()" onclick="event.stopPropagation()">`;
     }
     inner += `</span>`;
     wrap.innerHTML = inner;
@@ -2944,7 +2944,7 @@ function renderSupCustomNotesFields(){
     row.className = 'fee-row';
     row.style.alignItems = 'flex-start';
     row.innerHTML = `
-      <input type="text" value="${escAttr(text)}" placeholder="Type a one-off note…" oninput="updateSupCustomNoteField(${i}, this.value)">
+      <input type="text" value="${escAttr(text)}" placeholder="Type a one-off note..." oninput="updateSupCustomNoteField(${i}, this.value)">
       <button class="fee-remove" title="Save this note for future orders" onclick="saveSupCustomNoteField(${i})">\ud83d\udcbe</button>
       ${supCustomNotes.length>1?`<button class="fee-remove" title="Remove" onclick="removeSupCustomNoteField(${i})">\u2715</button>`:''}
     `;
@@ -2988,7 +2988,7 @@ function renderCustomNotesFields(){
     row.className = 'fee-row';
     row.style.alignItems = 'flex-start';
     row.innerHTML = `
-      <input type="text" value="${escAttr(text)}" placeholder="Type a one-off note…" oninput="updateCustomNoteField(${i}, this.value)">
+      <input type="text" value="${escAttr(text)}" placeholder="Type a one-off note..." oninput="updateCustomNoteField(${i}, this.value)">
       <button class="fee-remove" title="Save this note for future quotes" onclick="saveCustomNoteField(${i})">\ud83d\udcbe</button>
       ${customNotes.length>1?`<button class="fee-remove" title="Remove" onclick="removeCustomNoteField(${i})">\u2715</button>`:''}
     `;
@@ -3298,7 +3298,7 @@ async function loadContactPicker(page){
       return;
     }
   }
-  container.innerHTML = '<div class="hint">Loading contacts…</div>';
+  container.innerHTML = '<div class="hint">Loading contacts...</div>';
   let result;
   try{
     result = await window.TS.fetchContacts(vesselId, ownerId);
@@ -3661,7 +3661,7 @@ async function saveOrderToDatabase(){
     return;
   }
   orderSaveInProgress = true;
-  if(btn){ btn.disabled = true; btn.textContent = 'Saving\u2026'; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Saving...'; }
   try{
     const state = buildOrderSaveState();
     const newId = await window.TS.saveOrder(state, currentOrderDbId);
@@ -3774,7 +3774,7 @@ async function loadDashboardData(){
     container.innerHTML = '<div class="hint">Needs the database connection \u2014 not available right now.</div>';
     return;
   }
-  container.innerHTML = '<div class="hint">Loading\u2026</div>';
+  container.innerHTML = '<div class="hint">Loading...</div>';
   try{
     dashboardRows = await window.TS.listOrders();
   }catch(e){
@@ -4735,9 +4735,9 @@ function fuelBlockOrderHTML(b, idx){
       <div class="field">
         <label>Fuel product</label>
         <select onchange="updateBlock('${b.id}','grade',this.value); renderProductBlocks(); render();">
-          <option value="">Select a fuel product\u2026</option>
+          <option value="">Select a fuel product...</option>
           ${fuelDD.map(p=>`<option value="${escAttr(p.name)}" ${b.grade===p.name?'selected':''}>${escHtml(p.name)}</option>`).join('')}
-          <option value="other" ${b.grade==='other'?'selected':''}>Custom\u2026</option>
+          <option value="other" ${b.grade==='other'?'selected':''}>Custom...</option>
         </select>
       </div>
     </div>
@@ -4786,7 +4786,7 @@ function fuelBlockOrderHTML(b, idx){
 
     <div class="pb-section-heading">Additional specification / notes</div>
     <div class="field">
-      <textarea rows="2" style="width:100%; font-family:inherit; font-size:13px; padding:8px; border:1px solid var(--line); border-radius:6px;" placeholder="Anything else worth stating as a spec for this product\u2026" oninput="updateBlock('${b.id}','customSpecNotes',this.value)">${escHtml(b.customSpecNotes)}</textarea>
+      <textarea rows="2" style="width:100%; font-family:inherit; font-size:13px; padding:8px; border:1px solid var(--line); border-radius:6px;" placeholder="Anything else worth stating as a spec for this product..." oninput="updateBlock('${b.id}','customSpecNotes',this.value)">${escHtml(b.customSpecNotes)}</textarea>
     </div>
 
     <div class="pb-section-heading">Quantity</div>
@@ -4813,7 +4813,7 @@ function fuelBlockOrderHTML(b, idx){
         <label class="opt ${b.delivery==='__custom'?'checked':''}">
           <input type="radio" name="delivery-${b.id}" value="__custom" ${b.delivery==='__custom'?'checked':''} onchange="updateBlock('${b.id}','delivery',this.value); renderProductBlocks(); render();">
           <span style="flex:1;">Custom:
-            <input type="text" class="opt-sub" value="${escAttr(b.deliveryCustom||'')}" placeholder="Type a custom delivery method\u2026" oninput="updateBlock('${b.id}','deliveryCustom',this.value)" onclick="event.stopPropagation()">
+            <input type="text" class="opt-sub" value="${escAttr(b.deliveryCustom||'')}" placeholder="Type a custom delivery method..." oninput="updateBlock('${b.id}','deliveryCustom',this.value)" onclick="event.stopPropagation()">
           </span>
         </label>
       </div>
@@ -4839,9 +4839,9 @@ function otherBlockOrderHTML(b, idx){
       </div>
       <div class="field"><label>Product</label>
         <select onchange="updateBlock('${b.id}','otherProductName',this.value)">
-          <option value="">Select\u2026</option>
+          <option value="">Select...</option>
           ${opts.map(p=>`<option value="${escAttr(p.name)}" ${b.otherProductName===p.name?'selected':''}>${escHtml(p.name)}</option>`).join('')}
-          <option value="__custom" ${b.otherProductName==='__custom'?'selected':''}>Custom\u2026</option>
+          <option value="__custom" ${b.otherProductName==='__custom'?'selected':''}>Custom...</option>
         </select>
       </div>
     </div>
@@ -4851,7 +4851,7 @@ function otherBlockOrderHTML(b, idx){
 
     <div class="pb-section-heading">Additional specification / notes</div>
     <div class="field">
-      <textarea rows="2" style="width:100%; font-family:inherit; font-size:13px; padding:8px; border:1px solid var(--line); border-radius:6px;" placeholder="Anything else worth stating as a spec for this product\u2026" oninput="updateBlock('${b.id}','customSpecNotes',this.value)">${escHtml(b.customSpecNotes)}</textarea>
+      <textarea rows="2" style="width:100%; font-family:inherit; font-size:13px; padding:8px; border:1px solid var(--line); border-radius:6px;" placeholder="Anything else worth stating as a spec for this product..." oninput="updateBlock('${b.id}','customSpecNotes',this.value)">${escHtml(b.customSpecNotes)}</textarea>
     </div>
 
     <div class="row">
@@ -6647,7 +6647,7 @@ async function openInvoicePdf(btnEl){
   if(getInvoiceType()==='invoice' && confirmProgressStatus('invoice')) markStatus('invoiced');
   const btn = btnEl || null;
   const originalLabel = btn ? btn.textContent : '';
-  if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF…'; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF...'; }
   try{
     const html = buildInvoicePdfHtml();
     const result = await generatePdfViaBackend('invoice', html);
@@ -7034,7 +7034,7 @@ async function openPdfQuotation(docType, btnEl){
   const label = { quotation:'Quotation', supplier:'Supplier-Confirmation', customer:'Customer-Confirmation' }[docType] || 'Document';
   const btn = btnEl || null;
   const originalLabel = btn ? btn.textContent : '';
-  if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF…'; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF...'; }
   try{
     const html = buildPdfQuotationHtml(docType);
     const result = await generatePdfViaBackend(docType, html);
@@ -9507,7 +9507,7 @@ function vesselCheckDetailsButtonHtml(item){
 async function checkVesselDetailsNow(vesselId){
   const btn = document.getElementById('checkVesselDetailsBtn');
   const resultEl = document.getElementById('checkVesselDetailsResult');
-  if(btn){ btn.disabled = true; btn.textContent = 'Checking\u2026'; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Checking...'; }
   if(resultEl) resultEl.textContent = '';
   try{
     if(!window.TS || !window.TS.getClient) throw new Error('Database connection not available.');
@@ -9610,7 +9610,7 @@ function renderItemDetail(){
   const logoSectionHtml = schema.hasLogo ? itemDetailImageFieldHtml(item, 'logo', 'Logo') : '';
   const contactsSectionHtml = schema.contactsFor ? `<div class="item-detail-field">
       <span class="item-detail-label">Contacts</span>
-      <div id="itemDetailContactsSection"><div class="hint">Loading\u2026</div></div>
+      <div id="itemDetailContactsSection"><div class="hint">Loading...</div></div>
     </div>` : '';
   document.getElementById('itemDetailFields').innerHTML = imageSectionHtml + logoSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + positionSectionHtml + contactsSectionHtml;
   if(schema.hasMap) renderItemDetailMap(item);
@@ -11352,7 +11352,7 @@ async function checkSystemAlerts(){
       dismissBtn.textContent = 'Dismiss';
       dismissBtn.style.cssText = 'background:rgba(255,255,255,0.18); border:1px solid rgba(255,255,255,0.4); color:#fff; padding:5px 12px; border-radius:4px; font-size:12px; cursor:pointer; flex-shrink:0; white-space:nowrap;';
       dismissBtn.onclick = async () => {
-        dismissBtn.disabled = true; dismissBtn.textContent = '\u2026';
+        dismissBtn.disabled = true; dismissBtn.textContent = '...';
         try{
           await window.TS.acknowledgeAlert(a.id);
           banner.remove();
