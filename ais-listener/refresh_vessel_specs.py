@@ -33,6 +33,12 @@ from datetime import datetime, timezone
 import requests
 from supabase import create_client, Client
 
+# Force unbuffered output - otherwise Python holds print() output back until
+# the buffer fills or the process exits when stdout isn't a real terminal
+# (like here), which would make this script's whole point - watching it
+# work through the vessel list - invisible until the very end.
+sys.stdout.reconfigure(line_buffering=True)
+
 SUPABASE_URL = "https://dxaajzdolalessivlseg.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 VESSELAPI_KEY = os.environ.get("VESSELAPI_KEY")
