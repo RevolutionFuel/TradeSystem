@@ -154,20 +154,20 @@ def main() -> None:
                 update_row["mmsi"] = new_mmsi
                 update_row["mmsi_verified_at"] = datetime.now(timezone.utc).isoformat()
 
-        if details.get("callsign"):
-            update_row["callsign"] = details["callsign"]
+        if details.get("call_sign"):
+            update_row["callsign"] = details["call_sign"]
         if details.get("length") is not None:
             update_row["length_m"] = details["length"]
-        if details.get("beam") is not None:
-            update_row["beam_m"] = details["beam"]
-        if details.get("draught") is not None:
-            update_row["draught_m"] = details["draught"]
-        if details.get("grossTonnage") is not None:
-            update_row["gross_tonnage"] = details["grossTonnage"]
+        if details.get("breadth") is not None:
+            update_row["beam_m"] = details["breadth"]
+        if details.get("draught_calculated_avg") is not None:
+            update_row["draught_m"] = details["draught_calculated_avg"]
+        if details.get("gross_tonnage") is not None:
+            update_row["gross_tonnage"] = details["gross_tonnage"]
         if details.get("deadweight") is not None:
             update_row["deadweight_tonnes"] = details["deadweight"]
-        if details.get("yearBuilt") is not None:
-            update_row["year_built"] = details["yearBuilt"]
+        if details.get("year_built") is not None:
+            update_row["year_built"] = details["year_built"]
 
         try:
             supabase.table("vessels").update(update_row).eq("id", v["id"]).execute()
