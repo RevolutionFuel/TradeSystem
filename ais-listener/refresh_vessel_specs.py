@@ -50,7 +50,7 @@ REQUEST_DELAY_SECONDS = 0.5  # be a reasonable neighbour on the free tier
 # this month (including by other runs, or manual testing). Defaulting well
 # under the monthly limit so one run can never accidentally exhaust it -
 # override via env var once actual usage patterns are better understood.
-MAX_LOOKUPS_PER_RUN = int(os.environ.get("MAX_LOOKUPS_PER_RUN", "20"))
+MAX_LOOKUPS_PER_RUN = int(os.environ.get("MAX_LOOKUPS_PER_RUN", "5"))
 
 if not SUPABASE_SERVICE_ROLE_KEY:
     print("FATAL: SUPABASE_SERVICE_ROLE_KEY environment variable is not set.", file=sys.stderr)
@@ -139,7 +139,7 @@ def main() -> None:
     updated = 0
     not_found = 0
     for i, v in enumerate(candidates):
-        details = fetch_vessel_details(v["imo"], debug=(i == 0))
+        details = fetch_vessel_details(v["imo"], debug=True)
         time.sleep(REQUEST_DELAY_SECONDS)
         if details is None:
             not_found += 1
