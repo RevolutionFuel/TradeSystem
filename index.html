@@ -384,7 +384,6 @@
       <button id="tabDashboard" class="active" onclick="switchView('dashboard')">Manage</button>
       <button id="tabBuild" onclick="switchView('build')">Order</button>
       <button id="tabManage" onclick="switchView('manage')">Data</button>
-      <button id="tabSaveLoad" onclick="switchView('saveload')">Save / Load</button>
     </div>
     <div class="header-right-stack">
       <span class="version-badge" id="versionBadge" onclick="showReleaseNotes()" title="Click for release notes" style="cursor:pointer;">v1.0</span>
@@ -8981,13 +8980,12 @@ function switchView(v){
   document.getElementById('viewDashboard').classList.toggle('active', v==='dashboard');
   document.getElementById('viewBuild').classList.toggle('active', v==='build');
   document.getElementById('viewManage').classList.toggle('active', v==='manage');
-  document.getElementById('viewSaveLoad').classList.toggle('active', v==='saveload');
   document.getElementById('tabDashboard').classList.toggle('active', v==='dashboard');
   document.getElementById('tabBuild').classList.toggle('active', v==='build');
   document.getElementById('tabManage').classList.toggle('active', v==='manage');
-  document.getElementById('tabSaveLoad').classList.toggle('active', v==='saveload');
   if(v==='manage'){ renderVesselTable(); renderPortTable(); renderProductTable(); renderNoteTable(); }
   if(v==='dashboard'){ loadDashboardData(); }
+  try{ localStorage.setItem('ts-last-view', v); }catch(e){ /* private browsing or similar - fine to just skip persistence */ }
   updatePanelHeightLock();
   scheduleStickyOffsetUpdate();
 }
@@ -11411,6 +11409,15 @@ async function checkSystemAlerts(){
   await init(); // init() is itself async — must finish (including building the signature radio groups) before restoring saved preferences onto them
   await loadFormattingPrefs();
   initGraphAuth(); // not awaited — Outlook connect state has no bearing on the main app's own startup
+  try{
+    const lastView = localStorage.getItem('ts-last-view');
+    // Only ever restore to one of the actual top-level tabs that still
+    // exist - guards against a stale value (e.g. a deprecated tab) ever
+    // pointing nowhere.
+    if(['dashboard','build','manage'].includes(lastView) && lastView !== 'dashboard'){
+      switchView(lastView);
+    }
+  }catch(e){ /* private browsing or similar - default view is fine */ }
 })();
 </script>
 </body>
