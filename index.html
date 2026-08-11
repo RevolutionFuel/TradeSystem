@@ -129,7 +129,7 @@
   .tsb-item{font-size:13.5px; color:var(--teal-dark); padding:0 18px;}
   .tsb-item .tsb-label{font-weight:700; text-transform:uppercase; font-size:10px; letter-spacing:0.04em; color:var(--amber); margin-right:7px;}
   .tsb-divider{width:1px; align-self:stretch; background:var(--line); margin:0 2px;}
-  .tsb-status-badge{display:inline-block; color:#fff; font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; padding:4px 12px; border-radius:20px;}
+  .tsb-status-badge{display:inline-block; color:#fff; font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; padding:4px 12px; border-radius:20px; white-space:nowrap;}
   .missing-data-warning{background:#FCE8E6; border:1px solid #E5A099; border-radius:8px; padding:10px 14px; margin-bottom:12px;}
   .missing-data-warning-title{font-weight:700; font-size:12.5px; color:#8a2e22; margin-bottom:4px;}
   .missing-data-warning ul{margin:0; padding-left:20px; color:#8a2e22; font-size:12.5px; line-height:1.6;}
@@ -179,7 +179,7 @@
     .trade-summary-bar{padding:7px 10px;}
     .tsb-item{font-size:9.5px; padding:0 8px;}
     .tsb-item .tsb-label{font-size:7.5px;}
-    .tsb-status-badge{font-size:8.5px; padding:2px 7px;}
+    .tsb-status-badge{font-size:7.5px; padding:2px 6px;}
     .tsb-save-item #orderSaveBtn{font-size:8.5px; padding:2px 7px;}
     .tsb-save-item .unsaved-banner{font-size:8.5px; padding:2px 7px;}
     .profit-summary-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch;}
@@ -1223,7 +1223,7 @@
          Go-to links for anything not started yet. -->
     <div class="order-page" id="orderPageSummary">
       <div class="panel">
-        <div class="panel-head"><h2>Order Summary</h2></div>
+        <div class="panel-head"><h2>Order Summary</h2><div id="summaryDeleteBtnContainer"></div></div>
         <div class="panel-body" id="summaryContent"></div>
       </div>
     </div>
@@ -3756,6 +3756,61 @@ const DASHBOARD_FILTERS = [
   { key:'all_enquiries', label:'All enquiries', test:r => !r.orderNumber },
   { key:'all', label:'All', test:r => true }
 ];
+// Deliberately a custom modal rather than a plain confirm() - deleting an
+// order is real business history, not a master-list record, so this
+// warrants a visually stronger warning that names the specific order and
+// requires an explicit destructive-action click rather than just Enter.
+function showDeleteOrderModal(referenceLabel, onConfirm){
+  const existing = document.getElementById('deleteOrderModalOverlay');
+  if(existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'deleteOrderModalOverlay';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(20,10,10,0.55); z-index:100000; display:flex; align-items:center; justify-content:center; padding:20px;';
+  overlay.innerHTML = `
+    <div style="background:#fff; border-radius:10px; max-width:380px; width:100%; padding:24px; border:2px solid #B3492E; box-shadow:0 12px 40px rgba(0,0,0,0.3);">
+      <div style="font-size:28px; margin-bottom:8px;">\u26a0\ufe0f</div>
+      <div style="font-weight:700; font-size:17px; color:#B3492E; margin-bottom:10px;">Delete this order permanently?</div>
+      <div style="font-size:13.5px; color:var(--ink-soft); line-height:1.5; margin-bottom:6px;">You're about to delete:</div>
+      <div style="font-weight:700; font-size:14px; color:var(--teal-dark); margin-bottom:14px; padding:8px 10px; background:#FBEEE9; border-radius:6px;">${escHtml(referenceLabel)}</div>
+      <div style="font-size:13px; color:var(--ink-soft); line-height:1.5; margin-bottom:20px;">This removes the entire enquiry/order and everything in it. This cannot be undone from within the app.</div>
+      <div style="display:flex; gap:10px; justify-content:flex-end;">
+        <button type="button" class="btn-ghost btn-sm" id="deleteOrderCancelBtn">Cancel</button>
+        <button type="button" class="btn-sm" id="deleteOrderConfirmBtn" style="background:#B3492E; color:#fff; border:none; border-radius:6px; padding:8px 16px; font-weight:600; cursor:pointer;">Yes, delete permanently</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#deleteOrderCancelBtn').onclick = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if(e.target === overlay) overlay.remove(); });
+  overlay.querySelector('#deleteOrderConfirmBtn').onclick = async () => {
+    const btn = overlay.querySelector('#deleteOrderConfirmBtn');
+    btn.disabled = true; btn.textContent = 'Deleting...';
+    try{
+      await onConfirm();
+      overlay.remove();
+    }catch(e){
+      console.error('TS: order delete failed', e);
+      alert('Could not delete \u2014 ' + (e.message || 'please check your connection and try again.'));
+      btn.disabled = false; btn.textContent = 'Yes, delete permanently';
+    }
+  };
+}
+function deleteOrderFromDashboard(id, referenceLabel){
+  showDeleteOrderModal(referenceLabel, async () => {
+    await window.TS.deleteOrder(id);
+    loadDashboardData();
+  });
+}
+function deleteCurrentOrder(){
+  if(!isRealUuid(currentOrderDbId)) return;
+  const referenceLabel = fv('orderNumberSupply') || fv('orderNumberCustomer') || fv('quoteRef') || 'this order';
+  const vesselLabel = fv('vessel') || fv('vesselOrder');
+  const fullLabel = vesselLabel ? `${referenceLabel} \u2014 ${vesselLabel}` : referenceLabel;
+  showDeleteOrderModal(fullLabel, async () => {
+    await window.TS.deleteOrder(currentOrderDbId);
+    currentOrderDbId = null;
+    switchView('dashboard');
+  });
+}
 function statusEnumToLabel(enumVal){
   if(!enumVal) return 'Enquiry';
   return enumVal.split('_').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
@@ -3783,6 +3838,7 @@ const DASHBOARD_SORT_GETTERS = {
   vessel: r => (r.vesselName || '').toLowerCase(),
   port: r => (r.portName || '').toLowerCase(),
   eta: r => r.deliveryDate || r.eta || '',
+  customer: r => (r.customerName || '').toLowerCase(),
   supplier: r => (r.supplierName || '').toLowerCase(),
   purchase: r => (r.purchaseTotal === null || r.purchaseTotal === undefined || r.purchaseTotal === '') ? null : Number(r.purchaseTotal),
   sale: r => (r.salesTotal === null || r.salesTotal === undefined || r.salesTotal === '') ? null : Number(r.salesTotal),
@@ -3851,49 +3907,55 @@ function renderDashboardList(){
     return;
   }
   // Below the same 640px breakpoint the CSS itself uses for this table,
-  // Vessel+Port and Purchase+Sale are combined into a single stacked
-  // column each rather than just shrinking further — eight columns of
-  // real content doesn't fit a phone screen at any readable font size.
+  // several columns are combined into stacked pairs/triples rather than
+  // just shrinking further - eight-plus columns of real content doesn't
+  // fit a phone screen at any readable font size, and previously left the
+  // Status column too narrow to show its own label without wrapping.
   // Re-checked on resize (see scheduleDashboardRerender) so rotating the
   // phone or resizing a browser window switches layouts live.
   const compact = window.innerWidth <= 640;
   function th(field, label){
     return `<th onclick="setDashboardSort('${field}')">${escHtml(label)}${dashboardSortArrow(field)}</th>`;
   }
-  // A stacked header has two independently-clickable halves — clicking
-  // "Vessel" sorts by vessel, clicking "Port" (right below it, same cell)
-  // sorts by port, since the two are still logically separate columns
-  // that just happen to share screen space here.
-  function thStacked(fieldA, labelA, fieldB, labelB){
-    return `<th><span class="dashboard-th-stack-item" onclick="setDashboardSort('${fieldA}')">${escHtml(labelA)}${dashboardSortArrow(fieldA)}</span>` +
-      `<span class="dashboard-th-stack-item" onclick="setDashboardSort('${fieldB}')">${escHtml(labelB)}${dashboardSortArrow(fieldB)}</span></th>`;
+  // A stacked header has independently-clickable parts - clicking "Vessel"
+  // sorts by vessel, clicking "Port" (right below it, same cell) sorts by
+  // port, since these are still logically separate columns that just
+  // happen to share screen space here.
+  function thStacked(...pairs){
+    const parts = [];
+    for(let i = 0; i < pairs.length; i += 2){
+      parts.push(`<span class="dashboard-th-stack-item" onclick="setDashboardSort('${pairs[i]}')">${escHtml(pairs[i+1])}${dashboardSortArrow(pairs[i])}</span>`);
+    }
+    return `<th>${parts.join('')}</th>`;
   }
   const headHtml = compact
-    ? th('reference','Reference') + thStacked('vessel','Vessel','port','Port') + th('eta','ETA / Delivery') + th('supplier','Supplier') + thStacked('purchase','Purchase','sale','Sale') + th('status','Status')
-    : th('reference','Reference') + th('vessel','Vessel') + th('port','Port') + th('eta','ETA / Delivery') + th('supplier','Supplier') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status');
+    ? th('reference','Reference') + thStacked('vessel','Vessel','port','Port','eta','ETA') + thStacked('customer','Customer','supplier','Supplier') + thStacked('purchase','Purchase','sale','Sale') + th('status','Status') + '<th></th>'
+    : th('reference','Reference') + th('vessel','Vessel') + th('port','Port') + th('customer','Customer') + th('supplier','Supplier') + th('eta','ETA / Delivery') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status') + '<th></th>';
   const bodyHtml = rows.map(r=>{
     const dateText = fmtDashboardDate(r.deliveryDate || r.eta);
     const refText = r.orderNumber || r.quoteRef || '\u2014';
     const refCell = `<td><a href="#" class="dashboard-ref-link" onclick="openOrderFromDashboard('${r.id}'); return false;">${escHtml(refText)}</a></td>`;
     const statusCell = `<td><span class="tsb-status-badge" style="background:${getOrderStatusColor(statusEnumToLabel(r.status))};">${escHtml(statusEnumToLabel(r.status))}</span></td>`;
+    const deleteLabel = r.vesselName ? `${refText} \u2014 ${r.vesselName}` : refText;
+    const deleteCell = `<td><button type="button" class="btn-ghost btn-sm" style="color:var(--bad); border-color:var(--bad); padding:3px 8px;" onclick="deleteOrderFromDashboard('${r.id}', ${JSON.stringify(deleteLabel).replace(/"/g,'&quot;')})" title="Delete this order">\u2715</button></td>`;
     const purchaseText = fmtDashboardMoney(r.purchaseTotal, r.purchaseCurrency);
     const saleText = fmtDashboardMoney(r.salesTotal, r.salesCurrency);
     if(compact){
       return `<tr>${refCell}
-        <td>${escHtml(r.vesselName || '\u2014')}<br>${escHtml(r.portName || '\u2014')}</td>
-        <td>${escHtml(dateText)}</td>
-        <td>${escHtml(r.supplierName || '\u2014')}</td>
+        <td>${escHtml(r.vesselName || '\u2014')}<br>${escHtml(r.portName || '\u2014')}<br>${escHtml(dateText)}</td>
+        <td>${escHtml(r.customerName || '\u2014')}<br>${escHtml(r.supplierName || '\u2014')}</td>
         <td>${escHtml(purchaseText)}<br>${escHtml(saleText)}</td>
-        ${statusCell}</tr>`;
+        ${statusCell}${deleteCell}</tr>`;
     }
     return `<tr>${refCell}
       <td>${escHtml(r.vesselName || '\u2014')}</td>
       <td>${escHtml(r.portName || '\u2014')}</td>
-      <td>${escHtml(dateText)}</td>
+      <td>${escHtml(r.customerName || '\u2014')}</td>
       <td>${escHtml(r.supplierName || '\u2014')}</td>
+      <td>${escHtml(dateText)}</td>
       <td>${escHtml(purchaseText)}</td>
       <td>${escHtml(saleText)}</td>
-      ${statusCell}</tr>`;
+      ${statusCell}${deleteCell}</tr>`;
   }).join('');
   container.innerHTML = `<table class="dashboard-table">
     <thead><tr>${headHtml}</tr></thead>
@@ -9099,6 +9161,13 @@ function summaryEntityLink(kind, id, label){
 async function renderSummary(){
   const container = document.getElementById('summaryContent');
   if(!container) return;
+
+  const deleteBtnContainer = document.getElementById('summaryDeleteBtnContainer');
+  if(deleteBtnContainer){
+    deleteBtnContainer.innerHTML = isRealUuid(currentOrderDbId)
+      ? `<button class="btn-ghost btn-sm" style="color:var(--bad); border-color:var(--bad);" onclick="deleteCurrentOrder()">Delete this order</button>`
+      : '';
+  }
 
   const vesselName = fv('vessel') || fv('vesselOrder');
   const vesselId = resolveVesselId();
