@@ -11218,10 +11218,54 @@ async function importQuoteFromText(){
 // sign-in via the login form) before the app loads any data or renders.
 // A persisted session works offline — only a genuinely first-ever login
 // on a device requires connectivity.
+// Background services (the AIS listener, the vessel specs refresh job) can
+// detect their own key failures automatically and write an alert - this
+// surfaces them here, the moment someone actually opens the app, rather
+// than relying on anyone remembering to check a hosting provider's logs.
+async function checkSystemAlerts(){
+  if(!window.TS || !window.TS.getSystemAlerts) return;
+  try{
+    const alerts = await window.TS.getSystemAlerts();
+    if(!alerts.length) return;
+    const container = document.createElement('div');
+    container.id = 'systemAlertsContainer';
+    container.style.cssText = 'position:fixed; top:0; left:0; right:0; z-index:99999;';
+    const sourceLabels = { vesselapi: 'VesselAPI', aisstream: 'AISStream' };
+    alerts.forEach(a => {
+      const banner = document.createElement('div');
+      banner.style.cssText = 'background:#B3492E; color:#fff; padding:10px 16px; font-size:13px; display:flex; justify-content:space-between; align-items:center; gap:12px; border-bottom:1px solid rgba(255,255,255,0.25); box-shadow:0 2px 8px rgba(0,0,0,0.2);';
+      const label = sourceLabels[a.source] || a.source;
+      const textSpan = document.createElement('span');
+      textSpan.innerHTML = `<strong>\u26a0 ${escHtml(label)} issue:</strong> ${escHtml(a.message)}`;
+      const dismissBtn = document.createElement('button');
+      dismissBtn.type = 'button';
+      dismissBtn.textContent = 'Dismiss';
+      dismissBtn.style.cssText = 'background:rgba(255,255,255,0.18); border:1px solid rgba(255,255,255,0.4); color:#fff; padding:5px 12px; border-radius:4px; font-size:12px; cursor:pointer; flex-shrink:0; white-space:nowrap;';
+      dismissBtn.onclick = async () => {
+        dismissBtn.disabled = true; dismissBtn.textContent = '\u2026';
+        try{
+          await window.TS.acknowledgeAlert(a.id);
+          banner.remove();
+        }catch(e){
+          console.error('TS: acknowledgeAlert failed', e);
+          dismissBtn.disabled = false; dismissBtn.textContent = 'Dismiss';
+        }
+      };
+      banner.appendChild(textSpan);
+      banner.appendChild(dismissBtn);
+      container.appendChild(banner);
+    });
+    document.body.prepend(container);
+  }catch(e){
+    console.warn('TS: checkSystemAlerts failed', e);
+  }
+}
+
 (async function start(){
   if(window.TS){
     await window.TS.requireLogin();
     window.TS.mountUserBadge('tsUserBadgeContainer');
+    checkSystemAlerts(); // not awaited - shouldn't block the rest of startup
   }
   await loadReleaseNotes();
   await init(); // init() is itself async — must finish (including building the signature radio groups) before restoring saved preferences onto them
