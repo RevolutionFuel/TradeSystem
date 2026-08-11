@@ -84,9 +84,9 @@ def fetch_vessel_details(imo: str, debug: bool = False) -> dict | None:
     188 identical "not found" results with no clue why."""
     try:
         res = requests.get(
-            f"{VESSELAPI_BASE}/vessels",
+            f"{VESSELAPI_BASE}/vessel/{imo}",
             headers={"Authorization": f"Bearer {VESSELAPI_KEY}"},
-            params={"filter.imo": imo, "pagination.limit": 1},
+            params={"filter.idType": "imo"},
             timeout=15,
         )
         if debug:
@@ -98,10 +98,20 @@ def fetch_vessel_details(imo: str, debug: bool = False) -> dict | None:
             print(f"[warn] VesselAPI returned {res.status_code} for IMO {imo}: {res.text[:200]}")
             return None
         data = res.json()
-        results = data.get("data") or data.get("results") or []
-        if not results:
-            return None
-        return results[0]
+        # Handle whichever shape this endpoint actually returns - a single
+        # vessel object directly, one wrapped in a "data" key, or (less
+        # likely, but handled just in case) a results list like the
+        # position endpoint's siblings sometimes use.
+        if isinstance(data, dict) and ("data" in data or "results" in data):
+            candidate = data.get("data") or data.get("results")
+            if isinstance(candidate, list):
+                if not candidate:
+                    return None
+                return candidate[0]
+            return candidate
+        if isinstance(data, list):
+            return data[0] if data else None
+        return data if data else None
     except requests.RequestException as e:
         print(f"[warn] request failed for IMO {imo}: {e}")
         return None
