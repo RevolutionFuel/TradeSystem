@@ -45,6 +45,12 @@ VESSELAPI_KEY = os.environ.get("VESSELAPI_KEY")
 
 VESSELAPI_BASE = "https://api.vesselapi.com/v1"
 REQUEST_DELAY_SECONDS = 0.5  # be a reasonable neighbour on the free tier
+# Hard cap on lookups per run - VesselAPI's free tier is 150 calls/month,
+# and this script has no visibility into how many have already been used
+# this month (including by other runs, or manual testing). Defaulting well
+# under the monthly limit so one run can never accidentally exhaust it -
+# override via env var once actual usage patterns are better understood.
+MAX_LOOKUPS_PER_RUN = int(os.environ.get("MAX_LOOKUPS_PER_RUN", "20"))
 
 if not SUPABASE_SERVICE_ROLE_KEY:
     print("FATAL: SUPABASE_SERVICE_ROLE_KEY environment variable is not set.", file=sys.stderr)
@@ -112,7 +118,12 @@ def main() -> None:
 
     candidates = [v for v in all_vessels if is_valid_imo(v.get("imo"))]
     skipped_invalid_imo = len(all_vessels) - len(candidates)
-    print(f"{len(all_vessels)} total vessels, {len(candidates)} have a valid-checksum IMO "
+    if len(candidates) > MAX_LOOKUPS_PER_RUN:
+        print(f"{len(candidates)} vessels have a valid IMO, but this run is capped at "
+              f"{MAX_LOOKUPS_PER_RUN} lookups (set MAX_LOOKUPS_PER_RUN to change this) - "
+              f"processing the first {MAX_LOOKUPS_PER_RUN} now, rest on a future run.")
+        candidates = candidates[:MAX_LOOKUPS_PER_RUN]
+    print(f"{len(all_vessels)} total vessels, processing {len(candidates)} this run "
           f"({skipped_invalid_imo} skipped - no usable IMO to look up by)")
 
     updated = 0
