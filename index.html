@@ -224,6 +224,14 @@
   .scroll-col{flex:1 1 auto; min-height:0; overflow-y:auto;}
   .panel-body:not(.scroll-col){flex-shrink:0;}
   fieldset{border:none; padding:0; margin:0 0 16px;}
+  .signature-box{border:1px solid var(--line); border-radius:6px; margin:0 0 16px; overflow:hidden;}
+  .signature-box-header{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 14px; cursor:pointer; background:var(--paper); user-select:none;}
+  .signature-box-header:hover{background:var(--line-soft);}
+  .signature-box-title{font-weight:600; font-size:13px; color:var(--ink);}
+  .signature-box-current{font-weight:400; color:var(--ink-soft); margin-left:6px;}
+  .signature-box-toggle{font-size:12px; color:var(--teal); font-weight:600; white-space:nowrap;}
+  .signature-box-body{padding:14px; display:none; border-top:1px solid var(--line);}
+  .signature-box.expanded .signature-box-body{display:block;}
   fieldset:last-child{margin-bottom:0;}
   legend{font-family:var(--disp); font-size:11.5px; text-transform:uppercase; letter-spacing:0.08em; color:var(--amber); padding:0 0 7px; width:100%; border-bottom:1px dashed var(--line); margin-bottom:10px;}
   .row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
@@ -573,9 +581,14 @@
               <div class="hint">Changes the preview and copied text together — never just one or the other.</div>
             </fieldset>
 
-            <fieldset>
-              <legend>Signature</legend>
+            <fieldset class="signature-box" id="enqSignatureBox">
+              <div class="signature-box-header" onclick="toggleSignatureBox('enqSignatureBox')">
+                <span class="signature-box-title">Signature<span class="signature-box-current" id="enqSignatureSummary"></span></span>
+                <span class="signature-box-toggle">Change</span>
+              </div>
+              <div class="signature-box-body">
               <div id="enqSignatureGroup"></div>
+              </div>
             </fieldset>
 
           </div>
@@ -730,9 +743,14 @@
             <div class="hint">Changes the preview and copied text together — never just one or the other.</div>
           </fieldset>
 
-          <fieldset>
-            <legend>Signature</legend>
+          <fieldset class="signature-box" id="signatureBox">
+              <div class="signature-box-header" onclick="toggleSignatureBox('signatureBox')">
+                <span class="signature-box-title">Signature<span class="signature-box-current" id="signatureSummary"></span></span>
+                <span class="signature-box-toggle">Change</span>
+              </div>
+              <div class="signature-box-body">
             <div class="opt-group" id="signatureGroup"></div>
+              </div>
           </fieldset>
 
         </div>
@@ -904,9 +922,14 @@
               <div class="hint">Changes the preview and copied text together — never just one or the other.</div>
             </fieldset>
 
-            <fieldset>
-              <legend>Signature</legend>
+            <fieldset class="signature-box" id="supSignatureBox">
+              <div class="signature-box-header" onclick="toggleSignatureBox('supSignatureBox')">
+                <span class="signature-box-title">Signature<span class="signature-box-current" id="supSignatureSummary"></span></span>
+                <span class="signature-box-toggle">Change</span>
+              </div>
+              <div class="signature-box-body">
               <div id="supSignatureGroup"></div>
+              </div>
             </fieldset>
 
           </div>
@@ -1047,9 +1070,14 @@
               <div class="hint">Changes the preview and copied text together — never just one or the other.</div>
             </fieldset>
 
-            <fieldset>
-              <legend>Signature</legend>
+            <fieldset class="signature-box" id="custSignatureBox">
+              <div class="signature-box-header" onclick="toggleSignatureBox('custSignatureBox')">
+                <span class="signature-box-title">Signature<span class="signature-box-current" id="custSignatureSummary"></span></span>
+                <span class="signature-box-toggle">Change</span>
+              </div>
+              <div class="signature-box-body">
               <div id="custSignatureGroup"></div>
+              </div>
             </fieldset>
 
           </div>
@@ -1147,9 +1175,14 @@
               <div class="hint">Changes the preview and copied text together — never just one or the other. Applies to the email preview only, not the PDF.</div>
             </fieldset>
 
-            <fieldset>
-              <legend>Signature</legend>
+            <fieldset class="signature-box" id="invoiceSignatureBox">
+              <div class="signature-box-header" onclick="toggleSignatureBox('invoiceSignatureBox')">
+                <span class="signature-box-title">Signature<span class="signature-box-current" id="invoiceSignatureSummary"></span></span>
+                <span class="signature-box-toggle">Change</span>
+              </div>
+              <div class="signature-box-body">
               <div id="invoiceSignatureGroup"></div>
+              </div>
             </fieldset>
 
           </div>
@@ -2339,6 +2372,16 @@ document.addEventListener('visibilitychange', () => { if(!document.hidden) check
 /* ===================== INIT ===================== */
 async function init(){
   document.getElementById('versionBadge').textContent = 'v' + currentVersion();
+  // Fetched first, before the signature radio groups are built below, so
+  // the per-person default (see USER_SIGNATURE_DEFAULTS) is already correct
+  // on first render - loadFormattingPrefs() then overrides this afterward
+  // if the person has ever actually changed their signature choice before.
+  if(window.TS && window.TS.getClient){
+    try{
+      const { data } = await window.TS.getClient().auth.getUser();
+      currentUserEmail = (data && data.user && data.user.email) || '';
+    }catch(e){ console.warn('TS: could not fetch current user email for signature defaults', e); }
+  }
   VESSELS = await loadList('ql-vessels', VESSELS_SEED);
   PORTS = await loadList('ql-ports', PORTS_SEED);
   PRODUCTS = await loadList('ql-products', PRODUCTS_SEED);
@@ -2381,16 +2424,17 @@ async function init(){
   buildRadioGroup('signoffGroup', 'signoff', SIGNOFF_OPTIONS.map((t,i)=>({value:'s'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'signoffCustom'}]), 's0');
   buildRadioGroup('enqOpeningGroup', 'enqOpening', ENQUIRY_OPENING_OPTIONS.map((t,i)=>({value:'eo'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqOpeningCustom'}]), 'eo0', 'renderEnquiry');
   buildRadioGroup('enqSignoffGroup', 'enqSignoff', ENQUIRY_SIGNOFF_OPTIONS.map((t,i)=>({value:'es'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqSignoffCustom'}]), 'es0', 'renderEnquiry');
-  buildRadioGroup('enqSignatureGroup', 'enqSignature', SIGNATURE_OPTIONS, 'blank', 'renderEnquiry');
-  buildRadioGroup('signatureGroup', 'signature', SIGNATURE_OPTIONS, 'blank');
-  buildRadioGroup('supSignatureGroup', 'supSignature', SIGNATURE_OPTIONS, 'blank', 'renderSupply');
-  buildRadioGroup('custSignatureGroup', 'custSignature', SIGNATURE_OPTIONS, 'blank', 'renderCustomer');
+  buildRadioGroup('enqSignatureGroup', 'enqSignature', SIGNATURE_OPTIONS, defaultSignatureFor('enquire'), 'renderEnquiry');
+  buildRadioGroup('signatureGroup', 'signature', SIGNATURE_OPTIONS, defaultSignatureFor('quote'));
+  buildRadioGroup('supSignatureGroup', 'supSignature', SIGNATURE_OPTIONS, defaultSignatureFor('supply'), 'renderSupply');
+  buildRadioGroup('custSignatureGroup', 'custSignature', SIGNATURE_OPTIONS, defaultSignatureFor('customer'), 'renderCustomer');
   buildRadioGroup('invoiceTypeGroup', 'invoiceType', [
     {value:'invoice', label:'Invoice — addressed to customer, full selling price'},
     {value:'proforma', label:'Proforma Invoice — same as Invoice, marked as proforma'},
     {value:'commission', label:'Commission Invoice — addressed to supplier, margin as unit price'}
   ], 'invoice', 'renderInvoicePreviewOnly');
-  buildRadioGroup('invoiceSignatureGroup', 'invoiceSignature', SIGNATURE_OPTIONS, 'blank', 'renderInvoicePreviewOnly');
+  buildRadioGroup('invoiceSignatureGroup', 'invoiceSignature', SIGNATURE_OPTIONS, defaultSignatureFor('invoice'), 'renderInvoicePreviewOnly');
+  Object.keys(SIGNATURE_PAGES).forEach(updateSignatureSummary);
 
   renderNotesGroup();
   renderCustomNotesFields();
@@ -2630,7 +2674,10 @@ function onRadioChange(containerId, name, renderFnName){
   if(name === 'custSignature'){ custSignatureManuallySet = true; syncInvoiceSignatureFromCustomer(); }
   if(name === 'invoiceSignature') invoiceSignatureManuallySet = true;
   if(name === 'invoiceType') renderInvoicePreviewOnly();
-  if(SIGNATURE_RADIO_NAMES.includes(name)) scheduleSaveFormattingPrefs();
+  if(SIGNATURE_RADIO_NAMES.includes(name)){
+    Object.keys(SIGNATURE_PAGES).forEach(updateSignatureSummary);
+    scheduleSaveFormattingPrefs();
+  }
   window[renderFnName || 'render']();
 }
 // The three formatting checkboxes (capitalise headers / remove bold / remove
@@ -2663,6 +2710,41 @@ const SIGNATURE_PAGES = {
 const SIGNATURE_RADIO_NAMES = Object.values(SIGNATURE_PAGES).map(p=>p.name);
 let restoringFormattingPrefs = false;
 let saveFormattingPrefsTimer = null;
+function toggleSignatureBox(boxId){
+  const box = document.getElementById(boxId);
+  if(box) box.classList.toggle('expanded');
+}
+function signatureDisplayName(key){
+  if(!key || key === 'blank') return 'None selected';
+  const s = SIGNATURES[key];
+  if(!s) return 'None selected';
+  return s.name || s.company || 'None selected';
+}
+// Keeps the collapsed-state summary text in sync with whichever signature
+// is actually currently selected for that page - called once after the
+// radio group is first built, and again on every change.
+function updateSignatureSummary(page){
+  const info = SIGNATURE_PAGES[page];
+  if(!info) return;
+  const summaryEl = document.getElementById(info.name + 'Summary');
+  if(!summaryEl) return;
+  const key = getRadioValue(info.name);
+  summaryEl.textContent = ': ' + signatureDisplayName(key);
+}
+let currentUserEmail = '';
+// Each person's own signature by default, on every document - except
+// Barnaby's invoices, which go out under the company signature rather than
+// his own. Only applies the very first time (no saved preference exists
+// yet) - loadFormattingPrefs() always wins after that, so changing away
+// from this default sticks as the new personal default going forward.
+const USER_SIGNATURE_DEFAULTS = {
+  'john@revolutionfuel.com': {enquire:'john', quote:'john', supply:'john', customer:'john', invoice:'john'},
+  'barnaby@revolutionfuel.com': {enquire:'barnaby', quote:'barnaby', supply:'barnaby', customer:'barnaby', invoice:'company'}
+};
+function defaultSignatureFor(page){
+  const defaults = USER_SIGNATURE_DEFAULTS[currentUserEmail];
+  return (defaults && defaults[page]) || 'blank';
+}
 
 const DRAFT_OPTION_IDS = ['openDraftToSendEnquire','openDraftToSendQuote','openDraftToSendSupply','openDraftToSendCustomer','openDraftToSendInvoice','attachPdfQuote','attachPdfSupply','attachPdfCustomer'];
 function collectDraftOptions(){
@@ -4386,7 +4468,7 @@ const FIELD_HOME = {
   finalQuantity:['invoice'], finalBuyQuantity:['invoice']
 };
 const TYPED_FIELDS = new Set(['quantity','tolerance','sulphur','flashCustom','fameCustom','deliveryCustom',
-  'octaneRating','ethanolContent','customSpecNotes',
+  'octaneRating','ethanolContent','customSpecNotes','otherFuel','otherProductCustom',
   'sellingPrice','costPrice','sellingConversionFactor','costConversionFactor','exchangeRate','finalQuantity','finalBuyQuantity']);
 const PRICING_ROW_FIELDS = new Set(['sellingPrice','costPrice','sellingConversionFactor','costConversionFactor','exchangeRate','quantity']);
 // Fields with more than one home need a direct, targeted sync between the two
@@ -6683,8 +6765,9 @@ async function clearInvoiceFields(){
     {value:'commission', label:'Commission Invoice — addressed to supplier, margin as unit price'}
   ], 'invoice', 'renderInvoicePreviewOnly');
   invoiceSignatureManuallySet = false;
-  buildRadioGroup('invoiceSignatureGroup', 'invoiceSignature', SIGNATURE_OPTIONS, 'blank', 'renderInvoicePreviewOnly');
+  buildRadioGroup('invoiceSignatureGroup', 'invoiceSignature', SIGNATURE_OPTIONS, defaultSignatureFor('invoice'), 'renderInvoicePreviewOnly');
   syncInvoiceSignatureFromCustomer();
+  Object.keys(SIGNATURE_PAGES).forEach(updateSignatureSummary);
   productBlocks.forEach(b=>{
     b.finalQuantity = ''; b.finalBuySplit = false; b.finalBuyQuantity = '';
   });
@@ -8118,7 +8201,7 @@ async function clearEnquiryFields(){
   enqSignatureManuallySet = false;
   buildRadioGroup('enqOpeningGroup', 'enqOpening', ENQUIRY_OPENING_OPTIONS.map((t,i)=>({value:'eo'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqOpeningCustom'}]), 'eo0', 'renderEnquiry');
   buildRadioGroup('enqSignoffGroup', 'enqSignoff', ENQUIRY_SIGNOFF_OPTIONS.map((t,i)=>({value:'es'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqSignoffCustom'}]), 'es0', 'renderEnquiry');
-  buildRadioGroup('enqSignatureGroup', 'enqSignature', SIGNATURE_OPTIONS, 'blank', 'renderEnquiry');
+  buildRadioGroup('enqSignatureGroup', 'enqSignature', SIGNATURE_OPTIONS, defaultSignatureFor('enquire'), 'renderEnquiry');
   resetFormattingForPage('Enquire');
   renderEnquiry();
 }
@@ -8685,20 +8768,21 @@ async function clearOrder(){
   buildRadioGroup('signoffGroup', 'signoff', SIGNOFF_OPTIONS.map((t,i)=>({value:'s'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'signoffCustom'}]), 's0');
   buildRadioGroup('enqOpeningGroup', 'enqOpening', ENQUIRY_OPENING_OPTIONS.map((t,i)=>({value:'eo'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqOpeningCustom'}]), 'eo0', 'renderEnquiry');
   buildRadioGroup('enqSignoffGroup', 'enqSignoff', ENQUIRY_SIGNOFF_OPTIONS.map((t,i)=>({value:'es'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqSignoffCustom'}]), 'es0', 'renderEnquiry');
-  buildRadioGroup('enqSignatureGroup', 'enqSignature', SIGNATURE_OPTIONS, 'blank', 'renderEnquiry');
-  buildRadioGroup('signatureGroup', 'signature', SIGNATURE_OPTIONS, 'blank');
+  buildRadioGroup('enqSignatureGroup', 'enqSignature', SIGNATURE_OPTIONS, defaultSignatureFor('enquire'), 'renderEnquiry');
+  buildRadioGroup('signatureGroup', 'signature', SIGNATURE_OPTIONS, defaultSignatureFor('quote'));
   buildRadioGroup('supOpeningGroup', 'supOpening', SUPPLY_OPENING_OPTIONS.map((t,i)=>({value:'so'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'supOpeningCustom'}]), 'so0', 'renderSupply');
   buildRadioGroup('custOpeningGroup', 'custOpening', CUSTOMER_OPENING_OPTIONS.map((t,i)=>({value:'co'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'custOpeningCustom'}]), 'co0', 'renderCustomer');
   buildRadioGroup('supSignoffGroup', 'supSignoff', SUPPLY_SIGNOFF_OPTIONS.map((t,i)=>({value:'ss'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'supSignoffCustom'}]), 'ss0', 'renderSupply');
   buildRadioGroup('custSignoffGroup', 'custSignoff', CUSTOMER_SIGNOFF_OPTIONS.map((t,i)=>({value:'cs'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'custSignoffCustom'}]), 'cs0', 'renderCustomer');
-  buildRadioGroup('supSignatureGroup', 'supSignature', SIGNATURE_OPTIONS, 'blank', 'renderSupply');
-  buildRadioGroup('custSignatureGroup', 'custSignature', SIGNATURE_OPTIONS, 'blank', 'renderCustomer');
+  buildRadioGroup('supSignatureGroup', 'supSignature', SIGNATURE_OPTIONS, defaultSignatureFor('supply'), 'renderSupply');
+  buildRadioGroup('custSignatureGroup', 'custSignature', SIGNATURE_OPTIONS, defaultSignatureFor('customer'), 'renderCustomer');
   buildRadioGroup('invoiceTypeGroup', 'invoiceType', [
     {value:'invoice', label:'Invoice — addressed to customer, full selling price'},
     {value:'proforma', label:'Proforma Invoice — same as Invoice, marked as proforma'},
     {value:'commission', label:'Commission Invoice — addressed to supplier, margin as unit price'}
   ], 'invoice', 'renderInvoicePreviewOnly');
-  buildRadioGroup('invoiceSignatureGroup', 'invoiceSignature', SIGNATURE_OPTIONS, 'blank', 'renderInvoicePreviewOnly');
+  buildRadioGroup('invoiceSignatureGroup', 'invoiceSignature', SIGNATURE_OPTIONS, defaultSignatureFor('invoice'), 'renderInvoicePreviewOnly');
+  Object.keys(SIGNATURE_PAGES).forEach(updateSignatureSummary);
   renderNotesGroup();
   renderCustomNotesFields();
   renderConditionsGroup();
@@ -8735,7 +8819,7 @@ async function clearQuoteFields(){
   buildRadioGroup('paymentGroup', 'payment', PAYMENT_OPTIONS.map((t,i)=>({value:'p'+i, label:t})).concat([{value:'blank', label:'(leave blank \u2014 omit from quote)'}]), 'p4');
   buildRadioGroup('signoffGroup', 'signoff', SIGNOFF_OPTIONS.map((t,i)=>({value:'s'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'signoffCustom'}]), 's0');
   quoteSignatureManuallySet = false;
-  buildRadioGroup('signatureGroup', 'signature', SIGNATURE_OPTIONS, 'blank');
+  buildRadioGroup('signatureGroup', 'signature', SIGNATURE_OPTIONS, defaultSignatureFor('quote'));
   syncQuoteSignatureFromEnquiry();
   renderNotesGroup();
   renderCustomNotesFields();
@@ -8780,7 +8864,7 @@ async function clearSupplyFields(){
   buildRadioGroup('supSignoffGroup', 'supSignoff', SUPPLY_SIGNOFF_OPTIONS.map((t,i)=>({value:'ss'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'supSignoffCustom'}]), 'ss0', 'renderSupply');
   buildRadioGroup('supPaymentGroup', 'supPayment', PAYMENT_OPTIONS.map((t,i)=>({value:'p'+i, label:t})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderSupply');
   syncSupPaymentFromQuote();
-  buildRadioGroup('supSignatureGroup', 'supSignature', SIGNATURE_OPTIONS, 'blank', 'renderSupply');
+  buildRadioGroup('supSignatureGroup', 'supSignature', SIGNATURE_OPTIONS, defaultSignatureFor('supply'), 'renderSupply');
   syncSupSignatureFromQuote();
   syncCustSignatureFromSupply();
   supCustomNotes = [''];
@@ -8813,7 +8897,7 @@ async function clearCustomerFields(){
   buildRadioGroup('custSignoffGroup', 'custSignoff', CUSTOMER_SIGNOFF_OPTIONS.map((t,i)=>({value:'cs'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'custSignoffCustom'}]), 'cs0', 'renderCustomer');
   buildRadioGroup('custPaymentGroup', 'custPayment', PAYMENT_OPTIONS.map((t,i)=>({value:'p'+i, label:t})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderCustomer');
   syncCustPaymentFromQuote();
-  buildRadioGroup('custSignatureGroup', 'custSignature', SIGNATURE_OPTIONS, 'blank', 'renderCustomer');
+  buildRadioGroup('custSignatureGroup', 'custSignature', SIGNATURE_OPTIONS, defaultSignatureFor('customer'), 'renderCustomer');
   syncCustSignatureFromSupply();
   custNotesManuallySet = false;
   custNotesCheckedIndices = null;
