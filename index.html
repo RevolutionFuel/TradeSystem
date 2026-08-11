@@ -1354,41 +1354,6 @@
     </div>
   </div>
 
-  <!-- ============ SAVE / LOAD VIEW ============ -->
-  <div class="view" id="viewSaveLoad">
-    <div class="panel">
-      <div class="panel-head"><h2>Save this quote</h2></div>
-      <div class="panel-body">
-        <p class="hint" style="margin:0 0 12px;">Saves everything currently filled in — vessel, products, prices, notes, and your selections. Your saved vessel/port/product/notes lists are separate and already save automatically, so they don't need this.</p>
-        <div class="btnbar">
-          <button class="btn-primary" onclick="exportQuoteFile()">⬇ Download as file</button>
-          <button class="btn-ghost" onclick="exportQuoteText()">📋 Copy as text</button>
-          <span class="status-msg" id="exportStatus">✓ Copied</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel" style="margin-top:16px;">
-      <div class="panel-head"><h2>Load a saved quote</h2></div>
-      <div class="panel-body">
-        <p class="hint" style="margin:0 0 12px; color:var(--bad);">Loading will replace everything currently on the Build Quote page.</p>
-
-        <div class="field">
-          <label>Upload a saved file</label>
-          <input type="file" id="importFileInput" accept=".txt,.json,text/plain,application/json" onchange="importQuoteFromFile(this)">
-        </div>
-
-        <div class="field" style="margin-top:16px;">
-          <label for="importTextArea">Or paste saved text</label>
-          <textarea id="importTextArea" placeholder="Paste the text you copied earlier..." style="min-height:90px;"></textarea>
-          <button class="btn-ghost btn-sm" style="margin-top:8px;" onclick="importQuoteFromText()">Load from pasted text</button>
-        </div>
-
-        <div class="status-msg" id="importStatus" style="margin-top:12px; font-size:13px;"></div>
-      </div>
-    </div>
-  </div>
-
 </div>
 
 <script>
@@ -1663,7 +1628,7 @@ function connectOutlook(){
     return;
   }
   if(orderIsDirty){
-    const proceed = confirm('Connecting Outlook will leave this page and come back — any unsaved changes to the order you\'re working on will be lost.\n\nSave your order first (Save/Load tab), or press Cancel to stay here.');
+    const proceed = confirm('Connecting Outlook will leave this page and come back — any unsaved changes to the order you\'re working on will be lost.\n\nSave your order first (the Save button on the Order page), or press Cancel to stay here.');
     if(!proceed) return;
   }
   msalInstance.loginRedirect({ scopes: GRAPH_SCOPES }).catch(function(e){
@@ -1722,7 +1687,7 @@ async function getGraphToken(){
   }catch(e){
     if(e && e.name === 'InteractionRequiredAuthError'){
       if(orderIsDirty){
-        const proceed = confirm('Outlook needs you to sign in again, which means leaving this page and coming back — any unsaved changes to the order you\'re working on will be lost.\n\nSave your order first (Save/Load tab), or press Cancel to stay here.');
+        const proceed = confirm('Outlook needs you to sign in again, which means leaving this page and coming back — any unsaved changes to the order you\'re working on will be lost.\n\nSave your order first (the Save button on the Order page), or press Cancel to stay here.');
         if(!proceed) throw new Error('cancelled');
       }
       await msalInstance.acquireTokenRedirect({ scopes: GRAPH_SCOPES, account: graphAccount });
@@ -3656,7 +3621,7 @@ async function saveOrderToDatabase(){
   if(orderSaveInProgress) return;
   const btn = document.getElementById('orderSaveBtn');
   if(!window.TS || !window.TS.saveOrder){
-    alert('Saving to the database needs the database connection \u2014 not available right now. Your work is still safe on this device; use Save/Load to export a backup if you\u2019re concerned.');
+    alert('Saving to the database needs the database connection \u2014 not available right now. Your work is still safe on this device \u2014 try saving again once you\u2019re back online.');
     return;
   }
   orderSaveInProgress = true;
@@ -8976,6 +8941,7 @@ function switchView(v){
     itemDetailState = { kind:null, id:null, editMode:false, returnViewId:null };
     itemDetailContactEditingId = null;
     if(itemDetailMapInstance){ itemDetailMapInstance.remove(); itemDetailMapInstance = null; }
+    try{ localStorage.removeItem('ts-last-item-detail'); }catch(e){ /* private browsing or similar - fine to skip */ }
   }
   document.getElementById('viewDashboard').classList.toggle('active', v==='dashboard');
   document.getElementById('viewBuild').classList.toggle('active', v==='build');
@@ -8999,6 +8965,7 @@ function switchOrderPage(page){
   if(page==='customer') renderCustomer();
   if(page==='invoice') renderInvoicePreviewOnly();
   if(page==='summary') renderSummary();
+  try{ localStorage.setItem('ts-last-order-page', page); }catch(e){ /* private browsing or similar - fine to skip */ }
   updatePanelHeightLock();
 }
 function switchMgmt(which){
@@ -9011,6 +8978,7 @@ function switchMgmt(which){
   if(which==='registeredowners') renderOwnerTable();
   if(which==='suppliers') renderSupplierTable();
   if(which==='agents') renderAgentTable();
+  try{ localStorage.setItem('ts-last-mgmt-tab', which); }catch(e){ /* private browsing or similar - fine to skip */ }
   updatePanelHeightLock();
 }
 function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
@@ -9335,6 +9303,7 @@ function openItemDetail(kind, id){
   updatePanelHeightLock();
   scheduleStickyOffsetUpdate();
   if(kind === 'vessel') refreshVesselPositionIfStale(id);
+  try{ localStorage.setItem('ts-last-item-detail', JSON.stringify({kind, id, returnViewId})); }catch(e){ /* private browsing or similar - fine to skip */ }
 }
 // Called whenever a vessel is viewed — the edge function itself decides
 // whether a real VesselAPI call is needed (only if the cached position is
@@ -9401,6 +9370,7 @@ function closeItemDetail(){
   itemDetailState = { kind:null, id:null, editMode:false, returnViewId:null, isNew:false };
   itemDetailContactEditingId = null;
   if(itemDetailMapInstance){ itemDetailMapInstance.remove(); itemDetailMapInstance = null; }
+  try{ localStorage.removeItem('ts-last-item-detail'); }catch(e){ /* private browsing or similar - fine to skip */ }
   updatePanelHeightLock();
   scheduleStickyOffsetUpdate();
 }
@@ -10810,547 +10780,6 @@ function pbOtherNameDisplay(b){
   return b.otherProductName==='__custom' ? (b.otherProductCustom||'') : (b.otherProductName||'');
 }
 
-function quoteStateToReadableText(state){
-  const lines = [];
-  const field = (label, value) => lines.push(`${label}: ${value===undefined||value===null?'':value}`);
-  const section = (title) => { lines.push(''); lines.push(`--- ${title} ---`); };
-
-  lines.push('Revolution Fuel \u2014 Saved Quote');
-  field('Saved', new Date(state.savedAt).toLocaleString('en-GB'));
-  field('Reference', state.quoteRef);
-  field('Date issued', state.quoteDate);
-  field('Order number', state.orderNumber);
-
-  lines.push('');
-  field('Greeting', state.greeting);
-  field('Opening line', state.openingLineText);
-
-  section('Supply Details');
-  field('Vessel', state.vessel.name);
-  field('IMO', state.vessel.imo);
-  field('Flag', state.vessel.flag);
-  field('Registered Owner', state.vessel.owner);
-  field('Fuel Fitting', state.vessel.fitting);
-  field('Display vessel specifics on quote', fmtYesNo(state.vessel.showSpecifics));
-  field('Port', state.port);
-  field('Location within port', state.portLocation);
-  field('ETA', state.eta);
-  field('ETA Range Mode', fmtYesNo(state.etaRangeMode));
-  field('ETA To', state.etaTo);
-  field('Time of Delivery', state.deliveryTime);
-
-  state.productBlocks.forEach((b, i)=>{
-    section(`Product ${i+1} (${b.kind==='fuel' ? 'Fuel' : 'Other'})`);
-    if(b.kind==='fuel'){
-      field('Grade', pbGradeDisplay(b));
-      field('Sulphur Content', b.sulphur);
-      field('Flash Point', pbFlashDisplay(b));
-      field('FAME/Bio Content', pbFameDisplay(b));
-      field('Octane Rating (RON)', b.octaneRating);
-      field('Ethanol Content', b.ethanolContent);
-      field('Custom Specification Notes', b.customSpecNotes);
-      field('Specifications attached', fmtYesNo(b.specsAttached));
-      field('Quantity', b.quantity);
-      field('Unit', b.unit);
-      field('Tolerance %', b.tolerance);
-      field('Delivery method', pbDeliveryDisplay(b));
-      field("To master's requirements", fmtYesNo(b.mastersReq));
-    } else {
-      field('Product name', pbOtherNameDisplay(b));
-      field('Custom Specification Notes', b.customSpecNotes);
-      field('Quantity', b.quantity);
-      field('Unit', b.unit);
-    }
-    field('Sale Currency', b.currency);
-    field('Sale Price', b.sellingPrice);
-    field('Sale Price Unit', b.sellingPriceUnit);
-    field('Sale Conversion Factor', b.sellingConversionFactor);
-    if(b.kind==='fuel') field('Delivered', fmtYesNo(b.sellingPriceDelivered));
-    field('Purchase Currency', b.costCurrency);
-    field('Purchase Price', b.costPrice);
-    field('Purchase Price Unit', b.costPriceUnit);
-    field('Purchase Conversion Factor', b.costConversionFactor);
-    field('Exchange Rate', b.exchangeRate);
-    field('Product Supplier', b.supplierName);
-    field('Final Quantity', b.finalQuantity);
-    field('Final Quantity Buy Side Split', fmtYesNo(b.finalBuySplit));
-    field('Final Quantity Buy Side', b.finalBuyQuantity);
-    // Pipe-delimited so this can be parsed back into a real fee object on
-    // import, not just a human-readable sentence — the previous format lost
-    // amount/unit/conversion factor entirely on reload.
-    const fees = (b.fees||[]).filter(f=>f && (f.description||'').trim() || (f.amount||'').toString().trim());
-    if(fees.length){
-      lines.push('Fees:');
-      fees.forEach(f=> lines.push(`  - ${[f.description||'', f.amount||'', f.unit||'Lumpsum', f.sellingConversionFactor||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
-    } else field('Fees', '(none)');
-    const costFees = (b.costFees||[]).filter(f=>f && (f.description||'').trim() || (f.amount||'').toString().trim());
-    if(costFees.length){
-      lines.push('Purchase Fees:');
-      costFees.forEach(f=> lines.push(`  - ${[f.description||'', f.amount||'', f.unit||'Lumpsum', f.costFeeConversionFactor||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
-    } else field('Purchase Fees', '(none)');
-  });
-
-  section('Terms');
-  field('Payment terms', state.paymentLineText);
-  field('Validity (minutes)', state.validityMins);
-  field('Show order total', fmtYesNo(state.showOrderTotal));
-  if(state.quoteSelectedContacts.length){
-    lines.push('Quote selected contacts:');
-    state.quoteSelectedContacts.forEach(c=> lines.push(`  - ${[c.name||'', c.jobTitle||'', c.alias||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
-  } else field('Quote selected contacts', '(none)');
-  if(state.custSelectedContacts.length){
-    lines.push('Customer selected contacts:');
-    state.custSelectedContacts.forEach(c=> lines.push(`  - ${[c.name||'', c.jobTitle||'', c.alias||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
-  } else field('Customer selected contacts', '(none)');
-  if(state.enqSelectedContacts.length){
-    lines.push('Enquire selected contacts:');
-    state.enqSelectedContacts.forEach(c=> lines.push(`  - ${[c.name||'', c.jobTitle||'', c.alias||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
-  } else field('Enquire selected contacts', '(none)');
-  if(state.supSelectedContacts.length){
-    lines.push('Supply selected contacts:');
-    state.supSelectedContacts.forEach(c=> lines.push(`  - ${[c.name||'', c.jobTitle||'', c.alias||''].map(v=>String(v).replace(/\|/g,'/')).join('|')}`));
-  } else field('Supply selected contacts', '(none)');
-
-  section('Operational Notes');
-  if(state.checkedNoteTexts.length){ lines.push('Ticked notes:'); state.checkedNoteTexts.forEach(t=>lines.push(`  - ${t}`)); }
-  else field('Ticked notes', '(none)');
-  const customs = state.customNotes.filter(c=>c && c.trim());
-  if(customs.length){ lines.push('Custom notes:'); customs.forEach(c=>lines.push(`  - ${c}`)); }
-  else field('Custom notes', '(none)');
-
-  section('Conditions of Sale');
-  if((state.checkedConditionTexts||[]).length){ lines.push('Ticked conditions:'); state.checkedConditionTexts.forEach(t=>lines.push(`  - ${t}`)); }
-  else field('Ticked conditions', '(none)');
-
-  section('Supplier Operational Notes');
-  if((state.supCheckedNoteTexts||[]).length){ lines.push('Ticked supplier notes:'); state.supCheckedNoteTexts.forEach(t=>lines.push(`  - ${t}`)); }
-  else field('Ticked supplier notes', '(none)');
-  const supCustoms = (state.supCustomNotes||[]).filter(c=>c && c.trim());
-  if(supCustoms.length){ lines.push('Custom supplier notes:'); supCustoms.forEach(c=>lines.push(`  - ${c}`)); }
-  else field('Custom supplier notes', '(none)');
-
-  section('Customer Confirmation Operational Notes');
-  field('Diverged from Quote', fmtYesNo(state.custNotesManuallySet));
-  if(state.custNotesManuallySet && (state.custNotesCheckedTexts||[]).length){
-    lines.push('Ticked customer notes:'); state.custNotesCheckedTexts.forEach(t=>lines.push(`  - ${t}`));
-  } else if(state.custNotesManuallySet) field('Ticked customer notes', '(none)');
-
-  section('Customer Confirmation Conditions of Sale');
-  if((state.custCheckedConditionTexts||[]).length){ lines.push('Ticked customer conditions:'); state.custCheckedConditionTexts.forEach(t=>lines.push(`  - ${t}`)); }
-  else field('Ticked customer conditions', '(none)');
-
-  section('Closing');
-  field('Sign-off', state.signoffLineText);
-  field('Signature', state.signatureKey==='john' ? 'John Sipson' : state.signatureKey==='barnaby' ? 'Barnaby Skipwith' : state.signatureKey==='company' ? 'Revolution Fuel (generic company signature)' : '(none)');
-
-  // Distinct labels throughout this section — the parser matches by label text
-  // regardless of which section it's under, so anything reusing "Opening line",
-  // "Sign-off", or "Show order total" from above would silently overwrite the
-  // Quote's own value with the Supplier Confirmation's on reload.
-  section('Supplier Confirmation');
-  field('Supplier', state.supplierName);
-  field('Salutation', state.supGreeting);
-  field('Supplier Opening line', state.supOpeningLineText);
-  field('Supplier Sign-off', state.supSignoffLineText);
-  field('Supplier Signature', state.supSignatureKey==='john' ? 'John Sipson' : state.supSignatureKey==='barnaby' ? 'Barnaby Skipwith' : state.supSignatureKey==='company' ? 'Revolution Fuel (generic company signature)' : '(none)');
-  field('Supplier Payment terms', state.supPaymentLineText);
-  field('Supplier Show order total', fmtYesNo(state.showSupplyOrderTotal));
-
-  section('Customer Confirmation');
-  field('Customer Salutation', state.custGreeting);
-  field('Customer Opening line', state.custOpeningLineText);
-  field('Customer Sign-off', state.custSignoffLineText);
-  field('Customer Signature', state.custSignatureKey==='john' ? 'John Sipson' : state.custSignatureKey==='barnaby' ? 'Barnaby Skipwith' : state.custSignatureKey==='company' ? 'Revolution Fuel (generic company signature)' : '(none)');
-  field('Customer Payment terms', state.custPaymentLineText);
-  field('Customer Show order total', fmtYesNo(state.showCustomerOrderTotal));
-
-  section('Invoice');
-  field('Invoice Type', state.invoiceType);
-  field('Invoice Final Delivery Date', state.finalETA);
-  field('Invoice Adjustment Amount', state.costAdjustmentAmount);
-  field('Invoice Adjustment Currency', state.costAdjustmentCurrency);
-  field('Invoice Adjustment Description', state.costAdjustmentDescription);
-
-  section('Enquiry');
-  field('Enquiry Salutation', state.enqGreeting);
-  field('Enquiry Specs Request', fmtYesNo(state.enqSpecsRequest));
-  field('Enquiry Timing Question', fmtYesNo(state.enqTimingQuestion));
-  field('Enquiry Flash Point Question', fmtYesNo((state.enqExtraQuestions||[]).includes('enqFlashPoint')));
-  field('Enquiry FAME Question', fmtYesNo((state.enqExtraQuestions||[]).includes('enqFame')));
-  field('Enquiry Payment Terms Question', fmtYesNo((state.enqExtraQuestions||[]).includes('enqPaymentTerms')));
-  field('Enquiry Delivery Method Question', fmtYesNo((state.enqExtraQuestions||[]).includes('enqDeliveryMethod')));
-  field('Enquiry Max Sulphur Question', fmtYesNo((state.enqExtraQuestions||[]).includes('enqMaxSulphur')));
-  field('Enquiry Signature', state.enqSignatureKey==='john' ? 'John Sipson' : state.enqSignatureKey==='barnaby' ? 'Barnaby Skipwith' : state.enqSignatureKey==='company' ? 'Revolution Fuel (generic company signature)' : '(none)');
-  field('Enquiry Opening line', state.enqOpeningLineText);
-  field('Enquiry Sign-off', state.enqSignoffLineText);
-
-  section('Local Agent');
-  field('Agent Name', state.agentName);
-  field('Agent Contact Name', state.agentContactName);
-  field('Agent Telephone', state.agentTelephone);
-  field('Agent Email', state.agentEmail);
-  field('Agent Notes', state.agentNotes);
-
-  section('Status');
-  const sf = state.orderStatusFlags || {};
-  field('Awaiting Prices Reached', fmtYesNo(sf.awaitingPrices));
-  field('Quoted Reached', fmtYesNo(sf.quoted));
-  field('Supplier Confirmed Reached', fmtYesNo(sf.supplierConfirmed));
-  field('Customer Confirmed Reached', fmtYesNo(sf.customerConfirmed));
-  field('Invoiced Reached', fmtYesNo(sf.invoiced));
-  field('Manual Status Override', state.manualStatusOverride || '(none)');
-
-  section('Multi-Supplier');
-  field('Multi-supplier mode', fmtYesNo(state.multiSupplierMode));
-  field('Currently viewing supplier', state.currentSupplyViewSupplier || '(none)');
-  if((state.confirmedSupplierNames||[]).length){ lines.push('Confirmed suppliers:'); state.confirmedSupplierNames.forEach(s=>lines.push(`  - ${s}`)); }
-  else field('Confirmed suppliers', '(none)');
-
-  return lines.join('\n');
-}
-
-function parseReadableQuoteText(text){
-  const lines = text.split(/\r?\n/);
-  // Reconstructs a real fee object from the pipe-delimited
-  // "description|amount|unit|conversionFactor" line format — the field name
-  // for the conversion factor differs between sale and cost fees, matching
-  // how the two are stored on the product block itself.
-  function parseFeeLine(val, isCost){
-    const parts = val.split('|').map(s=>s.replace(/\//g,'|').trim());
-    const fee = { description: parts[0]||'', amount: parts[1]||'', unit: parts[2]||'Lumpsum' };
-    if(isCost) fee.costFeeConversionFactor = parts[3]||'';
-    else fee.sellingConversionFactor = parts[3]||'';
-    return fee;
-  }
-  const data = {
-    quoteRef:'', quoteDate:'', orderNumber:'',
-    greeting:'', openingLineText:'',
-    vessel:{name:'',imo:'',flag:'',owner:'',fitting:'',showSpecifics:false},
-    port:'', portLocation:'', eta:'', etaRangeMode:false, etaTo:'', deliveryTime:'',
-    productBlocks:[],
-    paymentLineText:'', validityMins:'', showOrderTotal:false,
-    quoteSelectedContacts:[], custSelectedContacts:[], enqSelectedContacts:[], supSelectedContacts:[],
-    checkedNoteTexts:[], customNotes:[],
-    checkedConditionTexts:[], supCheckedNoteTexts:[], supCustomNotes:[],
-    custNotesManuallySet:false, custNotesCheckedTexts:[], custCheckedConditionTexts:[],
-    multiSupplierMode:false, currentSupplyViewSupplier:null, confirmedSupplierNames:[],
-    signoffLineText:'', signatureKey:'blank',
-    supplierName:'', supGreeting:'', supOpeningLineText:'', supSignoffLineText:'', supSignatureKey:'blank', supPaymentLineText:'', showSupplyOrderTotal:false,
-    custGreeting:'', custOpeningLineText:'', custSignoffLineText:'', custSignatureKey:'blank', custPaymentLineText:'', showCustomerOrderTotal:false,
-    invoiceType:'invoice', finalETA:'', costAdjustmentAmount:'', costAdjustmentCurrency:'USD', costAdjustmentDescription:'',
-    enqGreeting:'', enqSpecsRequest:true, enqTimingQuestion:false, enqExtraQuestions:[], enqSignatureKey:'blank',
-    enqOpeningLineText:'', enqSignoffLineText:'',
-    agentName:'', agentContactName:'', agentTelephone:'', agentEmail:'', agentNotes:'',
-    orderStatusFlags: {awaitingPrices:false, quoted:false, supplierConfirmed:false, customerConfirmed:false, invoiced:false},
-    manualStatusOverride: null
-  };
-
-  function finalizeProduct(p){
-    const isFuel = p.kind==='Fuel';
-    const f = p.f;
-    const block = {
-      kind: isFuel ? 'fuel' : 'other',
-      grade:'', otherFuel:'', fuelSubTypeFilter:'', otherSubTypeFilter:'',
-      sulphur: f['Sulphur Content']||'', flash:'blank', flashCustom:'', fame:'blank', fameCustom:'',
-      octaneRating: f['Octane Rating (RON)']||'', ethanolContent: f['Ethanol Content']||'',
-      customSpecNotes: f['Custom Specification Notes']||'',
-      specsAttached:false, otherProductName:'', otherProductCustom:'',
-      quantity: f['Quantity']||'', unit: f['Unit']||'Litres', tolerance: f['Tolerance %']||'',
-      delivery:'', deliveryCustom:'', mastersReq:false,
-      currency: f['Sale Currency']||f['Currency']||'USD', sellingPrice: f['Sale Price']||f['Price']||'', sellingPriceUnit: f['Sale Price Unit']||f['Price unit']||f['Unit']||'Litres',
-      sellingConversionFactor: f['Sale Conversion Factor']||f['Conversion factor']||'', sellingPriceDelivered:false,
-      costPrice: f['Purchase Price']||'', costCurrency: f['Purchase Currency']||f['Sale Currency']||f['Currency']||'USD',
-      costPriceUnit: f['Purchase Price Unit']||f['Sale Price Unit']||f['Price unit']||f['Unit']||'Litres',
-      costConversionFactor: f['Purchase Conversion Factor']||'', exchangeRate: f['Exchange Rate']||'',
-      finalQuantity: f['Final Quantity']||'', finalBuySplit: (f['Final Quantity Buy Side Split']||'').toLowerCase()==='yes', finalBuyQuantity: f['Final Quantity Buy Side']||'',
-      supplierName: f['Product Supplier']||'',
-      fees: p.fees.slice(), costFees: p.costFees.slice()
-    };
-    if(isFuel){
-      const gradeText = f['Grade']||'';
-      // Old EN590/DMA-suffixed text is from files saved before the fuel
-      // picker was tied directly to the Products list — map to the real
-      // name. Anything matching a current Fuel product is taken as-is;
-      // anything else (including a product since renamed or removed) is
-      // treated as a custom fuel name, same as it always displayed.
-      if(gradeText==='Auto Gas Oil \u2013 EN590') block.grade='Auto Gas Oil';
-      else if(gradeText==='Marine Gas Oil \u2013 DMA') block.grade='Marine Gas Oil';
-      else if(gradeText && PRODUCTS.some(p=>p.category==='Fuel' && p.name===gradeText)) block.grade=gradeText;
-      else if(gradeText){ block.grade='other'; block.otherFuel=gradeText; }
-
-      const flashText = f['Flash Point']||'';
-      if(flashText==='60 Deg C min') block.flash='60';
-      else if(flashText==='55 Deg C min') block.flash='55';
-      else if(flashText==='Flash Point 140 Deg F/60 Deg C min') block.flash='140f60c';
-      else if(flashText){ block.flash='custom'; block.flashCustom=flashText; }
-
-      const fameText = f['FAME/Bio Content']||'';
-      if(fameText==='FAME Free (de minimis)') block.fame='free';
-      else if(fameText==='FAME 7% max') block.fame='7pct';
-      else if(fameText){ block.fame='custom'; block.fameCustom=fameText; }
-
-      block.specsAttached = (f['Specifications attached']||'').toLowerCase()==='yes';
-
-      const delText = f['Delivery method']||'';
-      if(['Ex-Pipeline','Truck','Barge','Ex-Wharf'].includes(delText)) block.delivery = delText;
-      else if(delText){ block.delivery='__custom'; block.deliveryCustom=delText; }
-
-      block.mastersReq = (f["To master's requirements"]||'').toLowerCase()==='yes';
-      block.sellingPriceDelivered = (f['Delivered']||'').toLowerCase()==='yes';
-    } else {
-      const nameText = f['Product name']||'';
-      const known = PRODUCTS.some(pr=>pr.category==='Other Products' && pr.name===nameText);
-      if(known) block.otherProductName = nameText;
-      else { block.otherProductName='__custom'; block.otherProductCustom=nameText; }
-    }
-    return block;
-  }
-
-  let currentProduct = null;
-  let mode = null;
-  const pushCurrent = () => { if(currentProduct) data.productBlocks.push(finalizeProduct(currentProduct)); };
-
-  for(const raw of lines){
-    const line = raw.trim();
-    if(!line) continue;
-
-    const productHeader = line.match(/^---\s*Product\s+\d+\s*\((Fuel|Other)\)\s*---$/i);
-    if(productHeader){
-      pushCurrent();
-      currentProduct = {kind: productHeader[1], f:{}, fees:[], costFees:[]};
-      mode = null;
-      continue;
-    }
-    if(/^---.+---$/.test(line)){
-      pushCurrent();
-      currentProduct = null;
-      mode = null;
-      continue;
-    }
-
-    if(mode){
-      const item = raw.match(/^\s*-\s*(.*)$/);
-      if(item){
-        const val = item[1].trim();
-        if(val !== '(none)'){
-          if(mode==='fees' && currentProduct) currentProduct.fees.push(parseFeeLine(val));
-          else if(mode==='costFees' && currentProduct) currentProduct.costFees.push(parseFeeLine(val, true));
-          else if(mode==='tickedNotes') data.checkedNoteTexts.push(val);
-          else if(mode==='quoteSelectedContacts'){ const parts=val.split('|'); data.quoteSelectedContacts.push({name:parts[0]||'', jobTitle:parts[1]||'', alias:parts[2]||''}); }
-          else if(mode==='custSelectedContacts'){ const parts=val.split('|'); data.custSelectedContacts.push({name:parts[0]||'', jobTitle:parts[1]||'', alias:parts[2]||''}); }
-          else if(mode==='enqSelectedContacts'){ const parts=val.split('|'); data.enqSelectedContacts.push({name:parts[0]||'', jobTitle:parts[1]||'', alias:parts[2]||''}); }
-          else if(mode==='supSelectedContacts'){ const parts=val.split('|'); data.supSelectedContacts.push({name:parts[0]||'', jobTitle:parts[1]||'', alias:parts[2]||''}); }
-          else if(mode==='customNotes') data.customNotes.push(val);
-          else if(mode==='tickedConditions') data.checkedConditionTexts.push(val);
-          else if(mode==='tickedSupNotes') data.supCheckedNoteTexts.push(val);
-          else if(mode==='customSupNotes') data.supCustomNotes.push(val);
-          else if(mode==='tickedCustNotes') data.custNotesCheckedTexts.push(val);
-          else if(mode==='tickedCustConditions') data.custCheckedConditionTexts.push(val);
-          else if(mode==='confirmedSuppliers') data.confirmedSupplierNames.push(val);
-        }
-        continue;
-      }
-      mode = null;
-    }
-
-    const colonIdx = line.indexOf(':');
-    if(colonIdx===-1) continue;
-    const label = line.slice(0, colonIdx).trim();
-    const value = line.slice(colonIdx+1).trim();
-
-    if(label==='Fees'){ mode='fees'; continue; }
-    if(label==='Purchase Fees'){ mode='costFees'; continue; }
-    if(label==='Ticked notes'){ mode='tickedNotes'; continue; }
-    if(label==='Quote selected contacts'){ mode='quoteSelectedContacts'; continue; }
-    if(label==='Customer selected contacts'){ mode='custSelectedContacts'; continue; }
-    if(label==='Enquire selected contacts'){ mode='enqSelectedContacts'; continue; }
-    if(label==='Supply selected contacts'){ mode='supSelectedContacts'; continue; }
-    if(label==='Custom notes'){ mode='customNotes'; continue; }
-    if(label==='Ticked conditions'){ mode='tickedConditions'; continue; }
-    if(label==='Ticked supplier notes'){ mode='tickedSupNotes'; continue; }
-    if(label==='Custom supplier notes'){ mode='customSupNotes'; continue; }
-    if(label==='Diverged from Quote'){ data.custNotesManuallySet = value.toLowerCase()==='yes'; continue; }
-    if(label==='Ticked customer notes'){ mode='tickedCustNotes'; continue; }
-    if(label==='Ticked customer conditions'){ mode='tickedCustConditions'; continue; }
-    if(label==='Confirmed suppliers'){ mode='confirmedSuppliers'; continue; }
-
-    if(currentProduct){ currentProduct.f[label] = value; continue; }
-
-    switch(label){
-      case 'Reference': data.quoteRef = value; break;
-      case 'Date issued': data.quoteDate = value; break;
-      case 'Order number': data.orderNumber = value; break;
-      case 'Greeting': data.greeting = value; break;
-      case 'Opening line': data.openingLineText = value; break;
-      case 'Vessel': data.vessel.name = value; break;
-      case 'IMO': data.vessel.imo = value; break;
-      case 'Flag': data.vessel.flag = value; break;
-      case 'Registered Owner': data.vessel.owner = value; break;
-      case 'Fuel Fitting': data.vessel.fitting = value; break;
-      case 'Display vessel specifics on quote': data.vessel.showSpecifics = value.toLowerCase()==='yes'; break;
-      case 'Port': data.port = value; break;
-      case 'Location within port': data.portLocation = value; break;
-      case 'ETA': data.eta = value; break;
-      case 'ETA Range Mode': data.etaRangeMode = value.toLowerCase()==='yes'; break;
-      case 'ETA To': data.etaTo = value; break;
-      case 'Time of Delivery': data.deliveryTime = value; break;
-      case 'Payment terms': data.paymentLineText = value; break;
-      case 'Validity (minutes)': data.validityMins = value; break;
-      case 'Show order total': data.showOrderTotal = value.toLowerCase()==='yes'; break;
-      case 'Sign-off': data.signoffLineText = value; break;
-      case 'Signature':
-        if(/john/i.test(value)) data.signatureKey='john';
-        else if(/barnaby/i.test(value)) data.signatureKey='barnaby';
-        else if(/revolution fuel/i.test(value)) data.signatureKey='company';
-        else data.signatureKey='blank';
-        break;
-      case 'Supplier': data.supplierName = value; break;
-      case 'Salutation': data.supGreeting = value; break;
-      case 'Supplier Opening line': data.supOpeningLineText = value; break;
-      case 'Supplier Sign-off': data.supSignoffLineText = value; break;
-      case 'Supplier Signature':
-        if(/john/i.test(value)) data.supSignatureKey='john';
-        else if(/barnaby/i.test(value)) data.supSignatureKey='barnaby';
-        else if(/revolution fuel/i.test(value)) data.supSignatureKey='company';
-        else data.supSignatureKey='blank';
-        break;
-      case 'Supplier Payment terms': data.supPaymentLineText = value; break;
-      case 'Supplier Show order total': data.showSupplyOrderTotal = value.toLowerCase()==='yes'; break;
-      case 'Customer Salutation': data.custGreeting = value; break;
-      case 'Customer Opening line': data.custOpeningLineText = value; break;
-      case 'Customer Sign-off': data.custSignoffLineText = value; break;
-      case 'Customer Signature':
-        if(/john/i.test(value)) data.custSignatureKey='john';
-        else if(/barnaby/i.test(value)) data.custSignatureKey='barnaby';
-        else if(/revolution fuel/i.test(value)) data.custSignatureKey='company';
-        else data.custSignatureKey='blank';
-        break;
-      case 'Customer Payment terms': data.custPaymentLineText = value; break;
-      case 'Customer Show order total': data.showCustomerOrderTotal = value.toLowerCase()==='yes'; break;
-      case 'Invoice Type': data.invoiceType = value; break;
-      case 'Invoice Final Delivery Date': data.finalETA = value; break;
-      case 'Invoice Adjustment Amount': data.costAdjustmentAmount = value; break;
-      case 'Invoice Adjustment Currency': data.costAdjustmentCurrency = value; break;
-      case 'Invoice Adjustment Description': data.costAdjustmentDescription = value; break;
-      case 'Enquiry Salutation': data.enqGreeting = value; break;
-      case 'Enquiry Specs Request': data.enqSpecsRequest = value.toLowerCase()==='yes'; break;
-      case 'Enquiry Timing Question': data.enqTimingQuestion = value.toLowerCase()==='yes'; break;
-      case 'Enquiry Flash Point Question': if(value.toLowerCase()==='yes') data.enqExtraQuestions.push('enqFlashPoint'); break;
-      case 'Enquiry FAME Question': if(value.toLowerCase()==='yes') data.enqExtraQuestions.push('enqFame'); break;
-      case 'Enquiry Payment Terms Question': if(value.toLowerCase()==='yes') data.enqExtraQuestions.push('enqPaymentTerms'); break;
-      case 'Enquiry Delivery Method Question': if(value.toLowerCase()==='yes') data.enqExtraQuestions.push('enqDeliveryMethod'); break;
-      case 'Enquiry Max Sulphur Question': if(value.toLowerCase()==='yes') data.enqExtraQuestions.push('enqMaxSulphur'); break;
-      case 'Enquiry Signature':
-        if(/john/i.test(value)) data.enqSignatureKey='john';
-        else if(/barnaby/i.test(value)) data.enqSignatureKey='barnaby';
-        else if(/revolution fuel/i.test(value)) data.enqSignatureKey='company';
-        else data.enqSignatureKey='blank';
-        break;
-      case 'Enquiry Opening line': data.enqOpeningLineText = value; break;
-      case 'Enquiry Sign-off': data.enqSignoffLineText = value; break;
-      case 'Agent Name': data.agentName = value; break;
-      case 'Agent Contact Name': data.agentContactName = value; break;
-      case 'Agent Telephone': data.agentTelephone = value; break;
-      case 'Agent Email': data.agentEmail = value; break;
-      case 'Agent Notes': data.agentNotes = value; break;
-      case 'Awaiting Prices Reached': data.orderStatusFlags.awaitingPrices = value.toLowerCase()==='yes'; break;
-      case 'Quoted Reached': data.orderStatusFlags.quoted = value.toLowerCase()==='yes'; break;
-      case 'Supplier Confirmed Reached': data.orderStatusFlags.supplierConfirmed = value.toLowerCase()==='yes'; break;
-      case 'Customer Confirmed Reached': data.orderStatusFlags.customerConfirmed = value.toLowerCase()==='yes'; break;
-      case 'Invoiced Reached': data.orderStatusFlags.invoiced = value.toLowerCase()==='yes'; break;
-      case 'Manual Status Override': data.manualStatusOverride = (value && value !== '(none)') ? value : null; break;
-      case 'Multi-supplier mode': data.multiSupplierMode = value.toLowerCase()==='yes'; break;
-      case 'Currently viewing supplier': data.currentSupplyViewSupplier = (value && value !== '(none)') ? value : null; break;
-      default: break;
-    }
-  }
-  pushCurrent();
-
-  return data;
-}
-
-function parseImportedRaw(raw){
-  raw = raw.trim();
-  // Primary format: the human-readable text this tool now exports.
-  try{
-    const data = parseReadableQuoteText(raw);
-    if(data.productBlocks && data.productBlocks.length) return data;
-  }catch(e){}
-  // Fallbacks for anything saved before this format existed.
-  try{ return JSON.parse(raw); }catch(e){}
-  try{ return JSON.parse(b64DecodeUnicode(raw)); }catch(e){}
-  throw new Error('Not a recognized quote format.');
-}
-
-function suggestedQuoteFilename(){
-  const slugify = (s, fallback) => (s||'').trim().replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,'') || fallback;
-  const orderRef = slugify(fv('orderNumberSupply') || fv('orderNumberCustomer') || fv('quoteRef'), 'order');
-  const vessel = slugify(fv('vessel'), 'vessel');
-  const now = new Date();
-  const pad = n => String(n).padStart(2,'0');
-  const timestamp = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-  return `${orderRef}_${vessel}_${timestamp}.txt`;
-}
-function downloadTextFile(filename, text, mime){
-  try{
-    const blob = new Blob([text], {type: mime||'text/plain'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(()=>URL.revokeObjectURL(url), 1000);
-    return true;
-  }catch(e){ console.error(e); return false; }
-}
-
-function exportQuoteFile(){
-  const text = quoteStateToReadableText(collectQuoteState());
-  const ok = downloadTextFile(suggestedQuoteFilename(), text, 'text/plain');
-  if(ok) flash('exportStatus'); else alert('Could not create the download \u2014 please try again.');
-}
-async function exportQuoteText(){
-  const text = quoteStateToReadableText(collectQuoteState());
-  try{
-    await navigator.clipboard.writeText(text);
-    flash('exportStatus');
-  }catch(e){
-    // Plain prompt() is a reliable, universally-supported way to hand someone a
-    // block of text to manually copy when the Clipboard API isn't available.
-    window.prompt('Copy this text (Ctrl+C, or long-press \u2192 Copy on mobile), then paste it somewhere to keep it:', text);
-  }
-}
-
-function showImportStatus(msg, isError){
-  const el = document.getElementById('importStatus');
-  el.textContent = msg;
-  el.style.color = isError ? 'var(--bad)' : 'var(--good)';
-  el.classList.add('show');
-}
-async function loadQuoteFromRaw(raw){
-  let data;
-  try{ data = parseImportedRaw(raw); }
-  catch(e){ showImportStatus('Could not read that \u2014 make sure it\u2019s a quote file or text saved from this tool.', true); return; }
-  if(!confirm('This will replace everything currently on the Build Quote page. Continue?')) return;
-  await applyQuoteState(data);
-  document.getElementById('importTextArea').value = '';
-  showImportStatus('\u2713 Quote loaded \u2014 switch to Build Quote to see it.', false);
-}
-async function importQuoteFromFile(inputEl){
-  const file = inputEl.files && inputEl.files[0];
-  if(!file) return;
-  try{
-    const text = await file.text();
-    await loadQuoteFromRaw(text);
-  }catch(e){
-    showImportStatus('Could not read that file.', true);
-  }
-  inputEl.value = '';
-}
-async function importQuoteFromText(){
-  const raw = document.getElementById('importTextArea').value;
-  if(!raw.trim()){ showImportStatus('Paste your saved text first.', true); return; }
-  await loadQuoteFromRaw(raw);
-}
 
 // Wait for a valid session (persisted from an earlier login, or a fresh
 // sign-in via the login form) before the app loads any data or renders.
@@ -11410,12 +10839,28 @@ async function checkSystemAlerts(){
   await loadFormattingPrefs();
   initGraphAuth(); // not awaited — Outlook connect state has no bearing on the main app's own startup
   try{
+    const lastItemDetail = localStorage.getItem('ts-last-item-detail');
     const lastView = localStorage.getItem('ts-last-view');
     // Only ever restore to one of the actual top-level tabs that still
     // exist - guards against a stale value (e.g. a deprecated tab) ever
     // pointing nowhere.
     if(['dashboard','build','manage'].includes(lastView) && lastView !== 'dashboard'){
       switchView(lastView);
+    }
+    if(lastView === 'build'){
+      const lastOrderPage = localStorage.getItem('ts-last-order-page');
+      if(['order','enquire','quote','supply','customer','invoice','summary'].includes(lastOrderPage)) switchOrderPage(lastOrderPage);
+    }
+    if(lastView === 'manage'){
+      const lastMgmtTab = localStorage.getItem('ts-last-mgmt-tab');
+      if(['vessels','registeredowners','suppliers','agents','ports','products','notes'].includes(lastMgmtTab)) switchMgmt(lastMgmtTab);
+    }
+    // An open item detail page takes priority over everything above - it
+    // was the actual page being looked at, so it's what should come back.
+    if(lastItemDetail){
+      const { kind, id } = JSON.parse(lastItemDetail);
+      const validKinds = ['vessel','owner','supplier','agent','port','product'];
+      if(validKinds.includes(kind) && id) openItemDetail(kind, id);
     }
   }catch(e){ /* private browsing or similar - default view is fine */ }
 })();
