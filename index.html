@@ -9494,6 +9494,55 @@ function vesselPositionFieldHtml(item){
     <span style="font-size:12px; color:${isStale?'#B3492E':'var(--ink-soft)'};">Last reported ${escHtml(ageText)}${isStale?' \u2014 may be out of date':''}</span></div>
   </div>`;
 }
+function vesselCheckDetailsButtonHtml(item){
+  // Only useful once saved (needs a real id) and once an IMO's actually
+  // been entered - matches the same "must save first" pattern already used
+  // for images.
+  if(!isRealUuid(item.id) || !item.imo) return '';
+  return `<div class="item-detail-field">
+    <button type="button" class="btn-ghost btn-sm" id="checkVesselDetailsBtn" onclick="checkVesselDetailsNow('${item.id}')">Check details from IMO</button>
+    <div id="checkVesselDetailsResult" style="font-size:12px; color:var(--ink-soft); margin-top:4px;"></div>
+  </div>`;
+}
+async function checkVesselDetailsNow(vesselId){
+  const btn = document.getElementById('checkVesselDetailsBtn');
+  const resultEl = document.getElementById('checkVesselDetailsResult');
+  if(btn){ btn.disabled = true; btn.textContent = 'Checking\u2026'; }
+  if(resultEl) resultEl.textContent = '';
+  try{
+    if(!window.TS || !window.TS.getClient) throw new Error('Database connection not available.');
+    const client = window.TS.getClient();
+    const { data: { session } } = await client.auth.getSession();
+    if(!session) throw new Error('Not signed in.');
+    const res = await fetch('https://dxaajzdolalessivlseg.supabase.co/functions/v1/manage-vessel-data', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vesselId, checkType: 'specs' })
+    });
+    const result = await res.json();
+    if(result.ok){
+      // Reload vessels so the freshly-fetched fields actually show, then
+      // re-render before setting the result message - renderItemDetail()
+      // rebuilds this exact element, so setting the message before would
+      // just get wiped out by it.
+      VESSELS = await window.TS.loadReferenceData('ql-vessels', VESSELS);
+      if(itemDetailState.kind === 'vessel' && itemDetailState.id === vesselId){
+        renderItemDetail();
+        const freshResultEl = document.getElementById('checkVesselDetailsResult');
+        if(freshResultEl) freshResultEl.textContent = `Updated ${result.fieldsUpdated} field(s).`;
+      }
+    } else if(result.skipped){
+      if(resultEl) resultEl.textContent = result.skipped;
+    } else {
+      if(resultEl) resultEl.textContent = 'Could not check details: ' + (result.error || 'unknown error');
+    }
+  }catch(e){
+    console.error('TS: checkVesselDetailsNow failed', e);
+    if(resultEl) resultEl.textContent = 'Could not check details: ' + (e.message || 'unknown error');
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = 'Check details from IMO'; }
+  }
+}
 function renderItemDetail(){
   if(!itemDetailState.kind) return;
   const schema = ITEM_DETAIL_SCHEMAS[itemDetailState.kind];
@@ -9555,6 +9604,7 @@ function renderItemDetail(){
       ${roleTogglesHtml(item, schema.roleListName)}
     </div>` : '';
   const mapSectionHtml = schema.hasMap ? `<div class="item-detail-field" id="itemDetailMapSection"></div>` : '';
+  const checkDetailsButtonHtml = (itemDetailState.kind === 'vessel') ? vesselCheckDetailsButtonHtml(item) : '';
   const positionSectionHtml = (itemDetailState.kind === 'vessel') ? vesselPositionFieldHtml(item) : '';
   const imageSectionHtml = schema.hasMainImage ? itemDetailImageFieldHtml(item, 'main', 'Main image') : '';
   const logoSectionHtml = schema.hasLogo ? itemDetailImageFieldHtml(item, 'logo', 'Logo') : '';
@@ -9562,7 +9612,7 @@ function renderItemDetail(){
       <span class="item-detail-label">Contacts</span>
       <div id="itemDetailContactsSection"><div class="hint">Loading\u2026</div></div>
     </div>` : '';
-  document.getElementById('itemDetailFields').innerHTML = imageSectionHtml + logoSectionHtml + fieldsHtml + emptyStateHtml + rolesHtml + mapSectionHtml + positionSectionHtml + contactsSectionHtml;
+  document.getElementById('itemDetailFields').innerHTML = imageSectionHtml + logoSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + positionSectionHtml + contactsSectionHtml;
   if(schema.hasMap) renderItemDetailMap(item);
   if(schema.contactsFor) renderItemDetailContacts(item, schema);
 }
