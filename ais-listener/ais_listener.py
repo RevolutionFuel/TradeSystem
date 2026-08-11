@@ -39,6 +39,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone, timedelta
 
 import websockets
@@ -219,18 +220,39 @@ async def run_connection(mmsi_group: list[str], group_index: int) -> None:
                 print(f"[group {group_index}] subscribed to {len(mmsi_group)} MMSIs")
                 backoff = 5  # reset once a connection succeeds
                 already_alerted = False
-                async for raw in ws:
+                total_received = 0
+                position_reports = 0
+                matched_vessels = 0
+                last_heartbeat = time.time()
+                while True:
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=60)
+                    except asyncio.TimeoutError:
+                        print(f"[group {group_index}] heartbeat: connection still open, but 0 messages "
+                              f"of any kind received in the last 60s (totals so far: {total_received} "
+                              f"messages, {position_reports} position reports, {matched_vessels} matched "
+                              f"our tracked vessels)")
+                        last_heartbeat = time.time()
+                        continue
+                    total_received += 1
+                    if time.time() - last_heartbeat > 60:
+                        print(f"[group {group_index}] heartbeat: {total_received} messages received so far "
+                              f"({position_reports} position reports, {matched_vessels} matched our tracked "
+                              f"vessels)")
+                        last_heartbeat = time.time()
                     try:
                         msg = json.loads(raw)
                     except json.JSONDecodeError:
                         continue
                     if msg.get("MessageType") != "PositionReport":
                         continue
+                    position_reports += 1
                     metadata = msg.get("MetaData", {})
                     mmsi = str(metadata.get("MMSI", ""))
                     vessel_id = mmsi_to_vessel.get(mmsi)
                     if not vessel_id:
                         continue
+                    matched_vessels += 1
                     report = msg.get("Message", {}).get("PositionReport", {})
                     ais_ts = parse_ais_timestamp(metadata.get("time_utc", ""))
                     handle_position_report(vessel_id, mmsi, report, ais_ts)
