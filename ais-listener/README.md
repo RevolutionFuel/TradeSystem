@@ -85,8 +85,13 @@ exits, so it belongs in a Render **Cron Job**, not a Background Worker.
    briefly a few times a year, unlike the listener which needs to stay up
    permanently.
 9. Environment variables — same `SUPABASE_SERVICE_ROLE_KEY` as the
-   listener, plus a new one:
+   listener, plus two new ones:
    - `VESSELAPI_KEY` — from your VesselAPI.com dashboard.
+   - `VESSELAPI_KEY_CREATED_AT` — the date you generated this key, in
+     `YYYY-MM-DD` format (e.g. `2026-08-11`). Optional, but without it you
+     only find out the key's expired when a run actually fails — with it,
+     you get a clear warning starting 14 days before the 90-day expiry.
+     Update this alongside VESSELAPI_KEY whenever you rotate the key.
 
 Only ever touches vessels with a genuinely checksum-valid IMO (see
 `is_valid_imo()` in the script) — the "official numbers" some smaller
