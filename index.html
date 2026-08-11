@@ -9217,7 +9217,6 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'beamM', label:'Beam (m)', type:'text'},
       {key:'draughtM', label:'Draught (m)', type:'text'},
       {key:'grossTonnage', label:'Gross tonnage', type:'text'},
-      {key:'deadweightTonnes', label:'Deadweight (tonnes)', type:'text'},
       {key:'yearBuilt', label:'Year built', type:'text'},
       {key:'notes', label:'Notes', type:'textarea'}
     ],
@@ -9477,22 +9476,50 @@ function formatRelativeAge(date){
 function vesselPositionFieldHtml(item){
   if(!item.trackAis) return '';
   const pos = item.lastPosition;
+  let positionHtml;
   if(!pos || pos.latitude == null || pos.longitude == null){
-    return `<div class="item-detail-field">
-      <span class="item-detail-label">AIS Position</span>
-      <div class="item-detail-value" style="color:var(--ink-soft);">No position received yet.</div>
+    positionHtml = `<div class="item-detail-value" style="color:var(--ink-soft);">No position received yet.</div>`;
+  } else {
+    const ts = pos.aisTimestamp ? new Date(pos.aisTimestamp) : null;
+    const ageText = ts ? formatRelativeAge(ts) : 'age unknown';
+    const isStale = ts && (Date.now() - ts.getTime()) > 7 * 24 * 60 * 60 * 1000; // over a week old
+    const coordText = `${Number(pos.latitude).toFixed(4)}, ${Number(pos.longitude).toFixed(4)}`;
+    const sogText = pos.sog != null ? `${pos.sog} kn` : '';
+    positionHtml = `<div class="item-detail-value">${escHtml(coordText)}${sogText ? ' \u00b7 ' + escHtml(sogText) : ''}<br>
+      <span style="font-size:12px; color:${isStale?'#B3492E':'var(--ink-soft)'};">Last reported ${escHtml(ageText)}${isStale?' \u2014 may be out of date':''}</span></div>`;
+  }
+  let etaHtml = '';
+  if(item.nextDestination || item.nextEta){
+    const etaDate = item.nextEta ? new Date(item.nextEta) : null;
+    const etaText = etaDate ? etaDate.toLocaleString(undefined, {dateStyle:'medium', timeStyle:'short'}) : '';
+    etaHtml = `<div class="item-detail-value" style="margin-top:8px;">
+      ${item.nextDestination ? `Bound for <strong>${escHtml(item.nextDestination)}</strong>` : 'Destination not reported'}${etaText ? ' \u00b7 ETA ' + escHtml(etaText) : ''}
     </div>`;
   }
-  const ts = pos.aisTimestamp ? new Date(pos.aisTimestamp) : null;
-  const ageText = ts ? formatRelativeAge(ts) : 'age unknown';
-  const isStale = ts && (Date.now() - ts.getTime()) > 7 * 24 * 60 * 60 * 1000; // over a week old
-  const coordText = `${Number(pos.latitude).toFixed(4)}, ${Number(pos.longitude).toFixed(4)}`;
-  const sogText = pos.sog != null ? `${pos.sog} kn` : '';
   return `<div class="item-detail-field">
     <span class="item-detail-label">AIS Position</span>
-    <div class="item-detail-value">${escHtml(coordText)}${sogText ? ' \u00b7 ' + escHtml(sogText) : ''}<br>
-    <span style="font-size:12px; color:${isStale?'#B3492E':'var(--ink-soft)'};">Last reported ${escHtml(ageText)}${isStale?' \u2014 may be out of date':''}</span></div>
+    ${positionHtml}${etaHtml}
   </div>`;
+}
+function renderVesselMap(item){
+  const container = document.getElementById('itemDetailVesselMapSection');
+  if(!container) return;
+  if(itemDetailMapInstance){ itemDetailMapInstance.remove(); itemDetailMapInstance = null; }
+  const pos = item.lastPosition;
+  const hasCoords = item.trackAis && pos && pos.latitude != null && pos.longitude != null;
+  if(!hasCoords){ container.innerHTML = ''; return; }
+  if(typeof L === 'undefined'){
+    container.innerHTML = '<div class="hint">Map did not load \u2014 check your internet connection and reload.</div>';
+    return;
+  }
+  container.innerHTML = '<div id="itemDetailVesselMapCanvas" class="item-detail-map-canvas"></div>';
+  const lat = Number(pos.latitude), lon = Number(pos.longitude);
+  const map = L.map('itemDetailVesselMapCanvas', { zoomControl: true }).setView([lat, lon], 10);
+  itemDetailMapInstance = map;
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
+  }).addTo(map);
+  L.marker([lat, lon], { icon: L.divIcon({ className: 'item-detail-yacht-marker', html: YACHT_MARKER_SVG, iconSize: [34, 40], iconAnchor: [17, 36] }) }).addTo(map);
 }
 function vesselCheckDetailsButtonHtml(item){
   // Only useful once saved (needs a real id) and once an IMO's actually
@@ -9606,14 +9633,16 @@ function renderItemDetail(){
   const mapSectionHtml = schema.hasMap ? `<div class="item-detail-field" id="itemDetailMapSection"></div>` : '';
   const checkDetailsButtonHtml = (itemDetailState.kind === 'vessel') ? vesselCheckDetailsButtonHtml(item) : '';
   const positionSectionHtml = (itemDetailState.kind === 'vessel') ? vesselPositionFieldHtml(item) : '';
+  const vesselMapSectionHtml = (itemDetailState.kind === 'vessel') ? `<div class="item-detail-field" id="itemDetailVesselMapSection"></div>` : '';
   const imageSectionHtml = schema.hasMainImage ? itemDetailImageFieldHtml(item, 'main', 'Main image') : '';
   const logoSectionHtml = schema.hasLogo ? itemDetailImageFieldHtml(item, 'logo', 'Logo') : '';
   const contactsSectionHtml = schema.contactsFor ? `<div class="item-detail-field">
       <span class="item-detail-label">Contacts</span>
       <div id="itemDetailContactsSection"><div class="hint">Loading...</div></div>
     </div>` : '';
-  document.getElementById('itemDetailFields').innerHTML = imageSectionHtml + logoSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + positionSectionHtml + contactsSectionHtml;
+  document.getElementById('itemDetailFields').innerHTML = imageSectionHtml + logoSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + positionSectionHtml + vesselMapSectionHtml + contactsSectionHtml;
   if(schema.hasMap) renderItemDetailMap(item);
+  if(itemDetailState.kind === 'vessel') renderVesselMap(item);
   if(schema.contactsFor) renderItemDetailContacts(item, schema);
 }
 async function saveItemDetail(){
@@ -9940,20 +9969,21 @@ function renderVesselTable(){
   document.getElementById('vesselTableHead').innerHTML = '<tr>' +
     mgmtSortTh('vessels','name','Vessel','renderVesselTable') + mgmtSortTh('vessels','imo','IMO','renderVesselTable') +
     mgmtSortTh('vessels','flag','Flag','renderVesselTable') + mgmtSortTh('vessels','owner','Registered owner','renderVesselTable') +
-    mgmtSortTh('vessels','fitting','Fuel fitting','renderVesselTable') + '</tr>';
+    mgmtSortTh('vessels','fitting','Fuel fitting','renderVesselTable') + '<th>Speed</th></tr>';
   let filtered = VESSELS.map((v,i)=>({v,i})).filter(({v})=> !q || v.name.toLowerCase().includes(q));
   filtered = mgmtSortPairs(filtered, 'vessels', p=>p.v[mgmtSort.vessels.field]);
   document.getElementById('vesselCount').textContent = `${filtered.length} of ${VESSELS.length} vessels`;
   filtered.forEach(({v,i})=>{
     const tr = document.createElement('tr');
     tr.onclick = () => openItemDetail('vessel', v.id);
+    const speedText = (v.trackAis && v.lastPosition && v.lastPosition.sog != null) ? `${v.lastPosition.sog} kn` : '\u2014';
     tr.innerHTML = `
       <td class="mgmt-item-name">${escHtml(v.name)}</td>
       <td>${escHtml(v.imo || '\u2014')}</td>
       <td>${escHtml(v.flag || '\u2014')}</td>
       <td>${escHtml(ownerName(v.ownerId) || '\u2014')}</td>
       <td>${escHtml(v.fitting || '\u2014')}</td>
-      
+      <td>${escHtml(speedText)}</td>
     `;
     tbody.appendChild(tr);
   });
