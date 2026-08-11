@@ -68,10 +68,14 @@ def is_valid_imo(imo: str | None) -> bool:
     return checksum % 10 == digits[6]
 
 
-def fetch_vessel_details(imo: str) -> dict | None:
+def fetch_vessel_details(imo: str, debug: bool = False) -> dict | None:
     """Looks up a vessel by IMO via VesselAPI's vessel lookup endpoint.
     Returns None if not found or on error (never raises - a single bad
-    lookup shouldn't stop the whole batch)."""
+    lookup shouldn't stop the whole batch). When debug=True, prints the
+    raw response regardless of outcome - used for the first lookup of a
+    run, so a systematic problem (wrong param name, auth issue, unexpected
+    response shape) is visible immediately rather than silently producing
+    188 identical "not found" results with no clue why."""
     try:
         res = requests.get(
             f"{VESSELAPI_BASE}/vessels",
@@ -79,6 +83,9 @@ def fetch_vessel_details(imo: str) -> dict | None:
             params={"filter.imo": imo, "pagination.limit": 1},
             timeout=15,
         )
+        if debug:
+            print(f"[debug] GET {res.url}")
+            print(f"[debug] status={res.status_code} body={res.text[:500]}")
         if res.status_code == 404:
             return None
         if not res.ok:
@@ -110,8 +117,8 @@ def main() -> None:
 
     updated = 0
     not_found = 0
-    for v in candidates:
-        details = fetch_vessel_details(v["imo"])
+    for i, v in enumerate(candidates):
+        details = fetch_vessel_details(v["imo"], debug=(i == 0))
         time.sleep(REQUEST_DELAY_SECONDS)
         if details is None:
             not_found += 1
