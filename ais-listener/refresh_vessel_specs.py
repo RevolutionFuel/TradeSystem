@@ -98,20 +98,22 @@ def fetch_vessel_details(imo: str, debug: bool = False) -> dict | None:
             print(f"[warn] VesselAPI returned {res.status_code} for IMO {imo}: {res.text[:200]}")
             return None
         data = res.json()
-        # Handle whichever shape this endpoint actually returns - a single
-        # vessel object directly, one wrapped in a "data" key, or (less
-        # likely, but handled just in case) a results list like the
-        # position endpoint's siblings sometimes use.
-        if isinstance(data, dict) and ("data" in data or "results" in data):
-            candidate = data.get("data") or data.get("results")
-            if isinstance(candidate, list):
-                if not candidate:
-                    return None
-                return candidate[0]
-            return candidate
+        # Handle whichever shape this endpoint actually returns - confirmed
+        # inconsistent in practice: some vessels come back as a flat object,
+        # others wrapped in a "vessel" key, others (maybe) in "data"/
+        # "results". Checking all known wrapper keys rather than assuming
+        # any one shape is reliable.
+        if isinstance(data, dict):
+            for wrapper_key in ("vessel", "data", "results"):
+                if wrapper_key in data:
+                    candidate = data[wrapper_key]
+                    if isinstance(candidate, list):
+                        return candidate[0] if candidate else None
+                    return candidate
+            return data if data else None
         if isinstance(data, list):
             return data[0] if data else None
-        return data if data else None
+        return None
     except requests.RequestException as e:
         print(f"[warn] request failed for IMO {imo}: {e}")
         return None
