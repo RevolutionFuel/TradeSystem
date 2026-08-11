@@ -3616,9 +3616,12 @@ function buildOrderProductLines(){
     const fees = [];
     (b.fees||[]).forEach(f=> fees.push({side:'sell', description:f.description||'', amount:parseFloat(f.amount)||null, currency: b.currency||null}));
     (b.costFees||[]).forEach(f=> fees.push({side:'cost', description:f.description||'', amount:parseFloat(f.amount)||null, currency: b.costCurrency||null}));
+    const supplierNameText = b.supplierName || fv('supplierName') || '';
     return {
       productId: resolveProductId(productBlockName(b)),
-      supplierOrgId: resolveSupplierId(b.supplierName || fv('supplierName')),
+      productName: productBlockName(b) || '',
+      supplierOrgId: resolveSupplierId(supplierNameText),
+      supplierName: supplierNameText,
       quantity: parseFloat(b.quantity) || null,
       finalQuantity: parseFloat(b.finalQuantity) || null,
       finalBuyQuantity: parseFloat(b.finalBuyQuantity) || null,
@@ -3640,9 +3643,13 @@ function buildOrderSaveState(){
   return Object.assign({}, state, {
     orderStatus: getOrderStatus(),
     vesselId: resolveVesselId(),
+    vesselNameSnapshot: fv('vessel') || '',
     customerOrgId: resolveOwnerId(),
+    customerNameSnapshot: fv('vOwner') || '',
     supplierOrgId: resolveSupplierId(fv('supplierName')),
+    supplierNameSnapshot: fv('supplierName') || '',
     portId: resolvePortId(),
+    portNameSnapshot: fv('port') || '',
     orderProductLines: buildOrderProductLines()
   }, totals);
 }
