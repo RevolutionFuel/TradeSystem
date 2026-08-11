@@ -153,7 +153,7 @@ def write_alert(source: str, message: str) -> None:
 def main() -> None:
     res = (
         supabase.table("vessels")
-        .select("id, name, imo, mmsi, specs_updated_at")
+        .select("id, name, imo, mmsi, track_ais, specs_updated_at")
         .is_("deleted_at", "null")
         .order("specs_updated_at", desc=False, nullsfirst=True)
         .execute()
@@ -200,6 +200,11 @@ def main() -> None:
             if new_mmsi != v.get("mmsi"):
                 update_row["mmsi"] = new_mmsi
                 update_row["mmsi_verified_at"] = datetime.now(timezone.utc).isoformat()
+            # AISStream is a flat subscription, free regardless of vessel
+            # count (unlike VesselAPI's per-lookup billing) - any vessel
+            # with a usable MMSI should be tracked, no reason to hold back.
+            if not v.get("track_ais"):
+                update_row["track_ais"] = True
 
         if details.get("call_sign"):
             update_row["callsign"] = details["call_sign"]
