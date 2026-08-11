@@ -76,9 +76,11 @@ exits, so it belongs in a Render **Cron Job**, not a Background Worker.
 4. **Runtime**: Python 3
 5. **Build Command**: `pip install -r requirements.txt`
 6. **Command**: `python3 refresh_vessel_specs.py`
-7. **Schedule**: `0 3 1 */3 *` (03:00 UTC on the 1st of every 3rd month —
-   quarterly is a reasonable refresh cadence for data that rarely changes;
-   adjust freely).
+7. **Schedule**: `0 3 1 * *` (03:00 UTC on the 1st of every month —
+   matches VesselAPI's monthly quota reset, using the full 150-call
+   free-tier budget each time). Vessels are processed oldest-checked-first,
+   so this steadily rotates through the whole fleet over successive months
+   rather than repeating the same ones.
 8. **Instance Type**: the free/smallest tier is fine here — this only runs
    briefly a few times a year, unlike the listener which needs to stay up
    permanently.

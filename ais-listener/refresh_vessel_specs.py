@@ -50,7 +50,11 @@ REQUEST_DELAY_SECONDS = 0.5  # be a reasonable neighbour on the free tier
 # this month (including by other runs, or manual testing). Defaulting well
 # under the monthly limit so one run can never accidentally exhaust it -
 # override via env var once actual usage patterns are better understood.
-MAX_LOOKUPS_PER_RUN = int(os.environ.get("MAX_LOOKUPS_PER_RUN", "5"))
+MAX_LOOKUPS_PER_RUN = int(os.environ.get("MAX_LOOKUPS_PER_RUN", "150"))
+# Vessels are processed oldest-checked-first (see the query ordering in
+# main()), so running this monthly at the free tier's full 150/month budget
+# steadily works through the whole fleet and then starts refreshing the
+# oldest data again - a genuine rotation, not the same vessels every time.
 
 if not SUPABASE_SERVICE_ROLE_KEY:
     print("FATAL: SUPABASE_SERVICE_ROLE_KEY environment variable is not set.", file=sys.stderr)
@@ -122,8 +126,9 @@ def fetch_vessel_details(imo: str, debug: bool = False) -> dict | None:
 def main() -> None:
     res = (
         supabase.table("vessels")
-        .select("id, name, imo, mmsi")
+        .select("id, name, imo, mmsi, specs_updated_at")
         .is_("deleted_at", "null")
+        .order("specs_updated_at", desc=False, nullsfirst=True)
         .execute()
     )
     all_vessels = res.data
@@ -141,7 +146,7 @@ def main() -> None:
     updated = 0
     not_found = 0
     for i, v in enumerate(candidates):
-        details = fetch_vessel_details(v["imo"], debug=True)
+        details = fetch_vessel_details(v["imo"], debug=(i == 0))
         time.sleep(REQUEST_DELAY_SECONDS)
         if details is None:
             not_found += 1
