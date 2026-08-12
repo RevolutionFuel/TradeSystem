@@ -653,6 +653,12 @@
                   </label>
                 </div>
               </div>
+              <div class="row">
+                <div class="field">
+                  <label for="reminderMessage">Message (optional \u2014 shown as the first line of the email)</label>
+                  <input type="text" id="reminderMessage" placeholder="e.g. Firm prices for this enquiry today">
+                </div>
+              </div>
               <div class="hint" id="reminderStatusHint"></div>
             </div>
           </fieldset>
@@ -10803,7 +10809,8 @@ function collectQuoteState(){
     reminderEnabled: document.getElementById('reminderEnabled') ? document.getElementById('reminderEnabled').checked : false,
     reminderLocalDatetime: fv('reminderDatetime'),
     reminderIsLocalTime: document.getElementById('reminderIsLocalTime') ? document.getElementById('reminderIsLocalTime').checked : true,
-    reminderSendAtUtc: reminderResolvedUtcIso
+    reminderSendAtUtc: reminderResolvedUtcIso,
+    reminderMessage: fv('reminderMessage')
   };
 }
 
@@ -10817,6 +10824,7 @@ async function applyQuoteState(data){
     document.getElementById('reminderEnabled').checked = !!data.reminderEnabled;
     document.getElementById('reminderDatetime').value = data.reminderLocalDatetime || '';
     document.getElementById('reminderIsLocalTime').checked = data.reminderIsLocalTime !== false;
+    document.getElementById('reminderMessage').value = data.reminderMessage || '';
     reminderResolvedUtcIso = data.reminderSendAtUtc || null;
     document.getElementById('reminderDetailFields').style.display = data.reminderEnabled ? 'block' : 'none';
     updateReminderStatusHint();
