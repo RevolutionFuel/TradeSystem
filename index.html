@@ -632,6 +632,31 @@
         </div>
         <div class="panel-body scroll-col" id="formCol">
 
+          <fieldset style="background:#F5F0E4; border:1px solid #DAD3C1;">
+            <legend>Schedule reminder</legend>
+            <div class="row" style="align-items:flex-start;">
+              <div class="field" style="flex:0 0 auto;">
+                <label style="display:flex; align-items:center; gap:6px; font-weight:600;">
+                  <input type="checkbox" id="reminderEnabled" onchange="onReminderToggle()"> Send reminder
+                </label>
+              </div>
+            </div>
+            <div id="reminderDetailFields" style="display:none;">
+              <div class="row">
+                <div class="field">
+                  <label for="reminderDatetime">Date &amp; time</label>
+                  <input type="datetime-local" id="reminderDatetime" oninput="onReminderFieldChange()">
+                </div>
+                <div class="field" style="flex:0 0 auto;">
+                  <label style="display:flex; align-items:center; gap:6px;">
+                    <input type="checkbox" id="reminderIsLocalTime" checked onchange="onReminderFieldChange()"> Local time (at the port)
+                  </label>
+                </div>
+              </div>
+              <div class="hint" id="reminderStatusHint"></div>
+            </div>
+          </fieldset>
+
           <fieldset>
             <legend>Quotation reference</legend>
             <div class="row">
@@ -2009,6 +2034,97 @@ let selectedVessel = null;
 // at all, so pressing copy on a dead enquiry doesn't quietly resurrect it.
 let orderStatusFlags = { awaitingPrices:false, quoted:false, supplierConfirmed:false, customerConfirmed:false, invoiced:false };
 let manualStatusOverride = null;
+// Holds the resolved UTC instant for the scheduled reminder, computed
+// whenever the date/time or local-time toggle changes - kept separate from
+// the raw form fields since resolving it (especially for local-time mode)
+// needs an async call to look up the port's timezone.
+let reminderResolvedUtcIso = null;
+function onReminderToggle(){
+  const enabled = document.getElementById('reminderEnabled').checked;
+  document.getElementById('reminderDetailFields').style.display = enabled ? 'block' : 'none';
+  if(enabled && !fv('reminderDatetime')){
+    // Default to 08:00, today if that's still in the future, otherwise
+    // tomorrow - never defaults to a moment that's already passed.
+    const now = new Date();
+    const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0);
+    if(target <= now) target.setDate(target.getDate() + 1);
+    const pad = n => String(n).padStart(2,'0');
+    document.getElementById('reminderDatetime').value = `${target.getFullYear()}-${pad(target.getMonth()+1)}-${pad(target.getDate())}T${pad(target.getHours())}:${pad(target.getMinutes())}`;
+  }
+  const dtInput = document.getElementById('reminderDatetime');
+  const nowPad = new Date(Date.now() + 60000); // at least a minute out
+  const pad2 = n => String(n).padStart(2,'0');
+  dtInput.min = `${nowPad.getFullYear()}-${pad2(nowPad.getMonth()+1)}-${pad2(nowPad.getDate())}T${pad2(nowPad.getHours())}:${pad2(nowPad.getMinutes())}`;
+  onReminderFieldChange();
+}
+async function onReminderFieldChange(){
+  const enabled = document.getElementById('reminderEnabled').checked;
+  const hint = document.getElementById('reminderStatusHint');
+  if(!enabled){ reminderResolvedUtcIso = null; return; }
+  const localDatetime = fv('reminderDatetime');
+  if(!localDatetime){ hint.textContent = ''; reminderResolvedUtcIso = null; return; }
+  const picked = new Date(localDatetime);
+  if(picked <= new Date()){
+    hint.textContent = 'Please choose a time in the future.';
+    hint.style.color = 'var(--bad)';
+    reminderResolvedUtcIso = null;
+    return;
+  }
+  const isLocalTime = document.getElementById('reminderIsLocalTime').checked;
+  if(!isLocalTime){
+    // Not local-time mode - the picked value is just interpreted as this
+    // browser's own timezone, which JS Date already does by default.
+    reminderResolvedUtcIso = picked.toISOString();
+    hint.textContent = `Will send at ${picked.toLocaleString()} (your device's timezone).`;
+    hint.style.color = 'var(--ink-soft)';
+    return;
+  }
+  const portName = fv('port');
+  const port = (PORTS || []).find(p => p.name === portName);
+  if(!port || port.latitude === '' || port.longitude === '' || port.latitude == null || port.longitude == null){
+    hint.textContent = 'Cannot resolve local time \u2014 this port has no coordinates on file. Turn off "Local time" to schedule using your own device\'s timezone instead, or add coordinates to the port in Manage Lists.';
+    hint.style.color = 'var(--bad)';
+    reminderResolvedUtcIso = null;
+    return;
+  }
+  hint.textContent = 'Resolving local time\u2026';
+  hint.style.color = 'var(--ink-soft)';
+  try{
+    const res = await fetch('https://dxaajzdolalessivlseg.supabase.co/functions/v1/send-quote-reminder', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'resolve-utc', localDatetime, latitude: Number(port.latitude), longitude: Number(port.longitude) })
+    });
+    const result = await res.json();
+    if(result.utcIso){
+      reminderResolvedUtcIso = result.utcIso;
+      const utcDate = new Date(result.utcIso);
+      hint.textContent = `Will send at ${localDatetime.replace('T',' ')} local time in ${escHtml(portName)} (${utcDate.toLocaleString(undefined,{timeZoneName:'short'})} your time).`;
+      hint.style.color = 'var(--ink-soft)';
+    } else {
+      throw new Error(result.error || 'Could not resolve local time.');
+    }
+  }catch(e){
+    console.error('TS: reminder timezone resolution failed', e);
+    hint.textContent = 'Could not resolve local time for this port \u2014 please check your connection and try again.';
+    hint.style.color = 'var(--bad)';
+    reminderResolvedUtcIso = null;
+  }
+}
+function updateReminderStatusHint(){
+  const enabled = document.getElementById('reminderEnabled') && document.getElementById('reminderEnabled').checked;
+  const hint = document.getElementById('reminderStatusHint');
+  if(!hint) return;
+  if(!enabled){ hint.textContent = ''; return; }
+  if(reminderResolvedUtcIso){
+    const localDatetime = fv('reminderDatetime');
+    const isLocalTime = document.getElementById('reminderIsLocalTime').checked;
+    const portName = fv('port');
+    hint.textContent = isLocalTime
+      ? `Will send at ${localDatetime.replace('T',' ')} local time in ${escHtml(portName)}.`
+      : `Will send at ${new Date(localDatetime).toLocaleString()} (your device's timezone).`;
+    hint.style.color = 'var(--ink-soft)';
+  }
+}
 // Delivered / Customer Paid / Supplier Paid / Fully Settled are never set by
 // this tool's own buttons — they're expected to arrive via the manual picker
 // or by reloading an order from the future separate order-management system.
@@ -10683,7 +10799,11 @@ function collectQuoteState(){
     custCheckedConditionTexts: getCustCheckedConditions(),
     multiSupplierMode: multiSupplierMode,
     currentSupplyViewSupplier: currentSupplyViewSupplier,
-    confirmedSupplierNames: confirmedSupplierNames.slice()
+    confirmedSupplierNames: confirmedSupplierNames.slice(),
+    reminderEnabled: document.getElementById('reminderEnabled') ? document.getElementById('reminderEnabled').checked : false,
+    reminderLocalDatetime: fv('reminderDatetime'),
+    reminderIsLocalTime: document.getElementById('reminderIsLocalTime') ? document.getElementById('reminderIsLocalTime').checked : true,
+    reminderSendAtUtc: reminderResolvedUtcIso
   };
 }
 
@@ -10692,6 +10812,15 @@ async function applyQuoteState(data){
   document.getElementById('quoteDate').value = data.quoteDate || new Date().toISOString().slice(0,10);
   document.getElementById('greeting').value = data.greeting || 'Dear Captain,';
   applyTextToCustomizableGroup('openingGroup', 'opening', data.openingLineText, 'custom', 'openingCustom');
+
+  if(document.getElementById('reminderEnabled')){
+    document.getElementById('reminderEnabled').checked = !!data.reminderEnabled;
+    document.getElementById('reminderDatetime').value = data.reminderLocalDatetime || '';
+    document.getElementById('reminderIsLocalTime').checked = data.reminderIsLocalTime !== false;
+    reminderResolvedUtcIso = data.reminderSendAtUtc || null;
+    document.getElementById('reminderDetailFields').style.display = data.reminderEnabled ? 'block' : 'none';
+    updateReminderStatusHint();
+  }
 
   const v = data.vessel || {};
   document.getElementById('vessel').value = v.name || '';
