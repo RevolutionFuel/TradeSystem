@@ -120,6 +120,7 @@
     .dashboard-table{table-layout:fixed;}
     .dashboard-table th, .dashboard-table td{padding:4px 3px; word-break:break-word; overflow-wrap:break-word;}
     .dashboard-table th, .dashboard-table td{font-size:9px; letter-spacing:0.01em;}
+    .dashboard-table td .tsb-status-badge{word-break:normal; overflow-wrap:normal; white-space:normal;}
     .dashboard-filter-bar select{width:100%; min-width:0;}
   }
   @media (max-width:420px){
@@ -129,7 +130,7 @@
   .tsb-item{font-size:13.5px; color:var(--teal-dark); padding:0 18px;}
   .tsb-item .tsb-label{font-weight:700; text-transform:uppercase; font-size:10px; letter-spacing:0.04em; color:var(--amber); margin-right:7px;}
   .tsb-divider{width:1px; align-self:stretch; background:var(--line); margin:0 2px;}
-  .tsb-status-badge{display:inline-block; color:#fff; font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; padding:4px 12px; border-radius:20px; white-space:nowrap;}
+  .tsb-status-badge{display:inline-block; color:#fff; font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; padding:4px 12px; border-radius:20px;}
   .missing-data-warning{background:#FCE8E6; border:1px solid #E5A099; border-radius:8px; padding:10px 14px; margin-bottom:12px;}
   .missing-data-warning-title{font-weight:700; font-size:12.5px; color:#8a2e22; margin-bottom:4px;}
   .missing-data-warning ul{margin:0; padding-left:20px; color:#8a2e22; font-size:12.5px; line-height:1.6;}
@@ -3760,9 +3761,10 @@ const DASHBOARD_FILTERS = [
 // order is real business history, not a master-list record, so this
 // warrants a visually stronger warning that names the specific order and
 // requires an explicit destructive-action click rather than just Enter.
-function showDeleteOrderModal(referenceLabel, onConfirm){
+function showDeleteOrderModal(referenceLabel, isOrder, onDelete, onMarkStatus){
   const existing = document.getElementById('deleteOrderModalOverlay');
   if(existing) existing.remove();
+  const statusLabel = isOrder ? 'Cancelled' : 'Dead';
   const overlay = document.createElement('div');
   overlay.id = 'deleteOrderModalOverlay';
   overlay.style.cssText = 'position:fixed; inset:0; background:rgba(20,10,10,0.55); z-index:100000; display:flex; align-items:center; justify-content:center; padding:20px;';
@@ -3772,7 +3774,8 @@ function showDeleteOrderModal(referenceLabel, onConfirm){
       <div style="font-weight:700; font-size:17px; color:#B3492E; margin-bottom:10px;">Delete this order permanently?</div>
       <div style="font-size:13.5px; color:var(--ink-soft); line-height:1.5; margin-bottom:6px;">You're about to delete:</div>
       <div style="font-weight:700; font-size:14px; color:var(--teal-dark); margin-bottom:14px; padding:8px 10px; background:#FBEEE9; border-radius:6px;">${escHtml(referenceLabel)}</div>
-      <div style="font-size:13px; color:var(--ink-soft); line-height:1.5; margin-bottom:20px;">This removes the entire enquiry/order and everything in it. This cannot be undone from within the app.</div>
+      <div style="font-size:13px; color:var(--ink-soft); line-height:1.5; margin-bottom:16px;">This removes the entire enquiry/order and everything in it. This cannot be undone from within the app.</div>
+      <button type="button" class="btn-ghost btn-sm" id="deleteOrderMarkStatusBtn" style="width:100%; margin-bottom:14px; box-sizing:border-box;">Mark as ${statusLabel} instead \u2014 keeps the record</button>
       <div style="display:flex; gap:10px; justify-content:flex-end;">
         <button type="button" class="btn-ghost btn-sm" id="deleteOrderCancelBtn">Cancel</button>
         <button type="button" class="btn-sm" id="deleteOrderConfirmBtn" style="background:#B3492E; color:#fff; border:none; border-radius:6px; padding:8px 16px; font-weight:600; cursor:pointer;">Yes, delete permanently</button>
@@ -3785,7 +3788,7 @@ function showDeleteOrderModal(referenceLabel, onConfirm){
     const btn = overlay.querySelector('#deleteOrderConfirmBtn');
     btn.disabled = true; btn.textContent = 'Deleting...';
     try{
-      await onConfirm();
+      await onDelete();
       overlay.remove();
     }catch(e){
       console.error('TS: order delete failed', e);
@@ -3793,23 +3796,38 @@ function showDeleteOrderModal(referenceLabel, onConfirm){
       btn.disabled = false; btn.textContent = 'Yes, delete permanently';
     }
   };
+  overlay.querySelector('#deleteOrderMarkStatusBtn').onclick = async () => {
+    const btn = overlay.querySelector('#deleteOrderMarkStatusBtn');
+    btn.disabled = true; btn.textContent = 'Updating...';
+    try{
+      await onMarkStatus();
+      overlay.remove();
+    }catch(e){
+      console.error('TS: order status mark failed', e);
+      alert('Could not update the status \u2014 ' + (e.message || 'please check your connection and try again.'));
+      btn.disabled = false; btn.textContent = `Mark as ${statusLabel} instead \u2014 keeps the record`;
+    }
+  };
 }
-function deleteOrderFromDashboard(id, referenceLabel){
-  showDeleteOrderModal(referenceLabel, async () => {
-    await window.TS.deleteOrder(id);
-    loadDashboardData();
-  });
+function deleteOrderFromDashboard(id, referenceLabel, isOrder){
+  showDeleteOrderModal(referenceLabel, isOrder,
+    async () => { await window.TS.deleteOrder(id); loadDashboardData(); },
+    async () => { await window.TS.markOrderStatus(id, isOrder ? 'cancelled' : 'dead'); loadDashboardData(); }
+  );
 }
 function deleteCurrentOrder(){
   if(!isRealUuid(currentOrderDbId)) return;
   const referenceLabel = fv('orderNumberSupply') || fv('orderNumberCustomer') || fv('quoteRef') || 'this order';
+  const isOrder = !!(fv('orderNumberSupply') || fv('orderNumberCustomer') || fv('orderNumberInvoice'));
   const vesselLabel = fv('vessel') || fv('vesselOrder');
   const fullLabel = vesselLabel ? `${referenceLabel} \u2014 ${vesselLabel}` : referenceLabel;
-  showDeleteOrderModal(fullLabel, async () => {
-    await window.TS.deleteOrder(currentOrderDbId);
-    currentOrderDbId = null;
-    switchView('dashboard');
-  });
+  showDeleteOrderModal(fullLabel, isOrder,
+    async () => { await window.TS.deleteOrder(currentOrderDbId); currentOrderDbId = null; switchView('dashboard'); },
+    async () => {
+      await window.TS.markOrderStatus(currentOrderDbId, isOrder ? 'cancelled' : 'dead');
+      setManualStatus(isOrder ? 'Cancelled' : 'Dead');
+    }
+  );
 }
 function statusEnumToLabel(enumVal){
   if(!enumVal) return 'Enquiry';
@@ -3937,7 +3955,7 @@ function renderDashboardList(){
     const refCell = `<td><a href="#" class="dashboard-ref-link" onclick="openOrderFromDashboard('${r.id}'); return false;">${escHtml(refText)}</a></td>`;
     const statusCell = `<td><span class="tsb-status-badge" style="background:${getOrderStatusColor(statusEnumToLabel(r.status))};">${escHtml(statusEnumToLabel(r.status))}</span></td>`;
     const deleteLabel = r.vesselName ? `${refText} \u2014 ${r.vesselName}` : refText;
-    const deleteCell = `<td><button type="button" class="btn-ghost btn-sm" style="color:var(--bad); border-color:var(--bad); padding:3px 8px;" onclick="deleteOrderFromDashboard('${r.id}', ${JSON.stringify(deleteLabel).replace(/"/g,'&quot;')})" title="Delete this order">\u2715</button></td>`;
+    const deleteCell = `<td><button type="button" class="btn-ghost btn-sm" style="color:var(--bad); border-color:var(--bad); padding:3px 8px;" onclick="deleteOrderFromDashboard('${r.id}', ${JSON.stringify(deleteLabel).replace(/"/g,'&quot;')}, ${!!r.orderNumber})" title="Delete this order">\u2715</button></td>`;
     const purchaseText = fmtDashboardMoney(r.purchaseTotal, r.purchaseCurrency);
     const saleText = fmtDashboardMoney(r.salesTotal, r.salesCurrency);
     if(compact){
