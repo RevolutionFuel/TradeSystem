@@ -320,25 +320,36 @@
   .item-detail-toolbar{display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 14px;}
   #viewItemDetail > .item-detail-toolbar .btn-ghost{color:#F7BF4A; border-color:rgba(247,191,74,0.5);}
   /* Hero header: big gold name (with a thin dark outline for contrast
-     against whatever's behind it - a photo, or the plain gradient
-     fallback when there's no image) plus a smaller gold subtitle line
-     (IMO/flag for vessels; empty for schemas that don't define
+     against whatever's behind it - a photo, a live map, or the plain
+     gradient fallback when there's neither) plus a smaller gold subtitle
+     line (IMO/flag for vessels; empty for schemas that don't define
      heroSubtitleFields yet). Deliberately built as a generic block, not
      vessel-specific, so other entity types can adopt the same treatment
-     later just by supplying heroSubtitleFields in their own schema. */
-  .item-detail-hero{position:relative; border-radius:12px; overflow:hidden; margin-bottom:16px; min-height:150px; display:flex; flex-direction:column; justify-content:flex-end; padding:20px; background:linear-gradient(135deg, var(--teal-dark) 0%, #0A2E38 100%); background-size:cover; background-position:center;}
+     later just by supplying heroSubtitleFields in their own schema.
+     #F7BF4A is the exact gold sampled from the logo itself, not the
+     app's --amber variable, which is a different (more orange) shade. */
+  .item-detail-hero{position:relative; overflow:hidden; margin:-16px -16px 16px -16px; min-height:170px; display:flex; flex-direction:column; justify-content:flex-end; padding:20px; background:linear-gradient(135deg, var(--teal-dark) 0%, #0A2E38 100%); background-size:cover; background-position:center;}
   .item-detail-hero::before{content:''; position:absolute; inset:0; background:linear-gradient(0deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.1) 55%, rgba(0,0,0,0.25) 100%); pointer-events:none;}
-  .item-detail-hero-name, .item-detail-hero-subtitle{position:relative; z-index:1; color:var(--amber); font-family:var(--disp);}
+  .item-detail-hero-name, .item-detail-hero-subtitle{position:relative; z-index:2; color:#F7BF4A; font-family:var(--disp);}
   .item-detail-hero-name{font-size:clamp(22px, 4vw, 34px); font-weight:800; line-height:1.1; -webkit-text-stroke:1px rgba(20,10,0,0.65); text-shadow:0 1px 3px rgba(0,0,0,0.6), 0 0 1px rgba(0,0,0,0.8);}
   .item-detail-hero-subtitle{font-size:clamp(13px, 1.6vw, 16px); font-weight:600; margin-top:4px; -webkit-text-stroke:0.5px rgba(20,10,0,0.5); text-shadow:0 1px 2px rgba(0,0,0,0.6);}
-  .item-detail-hero-nameinput{position:relative; z-index:1; font-family:var(--disp); font-size:20px; font-weight:800; padding:8px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.4); width:100%; box-sizing:border-box; background:rgba(255,255,255,0.92);}
-  /* Image + map side by side on wide screens, image wider - stacked full-
-     width on narrow ones (see media query below), since squeezing both a
-     photo and a usable map into half-width each doesn't work on a phone. */
-  .item-detail-hero-row{display:flex; gap:14px; align-items:stretch; margin-bottom:16px;}
-  .item-detail-hero-row .item-detail-hero{flex:0 0 62%; margin-bottom:0;}
+  .item-detail-hero-nameinput{position:relative; z-index:2; font-family:var(--disp); font-size:20px; font-weight:800; padding:8px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.4); width:100%; box-sizing:border-box; background:rgba(255,255,255,0.92);}
+  /* Image + map side by side on wide screens, image wider, with no gap
+     between them - stacked full-width on narrow ones (see media query
+     below), since squeezing both a photo and a usable map into half-width
+     each doesn't work on a phone. The row itself bleeds to the panel's
+     edges the same way the standalone hero does. */
+  .item-detail-hero-row{display:flex; gap:0; align-items:stretch; margin:-16px -16px 16px -16px;}
+  .item-detail-hero-row .item-detail-hero{flex:0 0 62%; margin:0;}
   .item-detail-hero-row .item-detail-hero-mapwrap{flex:1 1 auto; min-width:0;}
-  .item-detail-hero-row .item-detail-hero-mapwrap .item-detail-map-canvas{height:100%; min-height:150px;}
+  .item-detail-hero-row .item-detail-hero-mapwrap .item-detail-map-canvas{height:100%; min-height:170px; border-radius:0; border:none;}
+  /* No image but a live position exists: the map itself becomes the full-
+     width hero background, with the name/subtitle overlaid directly on
+     top of it (a dark scrim behind the text keeps it legible over the
+     map tiles) rather than falling back to the plain gradient. */
+  .item-detail-hero-mapfull{position:relative; margin:-16px -16px 16px -16px; min-height:220px; overflow:hidden;}
+  .item-detail-hero-mapfull .item-detail-map-canvas{width:100%; height:220px; border-radius:0; border:none;}
+  .item-detail-hero-mapfull-overlay{position:absolute; left:0; right:0; bottom:0; z-index:500; padding:16px 20px; background:linear-gradient(0deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.1) 100%); pointer-events:none;}
   @media (max-width:800px){
     .item-detail-hero-row{flex-direction:column;}
     .item-detail-hero-row .item-detail-hero{flex:none; width:100%;}
@@ -1447,7 +1458,6 @@
       </span>
     </div>
     <div class="panel">
-      <div class="panel-head"><h2 id="itemDetailTitle">Item</h2></div>
       <div class="panel-body" id="itemDetailFields"></div>
     </div>
   </div>
@@ -9921,6 +9931,18 @@ function cancelItemDetailEdit(){
 function itemDetailHeroHtml(item, schema){
   const imageUrl = (schema.hasMainImage && item.mainImagePath && window.TS && window.TS.getItemImageUrl) ? window.TS.getItemImageUrl(item.mainImagePath) : null;
   const bgStyle = imageUrl ? ` style="background-image:url('${escAttr(imageUrl)}');"` : '';
+  const inputId = 'itemDetailImageInput-main';
+  const imageButtonHtml = (schema.hasMainImage && itemDetailState.editMode)
+    ? `<div style="margin-top:8px;">
+        <input type="file" id="${inputId}" accept="image/*" style="display:none;" onchange="uploadItemDetailImage('main', this)">
+        <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${imageUrl ? 'Replace' : 'Add'} image</button>
+      </div>` : '';
+  return `<div class="item-detail-hero"${bgStyle}>${itemDetailHeroNameSubtitleHtml(item, schema)}</div>${imageButtonHtml}`;
+}
+// Shared between the image/gradient hero and the map-as-background variant
+// below, since both need the exact same name + subtitle markup, just
+// layered over a different backdrop.
+function itemDetailHeroNameSubtitleHtml(item, schema){
   const nameHtml = itemDetailState.editMode
     ? `<input type="text" class="item-detail-hero-nameinput" id="${itemDetailInputId('name')}" value="${escAttr(item.name || '')}" placeholder="${escAttr(schema.kindLabel)} name">`
     : `<div class="item-detail-hero-name">${escHtml(item.name || '(unnamed)')}</div>`;
@@ -9929,13 +9951,18 @@ function itemDetailHeroHtml(item, schema){
     .filter(Boolean);
   const subtitleHtml = (subtitleParts.length && !itemDetailState.editMode)
     ? `<div class="item-detail-hero-subtitle">${escHtml(subtitleParts.join(' \u00b7 '))}</div>` : '';
-  const inputId = 'itemDetailImageInput-main';
-  const imageButtonHtml = (schema.hasMainImage && itemDetailState.editMode)
-    ? `<div style="margin-top:8px;">
-        <input type="file" id="${inputId}" accept="image/*" style="display:none;" onchange="uploadItemDetailImage('main', this)">
-        <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${imageUrl ? 'Replace' : 'Add'} image</button>
-      </div>` : '';
-  return `<div class="item-detail-hero"${bgStyle}>${nameHtml}${subtitleHtml}</div>${imageButtonHtml}`;
+  return nameHtml + subtitleHtml;
+}
+// No image, but a live position is known: the map itself becomes the
+// full-width hero background instead of falling back to the plain
+// gradient, with the name/subtitle overlaid directly on top of it (the
+// actual Leaflet canvas is inserted afterward by renderVesselMap, same as
+// the side-by-side case, just targeting this container instead).
+function itemDetailHeroMapFullHtml(item, schema){
+  return `<div class="item-detail-hero-mapfull">
+    <div id="itemDetailVesselMapFullSection"></div>
+    <div class="item-detail-hero-mapfull-overlay">${itemDetailHeroNameSubtitleHtml(item, schema)}</div>
+  </div>`;
 }
 function itemDetailImageFieldHtml(item, kind, label){
   const pathField = kind === 'main' ? 'mainImagePath' : 'logoPath';
@@ -10018,8 +10045,8 @@ function vesselPositionFieldHtml(item){
     ${positionHtml}${etaHtml}
   </div>`;
 }
-function renderVesselMap(item){
-  const container = document.getElementById('itemDetailVesselMapSection');
+function renderVesselMap(item, containerId){
+  const container = document.getElementById(containerId || 'itemDetailVesselMapSection');
   if(!container) return;
   if(itemDetailMapInstance){ itemDetailMapInstance.remove(); itemDetailMapInstance = null; }
   const pos = item.lastPosition;
@@ -10094,7 +10121,6 @@ function renderItemDetail(){
   const list = schema.getList();
   const item = list.find(x => x.id === itemDetailState.id);
   if(!item){ closeItemDetail(); return; } // item deleted from elsewhere while this was open
-  document.getElementById('itemDetailTitle').textContent = schema.kindLabel;
   document.getElementById('itemDetailEditBtn').style.display = itemDetailState.editMode ? 'none' : '';
   document.getElementById('itemDetailSaveBar').style.display = itemDetailState.editMode ? 'inline-flex' : 'none';
   let anyFieldShown = false;
@@ -10155,16 +10181,22 @@ function renderItemDetail(){
   const mapSectionHtml = schema.hasMap ? `<div class="item-detail-field" id="itemDetailMapSection"></div>` : '';
   const checkDetailsButtonHtml = (itemDetailState.kind === 'vessel') ? vesselCheckDetailsButtonHtml(item) : '';
   const positionSectionHtml = (itemDetailState.kind === 'vessel') ? vesselPositionFieldHtml(item) : '';
-  // Side-by-side with the hero (image wider than the map) only when the
-  // vessel actually has a known position to show - otherwise the map
-  // container renders completely empty (see renderVesselMap), which would
-  // leave an awkward blank gap next to the hero rather than just not
-  // showing the row at all.
+  // Four hero scenarios: image+position (side by side, image wider) - image
+  // alone - no image but a known position (the map itself becomes the
+  // hero background, view mode only, since edit mode needs the regular
+  // hero's "Add image" button available regardless) - or neither
+  // (plain gradient fallback alone).
   const vesselHasKnownPosition = itemDetailState.kind === 'vessel' && item.trackAis && item.lastPosition && item.lastPosition.latitude != null;
-  const heroHtml = itemDetailHeroHtml(item, schema);
-  const heroSectionHtml = vesselHasKnownPosition
-    ? `<div class="item-detail-hero-row">${heroHtml}<div class="item-detail-hero-mapwrap" id="itemDetailVesselMapSection"></div></div>`
-    : heroHtml;
+  const hasImage = schema.hasMainImage && !!item.mainImagePath;
+  const useMapAsHero = vesselHasKnownPosition && !hasImage && !itemDetailState.editMode;
+  let heroSectionHtml;
+  if(useMapAsHero){
+    heroSectionHtml = itemDetailHeroMapFullHtml(item, schema);
+  } else if(vesselHasKnownPosition){
+    heroSectionHtml = `<div class="item-detail-hero-row">${itemDetailHeroHtml(item, schema)}<div class="item-detail-hero-mapwrap" id="itemDetailVesselMapSection"></div></div>`;
+  } else {
+    heroSectionHtml = itemDetailHeroHtml(item, schema);
+  }
   const logoSectionHtml = schema.hasLogo ? itemDetailImageFieldHtml(item, 'logo', 'Logo') : '';
   const contactsSectionHtml = schema.contactsFor ? `<div class="item-detail-field">
       <span class="item-detail-label">Contacts</span>
@@ -10184,7 +10216,8 @@ function renderItemDetail(){
   // technical fields. Documents sit directly above Notes, which stays last.
   document.getElementById('itemDetailFields').innerHTML = heroSectionHtml + logoSectionHtml + contactsSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + positionSectionHtml + specSheetHistorySectionHtml + vesselDocumentsSectionHtml + notesFieldHtml;
   if(schema.hasMap) renderItemDetailMap(item);
-  if(vesselHasKnownPosition) renderVesselMap(item);
+  if(useMapAsHero) renderVesselMap(item, 'itemDetailVesselMapFullSection');
+  else if(vesselHasKnownPosition) renderVesselMap(item, 'itemDetailVesselMapSection');
   if(schema.contactsFor) renderItemDetailContacts(item, schema);
   if(itemDetailState.kind === 'supplier') renderSupplierSpecSheetHistory(item);
   if(itemDetailState.kind === 'vessel') renderVesselDocuments(item);
