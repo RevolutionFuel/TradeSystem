@@ -100,26 +100,18 @@
   .unsaved-banner{display:inline-flex; align-items:center; gap:6px; background:#FCE8E6; color:#B3492E; border:1px solid #E5A099; font-weight:700; font-size:12px; padding:8px 14px; border-radius:20px; white-space:nowrap;}
   .dashboard-filter-bar{margin:14px 0 20px;}
   .dashboard-filter-bar select{background:#fff; border:1px solid var(--line); color:var(--teal-dark); font-size:13px; font-weight:600; padding:9px 14px; border-radius:8px; cursor:pointer; font-family:inherit; min-width:220px;}
-  .dashboard-table{width:100%; border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,0.12);}
-  .dashboard-table th{text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-soft); padding:10px 14px; border-bottom:2px solid var(--line); cursor:pointer; user-select:none;}
+  .dashboard-table{width:100%; border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,0.12); table-layout:fixed; font-size:12px;}
+  .dashboard-table th{text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-soft); padding:6px 8px; border-bottom:2px solid var(--line); cursor:pointer; user-select:none; word-break:break-word; overflow-wrap:break-word;}
   .dashboard-table th:hover{color:var(--teal-dark);}
   .dashboard-th-stack-item{display:block; cursor:pointer;}
   .dashboard-th-stack-item:hover{color:var(--teal-dark);}
   .dashboard-th-stack-item + .dashboard-th-stack-item{margin-top:2px; padding-top:2px; border-top:1px solid var(--line);}
-  .dashboard-table td{padding:10px 14px; border-bottom:1px solid var(--line); font-size:13px; color:var(--teal-dark); white-space:nowrap;}
+  .dashboard-table td{padding:6px 8px; border-bottom:1px solid var(--line); font-size:13px; color:var(--teal-dark); word-break:break-word; overflow-wrap:break-word; white-space:normal;}
   .dashboard-table tr:last-child td{border-bottom:none;}
   .dashboard-table tr:hover td{background:#FAF8F3;}
+  .dashboard-table td .tsb-status-badge{word-break:normal; overflow-wrap:normal; white-space:normal;}
   .dashboard-ref-link{color:var(--amber); font-weight:700; text-decoration:none;}
   .dashboard-ref-link:hover{text-decoration:underline;}
-  @media (max-width:1300px){
-    /* Structural change only (table-layout so stacked cells wrap sanely) -
-       font size stays readable here since this is "small laptop", not a
-       phone; the much smaller sizes below are scoped to their own narrower
-       breakpoints and layer on top of this one at those widths. */
-    .dashboard-table{table-layout:fixed; font-size:12px;}
-    .dashboard-table th, .dashboard-table td{padding:6px 8px; word-break:break-word; overflow-wrap:break-word; white-space:normal;}
-    .dashboard-table td .tsb-status-badge{word-break:normal; overflow-wrap:normal; white-space:normal;}
-  }
   @media (max-width:900px){
     .dashboard-table{font-size:12px;}
     .dashboard-table th, .dashboard-table td{padding:8px 10px; white-space:normal;}
@@ -440,7 +432,7 @@
       <button class="btn-ghost btn-sm" onclick="loadDashboardData()">Refresh</button>
     </div>
     <div class="dashboard-filter-bar" id="dashboardFilterBar"></div>
-    <div id="dashboardListContainer"><div class="hint">Loading...</div></div>
+    <div id="dashboardListContainer" style="overflow-x:auto;"><div class="hint">Loading...</div></div>
   </div>
 
   <!-- ============ BUILD VIEW ============ -->
@@ -4218,7 +4210,25 @@ function renderDashboardList(){
   // that and full desktop. Re-checked on resize (see
   // scheduleDashboardRerender) so resizing the browser window switches
   // layouts live.
-  const compact = window.innerWidth <= 1300;
+  // Compares against the CONTAINER's actual rendered width, not
+  // window.innerWidth - the app itself is capped at max-width:1220px (see
+  // .app), so on any screen wider than that the available space stops
+  // growing at ~1184px regardless of how wide the monitor actually is.
+  // Comparing against window.innerWidth directly (the original approach)
+  // meant this never actually triggered on ordinary laptop/desktop screens,
+  // since their viewport width is well above any reasonable threshold even
+  // though the rendered content area is capped much narrower - this table
+  // genuinely doesn't have room for its 10-column full layout within that
+  // cap, so it needs the real available width, not the screen's.
+  const availableWidth = container.clientWidth || window.innerWidth;
+  // The app's own max-width:1220px cap means available space never exceeds
+  // ~1184px on any screen, however wide - this table's full 10-column
+  // layout needs more room than that, so compact mode is effectively
+  // always in effect today. The threshold still sits just above that cap
+  // (rather than hardcoding compact=true) so this adapts correctly if
+  // .app's max-width is ever increased later, instead of silently staying
+  // wrong the way the previous window.innerWidth-based check did.
+  const compact = availableWidth <= 1200;
   function th(field, label){
     return `<th onclick="setDashboardSort('${field}')">${escHtml(label)}${dashboardSortArrow(field)}</th>`;
   }
