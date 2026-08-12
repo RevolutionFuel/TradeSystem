@@ -9248,6 +9248,16 @@ function switchOrderPage(page){
   if(page==='customer') renderCustomer();
   if(page==='invoice') renderInvoicePreviewOnly();
   if(page==='summary') renderSummary();
+  // The contact picker is deliberately on-demand (a "Show available
+  // contacts" button, not auto-loaded) to avoid a fetch on every page a
+  // person hasn't even opened it on - but once it HAS been shown, it needs
+  // to stay current. Otherwise a contact added or edited elsewhere (e.g. in
+  // Manage Lists) never appears when coming back to an order page that was
+  // already open, since nothing else re-triggers the fetch.
+  if(CONTACT_PICKER_PAGES[page]){
+    const container = document.getElementById(CONTACT_PICKER_PAGES[page].containerId);
+    if(container && container.innerHTML.trim()) loadContactPicker(page);
+  }
   try{ localStorage.setItem('ts-last-order-page', page); }catch(e){ /* private browsing or similar - fine to skip */ }
   updatePanelHeightLock();
 }
