@@ -341,7 +341,7 @@
      edges the same way the standalone hero does. */
   .item-detail-hero-row{display:flex; gap:0; align-items:stretch; margin:-16px -16px 16px -16px;}
   .item-detail-hero-row .item-detail-hero{flex:0 0 62%; margin:0;}
-  .item-detail-hero-row .item-detail-hero-mapwrap{flex:1 1 auto; min-width:0;}
+  .item-detail-hero-row .item-detail-hero-mapwrap{flex:1 1 auto; min-width:0; position:relative;}
   .item-detail-hero-row .item-detail-hero-mapwrap .item-detail-map-canvas{height:100%; min-height:170px; border-radius:0; border:none;}
   /* No image but a live position exists: the map itself becomes the full-
      width hero background, with the name/subtitle overlaid directly on
@@ -350,10 +350,23 @@
   .item-detail-hero-mapfull{position:relative; margin:-16px -16px 16px -16px; min-height:220px; overflow:hidden;}
   .item-detail-hero-mapfull .item-detail-map-canvas{width:100%; height:220px; border-radius:0; border:none;}
   .item-detail-hero-mapfull-overlay{position:absolute; left:0; right:0; bottom:0; z-index:500; padding:16px 20px; background:linear-gradient(0deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.1) 100%); pointer-events:none;}
+  /* Position/destination/ETA overlaid centered near the top of the map -
+     deliberately not dead-center, since the vessel marker itself sits
+     there (the map is always centered on the vessel's own position) and a
+     card on top of it would obscure the one thing the map exists to show.
+     Destination/ETA lead, in the same gold as the hero name, since that's
+     the operationally relevant part; the raw coordinates sit underneath,
+     smaller and muted, since that's just supporting detail. */
+  .item-detail-map-overlay{position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:500; max-width:88%; padding:10px 16px; border-radius:10px; background:rgba(10,20,30,0.78); backdrop-filter:blur(2px); text-align:center; pointer-events:none; box-shadow:0 2px 10px rgba(0,0,0,0.3);}
+  .item-detail-map-overlay-eta{color:#F7BF4A; font-weight:700; font-size:13.5px; font-family:var(--disp); white-space:nowrap;}
+  .item-detail-map-overlay-coords{color:rgba(255,255,255,0.75); font-size:10.5px; margin-top:3px; white-space:nowrap;}
+  .item-detail-map-overlay-stale{color:#F0A868;}
   @media (max-width:800px){
     .item-detail-hero-row{flex-direction:column;}
     .item-detail-hero-row .item-detail-hero{flex:none; width:100%;}
     .item-detail-hero-row .item-detail-hero-mapwrap .item-detail-map-canvas{height:200px;}
+    .item-detail-map-overlay{max-width:94%; padding:8px 12px;}
+    .item-detail-map-overlay-eta{font-size:12px;}
   }
   .item-detail-field{padding:12px 0; border-bottom:1px solid var(--line-soft);}
   .item-detail-field:last-child{border-bottom:none;}
@@ -9711,9 +9724,9 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'fitting', label:'Fuel fitting', type:'text'},
       {key:'trackAis', label:'Track AIS position (logs position history periodically)', type:'checkbox'},
       {key:'callsign', label:'Callsign', type:'text'},
-      {key:'lengthM', label:'Length (m)', type:'text'},
+      {key:'lengthM', label:'Length (m)', type:'text', format:'sigfig3'},
       {key:'beamM', label:'Beam (m)', type:'text'},
-      {key:'draughtM', label:'Draught (m)', type:'text'},
+      {key:'draughtM', label:'Draught (m)', type:'text', format:'sigfig3'},
       {key:'grossTonnage', label:'Gross tonnage', type:'text'},
       {key:'yearBuilt', label:'Year built', type:'text'},
       {key:'notes', label:'Notes', type:'textarea'}
@@ -9807,6 +9820,17 @@ const ITEM_DETAIL_SCHEMAS = {
   }
 };
 let itemDetailState = { kind:null, id:null, editMode:false, returnViewId:null, isNew:false };
+// Rounds to N significant figures (not decimal places) - 24.673829 -> 24.7,
+// 156.339 -> 156, 8.234 -> 8.23 - and returns a plain string with no
+// trailing zeros or unnecessary decimal point, so whole-number results
+// display as "24" rather than "24.0".
+function roundToSigFigs(num, sig){
+  if(num === 0) return '0';
+  const magnitude = Math.floor(Math.log10(Math.abs(num)));
+  const factor = Math.pow(10, sig - 1 - magnitude);
+  const rounded = Math.round(num * factor) / factor;
+  return String(parseFloat(rounded.toFixed(Math.max(0, sig - 1 - magnitude))));
+}
 function itemDetailFieldValue(item, key){
   if(key.indexOf('.') === -1) return item[key];
   const [a,b] = key.split('.');
@@ -9961,6 +9985,7 @@ function itemDetailHeroNameSubtitleHtml(item, schema){
 function itemDetailHeroMapFullHtml(item, schema){
   return `<div class="item-detail-hero-mapfull">
     <div id="itemDetailVesselMapFullSection"></div>
+    ${vesselMapOverlayHtml(item)}
     <div class="item-detail-hero-mapfull-overlay">${itemDetailHeroNameSubtitleHtml(item, schema)}</div>
   </div>`;
 }
@@ -10017,33 +10042,33 @@ function formatRelativeAge(date){
   const months = Math.floor(days / 30);
   return `${months} month${months===1?'':'s'} ago`;
 }
-function vesselPositionFieldHtml(item){
+// Compact position/destination/ETA overlay for on top of the map itself
+// (see itemDetailHeroMapFullHtml and the side-by-side map wrapper) -
+// destination/ETA lead in gold since that's operationally relevant, raw
+// coordinates sit smaller and muted underneath since that's just
+// supporting detail. Returns '' when there's nothing to show, so the
+// overlay container simply doesn't render rather than showing an empty box.
+function vesselMapOverlayHtml(item){
   if(!item.trackAis) return '';
   const pos = item.lastPosition;
-  let positionHtml;
-  if(!pos || pos.latitude == null || pos.longitude == null){
-    positionHtml = `<div class="item-detail-value" style="color:var(--ink-soft);">No position received yet.</div>`;
-  } else {
-    const ts = pos.aisTimestamp ? new Date(pos.aisTimestamp) : null;
-    const ageText = ts ? formatRelativeAge(ts) : 'age unknown';
-    const isStale = ts && (Date.now() - ts.getTime()) > 7 * 24 * 60 * 60 * 1000; // over a week old
-    const coordText = `${Number(pos.latitude).toFixed(4)}, ${Number(pos.longitude).toFixed(4)}`;
-    const sogText = pos.sog != null ? `${pos.sog} kn` : '';
-    positionHtml = `<div class="item-detail-value">${escHtml(coordText)}${sogText ? ' \u00b7 ' + escHtml(sogText) : ''}<br>
-      <span style="font-size:12px; color:${isStale?'#B3492E':'var(--ink-soft)'};">Last reported ${escHtml(ageText)}${isStale?' \u2014 may be out of date':''}</span></div>`;
-  }
-  let etaHtml = '';
+  const hasCoords = pos && pos.latitude != null && pos.longitude != null;
+  if(!hasCoords && !item.nextDestination && !item.nextEta) return '';
+  let etaLine = '';
   if(item.nextDestination || item.nextEta){
     const etaDate = item.nextEta ? new Date(item.nextEta) : null;
     const etaText = etaDate ? etaDate.toLocaleString(undefined, {dateStyle:'medium', timeStyle:'short'}) : '';
-    etaHtml = `<div class="item-detail-value" style="margin-top:8px;">
-      ${item.nextDestination ? `Bound for <strong>${escHtml(item.nextDestination)}</strong>` : 'Destination not reported'}${etaText ? ' \u00b7 ETA ' + escHtml(etaText) : ''}
-    </div>`;
+    etaLine = `<div class="item-detail-map-overlay-eta">${item.nextDestination ? 'Bound for ' + escHtml(item.nextDestination) : 'Destination not reported'}${etaText ? ' \u00b7 ETA ' + escHtml(etaText) : ''}</div>`;
   }
-  return `<div class="item-detail-field">
-    <span class="item-detail-label">AIS Position</span>
-    ${positionHtml}${etaHtml}
-  </div>`;
+  let coordsLine = '';
+  if(hasCoords){
+    const ts = pos.aisTimestamp ? new Date(pos.aisTimestamp) : null;
+    const ageText = ts ? formatRelativeAge(ts) : 'age unknown';
+    const isStale = ts && (Date.now() - ts.getTime()) > 7 * 24 * 60 * 60 * 1000;
+    const coordText = `${Number(pos.latitude).toFixed(4)}, ${Number(pos.longitude).toFixed(4)}`;
+    const sogText = pos.sog != null ? ` \u00b7 ${pos.sog} kn` : '';
+    coordsLine = `<div class="item-detail-map-overlay-coords${isStale ? ' item-detail-map-overlay-stale' : ''}">${escHtml(coordText)}${sogText}${!etaLine ? ' \u00b7 ' + escHtml(ageText) : ''}</div>`;
+  }
+  return `<div class="item-detail-map-overlay">${etaLine}${coordsLine}</div>`;
 }
 function renderVesselMap(item, containerId){
   const container = document.getElementById(containerId || 'itemDetailVesselMapSection');
@@ -10137,6 +10162,11 @@ function renderItemDetail(){
       }
       let displayValue = value;
       if(f.type === 'owner-select') displayValue = ownerName(value) || '';
+      // Length/draught come from AIS specs with far more precision than is
+      // actually meaningful (e.g. 24.673829m) - shown to 3 significant
+      // figures in view mode only, so the stored value itself stays exact
+      // and fully editable.
+      if(f.format === 'sigfig3' && displayValue && !isNaN(Number(displayValue))) displayValue = roundToSigFigs(Number(displayValue), 3);
       // View mode only shows fields that actually have something in them —
       // edit mode (below) always shows every field, including empty ones,
       // since that's where you'd fill them in.
@@ -10180,12 +10210,13 @@ function renderItemDetail(){
     </div>` : '';
   const mapSectionHtml = schema.hasMap ? `<div class="item-detail-field" id="itemDetailMapSection"></div>` : '';
   const checkDetailsButtonHtml = (itemDetailState.kind === 'vessel') ? vesselCheckDetailsButtonHtml(item) : '';
-  const positionSectionHtml = (itemDetailState.kind === 'vessel') ? vesselPositionFieldHtml(item) : '';
   // Four hero scenarios: image+position (side by side, image wider) - image
   // alone - no image but a known position (the map itself becomes the
   // hero background, view mode only, since edit mode needs the regular
   // hero's "Add image" button available regardless) - or neither
-  // (plain gradient fallback alone).
+  // (plain gradient fallback alone). Position/destination/ETA are overlaid
+  // directly on the map itself in both map-showing cases (see
+  // vesselMapOverlayHtml), not shown separately further down the page.
   const vesselHasKnownPosition = itemDetailState.kind === 'vessel' && item.trackAis && item.lastPosition && item.lastPosition.latitude != null;
   const hasImage = schema.hasMainImage && !!item.mainImagePath;
   const useMapAsHero = vesselHasKnownPosition && !hasImage && !itemDetailState.editMode;
@@ -10193,7 +10224,7 @@ function renderItemDetail(){
   if(useMapAsHero){
     heroSectionHtml = itemDetailHeroMapFullHtml(item, schema);
   } else if(vesselHasKnownPosition){
-    heroSectionHtml = `<div class="item-detail-hero-row">${itemDetailHeroHtml(item, schema)}<div class="item-detail-hero-mapwrap" id="itemDetailVesselMapSection"></div></div>`;
+    heroSectionHtml = `<div class="item-detail-hero-row">${itemDetailHeroHtml(item, schema)}<div class="item-detail-hero-mapwrap"><div id="itemDetailVesselMapSection"></div>${vesselMapOverlayHtml(item)}</div></div>`;
   } else {
     heroSectionHtml = itemDetailHeroHtml(item, schema);
   }
@@ -10214,7 +10245,7 @@ function renderItemDetail(){
   // one) leads every schema now. Contacts come right after it, so the
   // people you'd actually contact aren't buried below a long list of
   // technical fields. Documents sit directly above Notes, which stays last.
-  document.getElementById('itemDetailFields').innerHTML = heroSectionHtml + logoSectionHtml + contactsSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + positionSectionHtml + specSheetHistorySectionHtml + vesselDocumentsSectionHtml + notesFieldHtml;
+  document.getElementById('itemDetailFields').innerHTML = heroSectionHtml + logoSectionHtml + contactsSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + specSheetHistorySectionHtml + vesselDocumentsSectionHtml + notesFieldHtml;
   if(schema.hasMap) renderItemDetailMap(item);
   if(useMapAsHero) renderVesselMap(item, 'itemDetailVesselMapFullSection');
   else if(vesselHasKnownPosition) renderVesselMap(item, 'itemDetailVesselMapSection');
