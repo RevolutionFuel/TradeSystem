@@ -9713,8 +9713,14 @@ const ITEM_DETAIL_SCHEMAS = {
     // any other field, with an optional prefix/formatter.
     heroSubtitleFields: [
       {key:'imo', prefix:'IMO '},
-      {key:'flag'}
+      {key:'flag'},
+      {key:'callsign'}
     ],
+    // These render as one compact line in view mode (see
+    // vesselRegistryDetailsHtml) rather than five separate fields, with a
+    // note that they're sourced from the vessel's registry - still normal
+    // individually-editable fields when in edit mode, same underlying data.
+    compactRegistryFields: ['lengthM', 'beamM', 'draughtM', 'grossTonnage', 'yearBuilt'],
     fields: [
       {key:'name', label:'Vessel name', type:'text'},
       {key:'imo', label:'IMO number (or official number, if no IMO)', type:'text'},
@@ -9722,7 +9728,7 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'flag', label:'Flag', type:'text'},
       {key:'ownerId', label:'Registered owner', type:'owner-select'},
       {key:'fitting', label:'Fuel fitting', type:'text'},
-      {key:'trackAis', label:'Track AIS position (logs position history periodically)', type:'checkbox'},
+      {key:'trackAis', label:'Track AIS position (logs position history periodically)', type:'checkbox', hideInView:true},
       {key:'callsign', label:'Callsign', type:'text'},
       {key:'lengthM', label:'Length (m)', type:'text', format:'sigfig3'},
       {key:'beamM', label:'Beam (m)', type:'text'},
@@ -10090,6 +10096,30 @@ function renderVesselMap(item, containerId){
   }).addTo(map);
   L.marker([lat, lon], { icon: L.divIcon({ className: 'item-detail-yacht-marker', html: YACHT_MARKER_SVG, iconSize: [34, 40], iconAnchor: [17, 36] }) }).addTo(map);
 }
+// Length/beam/draught/gross tonnage/year built as one compact line rather
+// than five separate fields - this is registry/AIS-specs data rather than
+// something manually curated, so it's labelled as such rather than sitting
+// among the vessel's own editable details unmarked. View mode only; edit
+// mode falls back to the normal individual fields (see viewOnlyHiddenKeys
+// in renderItemDetail), since editing five combined values in one line
+// isn't practical.
+function vesselRegistryDetailsHtml(item){
+  const parts = [];
+  if(item.lengthM || item.beamM){
+    const l = item.lengthM ? roundToSigFigs(Number(item.lengthM), 3) + 'm' : null;
+    const b = item.beamM ? roundToSigFigs(Number(item.beamM), 3) + 'm' : null;
+    parts.push([l, b].filter(Boolean).join(' \u00d7 '));
+  }
+  if(item.draughtM) parts.push(roundToSigFigs(Number(item.draughtM), 3) + 'm draught');
+  if(item.grossTonnage) parts.push(escHtml(String(item.grossTonnage)) + ' GT');
+  if(item.yearBuilt) parts.push('Built ' + escHtml(String(item.yearBuilt)));
+  if(!parts.length) return '';
+  return `<div class="item-detail-field">
+    <span class="item-detail-label">Registry details</span>
+    <div class="item-detail-value">${parts.join(' \u00b7 ')}</div>
+    <div class="hint" style="margin-top:2px;">From the vessel registry.</div>
+  </div>`;
+}
 function vesselCheckDetailsButtonHtml(item){
   // Only useful once saved (needs a real id) and once an IMO's actually
   // been entered - matches the same "must save first" pattern already used
@@ -10152,6 +10182,7 @@ function renderItemDetail(){
   const renderOneField = f=>{
     const value = itemDetailFieldValue(item, f.key) || '';
     if(!itemDetailState.editMode){
+      if(f.hideInView) return '';
       if(f.type === 'checkbox'){
         if(!value) return ''; // only show when true, same "hide empties" logic as other fields
         anyFieldShown = true;
@@ -10200,9 +10231,21 @@ function renderItemDetail(){
   // Split around 'notes' so document sections (vessel certificate/
   // additional documents) can be inserted directly above it, per every
   // schema's convention of 'notes' always being the last field.
-  const fieldsHtml = schema.fields.filter(f=>f.key !== 'notes' && f.key !== 'name').map(renderOneField).join('');
+  // 'name' is always excluded (the hero handles it in both view and edit
+  // mode). heroSubtitleFields (imo/flag/callsign) and
+  // compactRegistryFields (length/beam/draught/tonnage/year) are only
+  // excluded in VIEW mode, where the hero subtitle and the compact
+  // registry line show them instead - in edit mode they fall back to
+  // showing up here as normal individually-editable fields, since neither
+  // of those custom displays offers a way to edit them directly.
+  const viewOnlyHiddenKeys = itemDetailState.editMode ? [] : [
+    ...(schema.heroSubtitleFields || []).map(f => f.key),
+    ...(schema.compactRegistryFields || [])
+  ];
+  const fieldsHtml = schema.fields.filter(f => f.key !== 'notes' && f.key !== 'name' && !viewOnlyHiddenKeys.includes(f.key)).map(renderOneField).join('');
   const notesFieldHtml = schema.fields.filter(f=>f.key === 'notes').map(renderOneField).join('');
-  const emptyStateHtml = (!itemDetailState.editMode && !anyFieldShown)
+  const registryDetailsHtml = (itemDetailState.kind === 'vessel' && !itemDetailState.editMode) ? vesselRegistryDetailsHtml(item) : '';
+  const emptyStateHtml = (!itemDetailState.editMode && !anyFieldShown && !registryDetailsHtml)
     ? `<div class="item-detail-field"><div class="item-detail-value" style="color:var(--ink-soft);">No details recorded yet \u2014 click Edit to add some.</div></div>` : '';
   const rolesHtml = schema.roleListName ? `<div class="item-detail-field">
       <span class="item-detail-label">Roles</span>
@@ -10245,7 +10288,7 @@ function renderItemDetail(){
   // one) leads every schema now. Contacts come right after it, so the
   // people you'd actually contact aren't buried below a long list of
   // technical fields. Documents sit directly above Notes, which stays last.
-  document.getElementById('itemDetailFields').innerHTML = heroSectionHtml + logoSectionHtml + contactsSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + specSheetHistorySectionHtml + vesselDocumentsSectionHtml + notesFieldHtml;
+  document.getElementById('itemDetailFields').innerHTML = heroSectionHtml + logoSectionHtml + contactsSectionHtml + fieldsHtml + registryDetailsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + specSheetHistorySectionHtml + vesselDocumentsSectionHtml + notesFieldHtml;
   if(schema.hasMap) renderItemDetailMap(item);
   if(useMapAsHero) renderVesselMap(item, 'itemDetailVesselMapFullSection');
   else if(vesselHasKnownPosition) renderVesselMap(item, 'itemDetailVesselMapSection');
