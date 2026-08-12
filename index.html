@@ -1853,6 +1853,21 @@ async function generatePdfViaBackend(docType, html){
   if(!res.ok || result.error) throw new Error(result.error || ('PDF service returned ' + res.status));
   return result;
 }
+// Invoices always CC accounts@, never the other broker - every other
+// document type CCs whichever broker isn't the one currently signed in and
+// sending, so both stay aware of activity on each other's deals. Silently
+// returns nothing if the signed-in account isn't one of the two known
+// broker addresses (e.g. testing under a different login) rather than
+// guessing wrong.
+const BROKER_CC_MAP = {
+  'barnaby@revolutionfuel.com': 'john@revolutionfuel.com',
+  'john@revolutionfuel.com': 'barnaby@revolutionfuel.com'
+};
+function draftCcAddressFor(pdfDocType){
+  if(pdfDocType === 'invoice') return 'accounts@revolutionfuel.com';
+  const senderEmail = (graphAccount && graphAccount.username || '').toLowerCase();
+  return BROKER_CC_MAP[senderEmail] || null;
+}
 async function draftInOutlookGeneric(opts){
   if(!graphAccount){ alert('Connect Outlook first (button in the header) before drafting an email.'); return; }
   const btn = document.getElementById(opts.btnId);
@@ -1901,6 +1916,11 @@ async function draftInOutlookGeneric(opts){
       body: { contentType: 'HTML', content: htmlContent },
       toRecipients: toEmails.map(e=>({ emailAddress: { address: e } }))
     };
+    // Invoices CC accounts@ instead of the other broker - everything else
+    // CCs whichever of the two brokers isn't the one currently sending, so
+    // both people stay in the loop on deals either of them is running.
+    const ccAddress = draftCcAddressFor(opts.pdfDocType);
+    if(ccAddress) message.ccRecipients = [{ emailAddress: { address: ccAddress } }];
     if(attachments.length) message.attachments = attachments;
     const res = await fetch('https://graph.microsoft.com/v1.0/me/messages', {
       method: 'POST',
