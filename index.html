@@ -403,11 +403,35 @@
     <div class="tabs-row">
     <div class="tabs">
       <button id="tabDashboard" class="active" onclick="switchView('dashboard')">Manage</button>
-      <button id="tabBuild" onclick="switchView('build')">Order</button>
+      <button id="tabBuild" onclick="switchView('build')">Deal</button>
       <button id="tabManage" onclick="switchView('manage')">Data</button>
     </div>
     <div class="header-right-stack">
-      <span class="version-badge" id="versionBadge" onclick="showReleaseNotes()" title="Click for release notes" style="cursor:pointer;">v1.0</span>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span class="version-badge" id="versionBadge" onclick="showReleaseNotes()" title="Click for release notes" style="cursor:pointer;">v1.0</span>
+        <div id="headerDraftArea" style="display:none; align-items:center; gap:5px;">
+          <span id="headerDraftWrapEnquire" style="display:none; align-items:center; gap:5px;">
+            <input type="checkbox" id="openDraftToSendEnquire" checked onchange="onDraftOptionChange()" title="Open draft to review &amp; send">
+            <button class="btn-amber btn-sm" id="draftEnquireOutlookBtn" onclick="draftEnquireInOutlook()" title="Creates a real draft in your connected Outlook mailbox">\u2709\ufe0f Draft</button>
+          </span>
+          <span id="headerDraftWrapQuote" style="display:none; align-items:center; gap:5px;">
+            <input type="checkbox" id="openDraftToSendQuote" checked onchange="onDraftOptionChange()" title="Open draft to review &amp; send">
+            <button class="btn-amber btn-sm" id="draftQuoteOutlookBtn" onclick="draftQuoteInOutlook()" title="Creates a real draft in your connected Outlook mailbox">\u2709\ufe0f Draft</button>
+          </span>
+          <span id="headerDraftWrapSupply" style="display:none; align-items:center; gap:5px;">
+            <input type="checkbox" id="openDraftToSendSupply" checked onchange="onDraftOptionChange()" title="Open draft to review &amp; send">
+            <button class="btn-amber btn-sm" id="draftSupplyOutlookBtn" onclick="draftSupplyInOutlook()" title="Creates a real draft in your connected Outlook mailbox">\u2709\ufe0f Draft</button>
+          </span>
+          <span id="headerDraftWrapCustomer" style="display:none; align-items:center; gap:5px;">
+            <input type="checkbox" id="openDraftToSendCustomer" checked onchange="onDraftOptionChange()" title="Open draft to review &amp; send">
+            <button class="btn-amber btn-sm" id="draftCustomerOutlookBtn" onclick="draftCustomerInOutlook()" title="Creates a real draft in your connected Outlook mailbox">\u2709\ufe0f Draft</button>
+          </span>
+          <span id="headerDraftWrapInvoice" style="display:none; align-items:center; gap:5px;">
+            <input type="checkbox" id="openDraftToSendInvoice" checked onchange="onDraftOptionChange()" title="Open draft to review &amp; send">
+            <button class="btn-amber btn-sm" id="draftInvoiceOutlookBtn" onclick="draftInvoiceInOutlook()" title="Creates a real draft in your connected Outlook mailbox">\u2709\ufe0f Draft</button>
+          </span>
+        </div>
+      </div>
       <div id="tsOutlookConnectContainer"></div>
       <div id="tsUserBadgeContainer"></div>
     </div>
@@ -437,16 +461,16 @@
   <!-- ============ BUILD VIEW ============ -->
   <div class="view" id="viewBuild">
     <div class="order-submenu">
-      <button id="pageTabOrder" class="active" onclick="switchOrderPage('order')">DETAILS</button>
+      <button id="pageTabSummary" class="active" onclick="switchOrderPage('summary')">SUMMARY</button>
+      <button id="pageTabOrder" onclick="switchOrderPage('order')">DETAILS</button>
       <button id="pageTabEnquire" onclick="switchOrderPage('enquire')">ENQUIRE</button>
       <button id="pageTabQuote" onclick="switchOrderPage('quote')">QUOTE</button>
       <button id="pageTabSupply" onclick="switchOrderPage('supply')">NOMINATE</button>
       <button id="pageTabCustomer" onclick="switchOrderPage('customer')">CONFIRM</button>
       <button id="pageTabInvoice" onclick="switchOrderPage('invoice')">INVOICE</button>
-      <button id="pageTabSummary" onclick="switchOrderPage('summary')">SUMMARY</button>
     </div>
 
-    <div class="order-page active" id="orderPageOrder">
+    <div class="order-page" id="orderPageOrder">
       <div class="layout">
 
         <!-- FORM -->
@@ -618,11 +642,7 @@
           </div>
           <div class="panel-body" style="padding-top:0;">
             <div id="missingDataWarningEnquire"></div>
-            <div class="draft-options">
-              <label class="opt-inline"><input type="checkbox" id="openDraftToSendEnquire" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
-            </div>
             <div class="copybar">
-              <button class="btn-amber" id="draftEnquireOutlookBtn" onclick="draftEnquireInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
               <button class="btn-ghost" onclick="copyEnquiryRich()">📋 Copy for email</button>
               <span class="status-msg" id="enquiryCopyStatus">✓ Copied</span>
             </div>
@@ -813,11 +833,9 @@
         <div class="panel-body" style="padding-top:0;">
           <div id="missingDataWarningQuote"></div>
           <div class="draft-options">
-            <label class="opt-inline"><input type="checkbox" id="openDraftToSendQuote" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
             <label class="opt-inline"><input type="checkbox" id="attachPdfQuote" onchange="onDraftOptionChange()"> Attach PDF to the draft</label>
           </div>
           <div class="copybar">
-            <button class="btn-amber" id="draftQuoteOutlookBtn" onclick="draftQuoteInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
             <button class="btn-ghost" onclick="copyRich()">📋 Copy for email</button>
             <button class="btn-ghost" onclick="openPdfQuotation('quotation', this)" title="Generates and downloads a real PDF (via headless Chrome), saved for later viewing too">📄 Download PDF Quotation</button>
             <span class="status-msg" id="copyStatus">✓ Copied</span>
@@ -991,11 +1009,9 @@
           <div class="panel-body" style="padding-top:0;">
             <div id="missingDataWarningSupply"></div>
             <div class="draft-options">
-              <label class="opt-inline"><input type="checkbox" id="openDraftToSendSupply" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
               <label class="opt-inline"><input type="checkbox" id="attachPdfSupply" onchange="onDraftOptionChange()"> Attach PDF to the draft</label>
             </div>
             <div class="copybar">
-              <button class="btn-amber" id="draftSupplyOutlookBtn" onclick="draftSupplyInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
               <button class="btn-ghost" onclick="copySupplyRich()">📋 Copy for email</button>
               <button class="btn-ghost" onclick="openPdfQuotation('supplier', this)" title="Generates and downloads a real PDF (via headless Chrome), saved for later viewing too">📄 Download PDF Supplier Confirmation</button>
               <span class="status-msg" id="supplyCopyStatus">✓ Copied</span>
@@ -1139,11 +1155,9 @@
           <div class="panel-body" style="padding-top:0;">
             <div id="missingDataWarningCustomer"></div>
             <div class="draft-options">
-              <label class="opt-inline"><input type="checkbox" id="openDraftToSendCustomer" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
               <label class="opt-inline"><input type="checkbox" id="attachPdfCustomer" onchange="onDraftOptionChange()"> Attach PDF to the draft</label>
             </div>
             <div class="copybar">
-              <button class="btn-amber" id="draftCustomerOutlookBtn" onclick="draftCustomerInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
               <button class="btn-ghost" onclick="copyCustomerRich()">📋 Copy for email</button>
               <button class="btn-ghost" onclick="openPdfQuotation('customer', this)" title="Generates and downloads a real PDF (via headless Chrome), saved for later viewing too">📄 Download PDF Order Confirmation</button>
               <span class="status-msg" id="customerCopyStatus">✓ Copied</span>
@@ -1244,11 +1258,9 @@
           <div class="panel-body" style="padding-top:0;">
             <div id="missingDataWarningInvoice"></div>
             <div class="draft-options">
-              <label class="opt-inline"><input type="checkbox" id="openDraftToSendInvoice" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
               <span class="hint" style="margin:0;">The PDF is always attached to invoice drafts.</span>
             </div>
             <div class="copybar">
-              <button class="btn-amber" id="draftInvoiceOutlookBtn" onclick="draftInvoiceInOutlook()" title="Creates a real draft in your connected Outlook mailbox, with the invoice PDF attached">✉️ Draft in Outlook</button>
               <button class="btn-ghost" onclick="copyInvoiceEmailRich()">📋 Copy for email</button>
               <button class="btn-ghost" onclick="openInvoicePdf(this)" id="invoicePdfButton" title="Generates and downloads a real PDF (via headless Chrome), saved for later viewing too">📄 Download PDF</button>
               <span class="status-msg" id="invoiceCopyStatus">✓ Copied</span>
@@ -1265,7 +1277,7 @@
          single overview rather than a form-plus-preview pair like every
          other order page. First pass: mirrors each page's key fields with
          Go-to links for anything not started yet. -->
-    <div class="order-page" id="orderPageSummary">
+    <div class="order-page active" id="orderPageSummary">
       <div class="panel">
         <div class="panel-head"><h2>Order Summary</h2><div id="summaryDeleteBtnContainer"></div></div>
         <div class="panel-body" id="summaryContent"></div>
@@ -4273,7 +4285,7 @@ async function openOrderFromDashboard(id){
   }
   await loadOrderFromDatabase(id);
   switchView('build');
-  switchOrderPage('order');
+  switchOrderPage('summary');
 }
 
 let multiSupplierMode = false;
@@ -9407,6 +9419,18 @@ function switchOrderPage(page){
   if(page==='customer') renderCustomer();
   if(page==='invoice') renderInvoicePreviewOnly();
   if(page==='summary') renderSummary();
+  // The per-page "Draft in Outlook" tick+button live in the header
+  // (alongside the version badge) rather than stacked into the page body -
+  // only the widget for whichever document page is active is shown, the
+  // rest stay hidden but present in the DOM so their ids keep working
+  // exactly as before.
+  const draftArea = document.getElementById('headerDraftArea');
+  const hasDraftWidget = ['enquire','quote','supply','customer','invoice'].includes(page);
+  draftArea.style.display = hasDraftWidget ? 'flex' : 'none';
+  ['Enquire','Quote','Supply','Customer','Invoice'].forEach(p=>{
+    const wrap = document.getElementById('headerDraftWrap'+p);
+    if(wrap) wrap.style.display = (hasDraftWidget && p.toLowerCase()===page) ? 'flex' : 'none';
+  });
   // The contact picker is deliberately on-demand (a "Show available
   // contacts" button, not auto-loaded) to avoid a fetch on every page a
   // person hasn't even opened it on - but once it HAS been shown, it needs
