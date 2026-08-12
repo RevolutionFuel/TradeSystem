@@ -1909,6 +1909,34 @@ async function draftInOutlookGeneric(opts){
       if(btn) btn.textContent = 'Drafting...';
     }
 
+    // Spec sheets — any product with "Specifications attached" ticked AND
+    // an actual file uploaded gets that file attached to the draft too.
+    // Fetched fresh via a signed URL each time rather than cached, since
+    // the file itself never changes but a stale signed URL could expire.
+    const specProducts = (productBlocks||[]).filter(b => b.specsAttached && b.specSheetPath);
+    if(specProducts.length && window.TS && window.TS.getSpecSheetUrl){
+      if(btn) btn.textContent = 'Attaching spec sheets...';
+      for(const b of specProducts){
+        try{
+          const url = await window.TS.getSpecSheetUrl(b.specSheetPath);
+          const fileRes = await fetch(url);
+          const blob = await fileRes.blob();
+          const base64 = await blobToBase64(blob);
+          attachments.push({
+            '@odata.type': '#microsoft.graph.fileAttachment',
+            name: b.specSheetDisplayName || 'Spec sheet.pdf',
+            contentType: blob.type || 'application/octet-stream',
+            contentBytes: base64
+          });
+        }catch(e){
+          console.error('TS: spec sheet attachment failed for', b.id, e);
+          const proceed = confirm(`Could not attach the spec sheet for ${productBlockPrettyName(b) || 'a product'} (${e && e.message ? e.message : 'unknown error'}).\n\nCreate the draft anyway, without that attachment?`);
+          if(!proceed){ if(btn){ btn.disabled=false; btn.textContent = originalLabel; } return; }
+        }
+      }
+      if(btn) btn.textContent = 'Drafting...';
+    }
+
     const bodyFragment = opts.buildHtml();
     const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${bodyFragment}</body></html>`;
     const message = {
@@ -3767,6 +3795,78 @@ function productBlockName(b){
   if(b.kind === 'fuel') return b.grade === 'other' ? (b.otherFuel||'') : (b.grade||'');
   return b.otherProductName === '__custom' ? (b.otherProductCustom||'') : (b.otherProductName||'');
 }
+// "MGO"/"AGO" rather than the raw lowercase grade code, for anywhere a
+// human-readable product name is needed (file names, email subjects).
+function productBlockPrettyName(b){
+  const raw = productBlockName(b);
+  return b.kind === 'fuel' && b.grade !== 'other' ? raw.toUpperCase() : raw;
+}
+// Spec sheets are kept in their own storage bucket, keyed by a stable id
+// generated once at upload time (not by order_products.id, which gets
+// replaced on every save - see saveOrder). The pretty "[Port] [Product]
+// Specs" name is what's shown/downloaded as; multiple deals for the same
+// port+product genuinely can produce that same display name, which is
+// fine since the underlying files are still kept fully separate by their
+// own storage id.
+function specSheetFieldHTML(b){
+  const hasFile = !!b.specSheetPath;
+  const inputId = 'specSheetInput-' + b.id;
+  const url = (hasFile && window.TS && window.TS.getSpecSheetUrl) ? window.TS.getSpecSheetUrl(b.specSheetPath) : null;
+  return `<div style="margin:4px 0 12px 24px;">
+    ${hasFile ? `<div style="font-size:12.5px; margin-bottom:4px;">
+        ${url ? `<a href="#" onclick="openSpecSheetLink('${b.id}'); return false;">\ud83d\udcce ${escHtml(b.specSheetDisplayName || 'Spec sheet')}</a>` : escHtml(b.specSheetDisplayName || 'Spec sheet')}
+      </div>` : ''}
+    <input type="file" id="${inputId}" accept=".pdf,image/*" style="display:none;" onchange="uploadProductSpecSheet('${b.id}', this)">
+    <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${hasFile ? 'Replace' : 'Add'} spec sheet</button>
+    ${hasFile ? `<button type="button" class="btn-ghost btn-sm" onclick="removeProductSpecSheet('${b.id}')">Remove</button>` : ''}
+  </div>`;
+}
+async function openSpecSheetLink(blockId){
+  const b = (productBlocks||[]).find(x => x.id === blockId);
+  if(!b || !b.specSheetPath || !window.TS || !window.TS.getSpecSheetUrl) return;
+  try{
+    const url = await window.TS.getSpecSheetUrl(b.specSheetPath);
+    window.open(url, '_blank');
+  }catch(e){
+    console.error('TS: could not open spec sheet', e);
+    alert('Could not open the spec sheet right now.');
+  }
+}
+async function uploadProductSpecSheet(blockId, inputEl){
+  const file = inputEl.files && inputEl.files[0];
+  if(!file) return;
+  const b = (productBlocks||[]).find(x => x.id === blockId);
+  if(!b) return;
+  if(!window.TS || !window.TS.uploadSpecSheet){ alert('Uploading needs the database connection \u2014 not available right now.'); inputEl.value = ''; return; }
+  try{
+    const base64 = await blobToBase64(file);
+    const extension = (file.name.split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g,'') || 'pdf';
+    const storageId = (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2)));
+    const path = await window.TS.uploadSpecSheet(storageId, base64, file.type || 'application/pdf', extension);
+    const portName = fv('port') || 'Port';
+    const productName = productBlockPrettyName(b) || 'Product';
+    b.specSheetPath = path;
+    b.specSheetDisplayName = `${portName} ${productName} Specs.${extension}`;
+    b.specSheetUploadedAt = new Date().toISOString();
+    renderProductBlocks();
+    render();
+  }catch(e){
+    console.error('TS: spec sheet upload failed', e);
+    alert('Could not upload the spec sheet: ' + (e && e.message ? e.message : 'unknown error'));
+  }finally{
+    inputEl.value = '';
+  }
+}
+function removeProductSpecSheet(blockId){
+  const b = (productBlocks||[]).find(x => x.id === blockId);
+  if(!b) return;
+  if(!confirm('Remove this spec sheet from the product? This only removes it from this deal, not from anywhere it has already been sent.')) return;
+  b.specSheetPath = null;
+  b.specSheetDisplayName = null;
+  b.specSheetUploadedAt = null;
+  renderProductBlocks();
+  render();
+}
 // The order-level totals actually saved to the database (sales_total,
 // purchase_total, etc.) — built from computeOrderTotals(), the same
 // unit-aware calculation the Order Summary box already used correctly, so
@@ -3819,6 +3919,9 @@ function buildOrderProductLines(){
       costCurrency: b.costCurrency || null,
       costUnit: b.costPriceUnit || null,
       exchangeRate: parseFloat(b.exchangeRate) || null,
+      specSheetPath: b.specSheetPath || null,
+      specSheetDisplayName: b.specSheetDisplayName || null,
+      specSheetUploadedAt: b.specSheetUploadedAt || null,
       fees
     };
   });
@@ -5239,6 +5342,7 @@ function fuelBlockPriceHTML(b, idx){
     <label class="opt-inline" style="margin-bottom:12px;">
       <input type="checkbox" ${b.specsAttached?'checked':''} onchange="updateBlock('${b.id}','specsAttached',this.checked)"> Specifications attached
     </label>
+    ${specSheetFieldHTML(b)}
     ${quotePurchasePriceSectionHTML(b)}
     <div style="font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; color:var(--ink-soft); margin-bottom:8px;">Selling Price</div>
     <div class="row">
@@ -5271,6 +5375,7 @@ function otherBlockPriceHTML(b, idx){
     <label class="opt-inline" style="margin-bottom:12px;">
       <input type="checkbox" ${b.specsAttached?'checked':''} onchange="updateBlock('${b.id}','specsAttached',this.checked)"> Specifications attached
     </label>
+    ${specSheetFieldHTML(b)}
     ${quotePurchasePriceSectionHTML(b)}
     <div style="font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; color:var(--ink-soft); margin-bottom:8px;">Selling Price</div>
     <div class="row">
@@ -9388,7 +9493,8 @@ async function renderSummary(){
         let name;
         if(pb.kind==='fuel'){ name = pb.grade==='other' ? (pb.otherFuel||'Fuel') : (pb.grade||'Fuel').toUpperCase(); }
         else { name = (pb.otherProductName==='__custom' ? pb.otherProductCustom : pb.otherProductName) || 'Product'; }
-        return `<tr><td>${escHtml(name)}</td><td>${escHtml(pb.quantity||'')} ${escHtml(pb.unit||'')}</td></tr>`;
+        const specLink = pb.specSheetPath ? `<a href="#" onclick="openSpecSheetLink('${pb.id}'); return false;" title="${escAttr(pb.specSheetDisplayName||'Spec sheet')}">\ud83d\udcce</a>` : '';
+        return `<tr><td>${escHtml(name)}</td><td>${escHtml(pb.quantity||'')} ${escHtml(pb.unit||'')}</td><td>${specLink}</td></tr>`;
       }).join('');
       body += `<div class="item-detail-field"><span class="item-detail-label">Products</span><table class="summary-products-table"><tbody>${rows}</tbody></table></div>`;
     }
@@ -9928,10 +10034,51 @@ function renderItemDetail(){
       <span class="item-detail-label">Contacts</span>
       <div id="itemDetailContactsSection"><div class="hint">Loading...</div></div>
     </div>` : '';
-  document.getElementById('itemDetailFields').innerHTML = imageSectionHtml + logoSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + positionSectionHtml + vesselMapSectionHtml + contactsSectionHtml;
+  const specSheetHistorySectionHtml = (itemDetailState.kind === 'supplier') ? `<div class="item-detail-field">
+      <span class="item-detail-label">Spec sheets supplied</span>
+      <div id="itemDetailSpecSheetHistorySection"><div class="hint">Loading...</div></div>
+    </div>` : '';
+  document.getElementById('itemDetailFields').innerHTML = imageSectionHtml + logoSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + positionSectionHtml + vesselMapSectionHtml + contactsSectionHtml + specSheetHistorySectionHtml;
   if(schema.hasMap) renderItemDetailMap(item);
   if(itemDetailState.kind === 'vessel') renderVesselMap(item);
   if(schema.contactsFor) renderItemDetailContacts(item, schema);
+  if(itemDetailState.kind === 'supplier') renderSupplierSpecSheetHistory(item);
+}
+// Most-recent-first list of every spec sheet ever attached to a product
+// this supplier has supplied, across all past deals - lets a broker
+// quickly find "what did we send this supplier's product as" without
+// digging back through old orders individually.
+async function renderSupplierSpecSheetHistory(item){
+  const container = document.getElementById('itemDetailSpecSheetHistorySection');
+  if(!container) return;
+  if(!isRealUuid(item.id)){ container.innerHTML = '<div class="hint">Save this supplier first to see their spec sheet history.</div>'; return; }
+  if(!window.TS || !window.TS.getSupplierSpecSheets){ container.innerHTML = '<div class="hint">Needs the database connection \u2014 not available right now.</div>'; return; }
+  try{
+    const sheets = await window.TS.getSupplierSpecSheets(item.id);
+    if(!sheets.length){ container.innerHTML = '<div class="hint">No spec sheets recorded for this supplier yet.</div>'; return; }
+    container.innerHTML = sheets.map(s => {
+      const dateText = s.uploadedAt ? formatRelativeAge(new Date(s.uploadedAt)) : '';
+      const dealLabel = s.orderNumber || s.quoteRef || '';
+      const context = [s.vesselName, s.portName].filter(Boolean).join(' \u00b7 ');
+      return `<div style="padding:6px 0; border-bottom:1px solid var(--line); font-size:13px;">
+        <a href="#" onclick="openSupplierSpecSheetLink('${escAttr(s.path)}'); return false;">\ud83d\udcce ${escHtml(s.displayName || s.productName || 'Spec sheet')}</a>
+        <div style="font-size:11.5px; color:var(--ink-soft);">${escHtml(context)}${dealLabel ? (context ? ' \u00b7 ' : '') + escHtml(dealLabel) : ''}${dateText ? ' \u00b7 ' + escHtml(dateText) : ''}</div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    console.error('TS: could not load supplier spec sheet history', e);
+    container.innerHTML = '<div class="hint">Could not load spec sheet history right now.</div>';
+  }
+}
+async function openSupplierSpecSheetLink(path){
+  if(!path || !window.TS || !window.TS.getSpecSheetUrl) return;
+  try{
+    const url = await window.TS.getSpecSheetUrl(path);
+    window.open(url, '_blank');
+  }catch(e){
+    console.error('TS: could not open spec sheet', e);
+    alert('Could not open the spec sheet right now.');
+  }
 }
 async function saveItemDetail(){
   const schema = ITEM_DETAIL_SCHEMAS[itemDetailState.kind];
