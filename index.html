@@ -4247,7 +4247,7 @@ function renderDashboardList(){
   // widths here the compact layout left a lot of visibly wasted space on
   // the right rather than actually using it for the columns that need it.
   const headHtml = compact
-    ? th('reference','Reference','15%') + thStacked('24%','vessel','Vessel','port','Port','eta','ETA') + thStacked('28%','customer','Customer','supplier','Supplier') + thStacked('16%','purchase','Purchase','sale','Sale') + th('status','Status','11%') + '<th style="width:6%"></th>'
+    ? th('reference','Reference','15%') + thStacked('27%','vessel','Vessel','port','Port','eta','ETA') + thStacked('30%','customer','Customer','supplier','Supplier') + thStacked('16%','purchase','Purchase','sale','Sale') + th('status','Status','8%') + '<th style="width:4%"></th>'
     : th('reference','Reference') + th('vessel','Vessel') + th('port','Port') + th('customer','Customer') + th('supplier','Supplier') + th('eta','ETA / Delivery') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status') + '<th></th>';
   const bodyHtml = rows.map(r=>{
     const dateText = fmtDashboardDate(r.deliveryDate || r.eta);
