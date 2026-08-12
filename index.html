@@ -100,23 +100,18 @@
   .unsaved-banner{display:inline-flex; align-items:center; gap:6px; background:#FCE8E6; color:#B3492E; border:1px solid #E5A099; font-weight:700; font-size:12px; padding:8px 14px; border-radius:20px; white-space:nowrap;}
   .dashboard-filter-bar{margin:14px 0 20px;}
   .dashboard-filter-bar select{background:#fff; border:1px solid var(--line); color:var(--teal-dark); font-size:13px; font-weight:600; padding:9px 14px; border-radius:8px; cursor:pointer; font-family:inherit; min-width:220px;}
-  .dashboard-table{width:100%; border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,0.12); table-layout:fixed; font-size:12px;}
-  .dashboard-table th{text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-soft); padding:6px 8px; border-bottom:2px solid var(--line); cursor:pointer; user-select:none; word-break:break-word; overflow-wrap:break-word;}
+  .dashboard-table{width:100%; border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,0.12); table-layout:fixed; font-size:11px;}
+  .dashboard-table th{text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-soft); padding:6px 8px; border-bottom:2px solid var(--line); cursor:pointer; user-select:none; word-break:break-word; overflow-wrap:break-word;}
   .dashboard-table th:hover{color:var(--teal-dark);}
   .dashboard-th-stack-item{display:block; cursor:pointer;}
   .dashboard-th-stack-item:hover{color:var(--teal-dark);}
   .dashboard-th-stack-item + .dashboard-th-stack-item{margin-top:2px; padding-top:2px; border-top:1px solid var(--line);}
-  .dashboard-table td{padding:6px 8px; border-bottom:1px solid var(--line); font-size:13px; color:var(--teal-dark); word-break:break-word; overflow-wrap:break-word; white-space:normal;}
+  .dashboard-table td{padding:6px 8px; border-bottom:1px solid var(--line); font-size:11px; color:var(--teal-dark); word-break:break-word; overflow-wrap:break-word; white-space:normal;}
   .dashboard-table tr:last-child td{border-bottom:none;}
   .dashboard-table tr:hover td{background:#FAF8F3;}
   .dashboard-table td .tsb-status-badge{word-break:normal; overflow-wrap:normal; white-space:normal;}
   .dashboard-ref-link{color:var(--amber); font-weight:700; text-decoration:none;}
   .dashboard-ref-link:hover{text-decoration:underline;}
-  @media (max-width:900px){
-    .dashboard-table{font-size:12px;}
-    .dashboard-table th, .dashboard-table td{padding:8px 10px; white-space:normal;}
-    .dashboard-table th, .dashboard-table td{font-size:11px;}
-  }
   @media (max-width:640px){
     .dashboard-table{table-layout:fixed;}
     .dashboard-table th, .dashboard-table td{padding:4px 3px; word-break:break-word; overflow-wrap:break-word;}
@@ -4229,22 +4224,30 @@ function renderDashboardList(){
   // .app's max-width is ever increased later, instead of silently staying
   // wrong the way the previous window.innerWidth-based check did.
   const compact = availableWidth <= 1200;
-  function th(field, label){
-    return `<th onclick="setDashboardSort('${field}')">${escHtml(label)}${dashboardSortArrow(field)}</th>`;
+  function th(field, label, width){
+    const style = width ? ` style="width:${width}"` : '';
+    return `<th${style} onclick="setDashboardSort('${field}')">${escHtml(label)}${dashboardSortArrow(field)}</th>`;
   }
   // A stacked header has independently-clickable parts - clicking "Vessel"
   // sorts by vessel, clicking "Port" (right below it, same cell) sorts by
   // port, since these are still logically separate columns that just
   // happen to share screen space here.
-  function thStacked(...pairs){
+  function thStacked(width, ...pairs){
     const parts = [];
     for(let i = 0; i < pairs.length; i += 2){
       parts.push(`<span class="dashboard-th-stack-item" onclick="setDashboardSort('${pairs[i]}')">${escHtml(pairs[i+1])}${dashboardSortArrow(pairs[i])}</span>`);
     }
-    return `<th>${parts.join('')}</th>`;
+    const style = width ? ` style="width:${width}"` : '';
+    return `<th${style}>${parts.join('')}</th>`;
   }
+  // table-layout:fixed (needed so stacked cells wrap sanely) otherwise
+  // divides space equally across every column regardless of what it
+  // actually holds - Status and the delete button need far less room than
+  // Vessel/Customer's stacked, often-long content, so without explicit
+  // widths here the compact layout left a lot of visibly wasted space on
+  // the right rather than actually using it for the columns that need it.
   const headHtml = compact
-    ? th('reference','Reference') + thStacked('vessel','Vessel','port','Port','eta','ETA') + thStacked('customer','Customer','supplier','Supplier') + thStacked('purchase','Purchase','sale','Sale') + th('status','Status') + '<th></th>'
+    ? th('reference','Reference','15%') + thStacked('24%','vessel','Vessel','port','Port','eta','ETA') + thStacked('28%','customer','Customer','supplier','Supplier') + thStacked('16%','purchase','Purchase','sale','Sale') + th('status','Status','11%') + '<th style="width:6%"></th>'
     : th('reference','Reference') + th('vessel','Vessel') + th('port','Port') + th('customer','Customer') + th('supplier','Supplier') + th('eta','ETA / Delivery') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status') + '<th></th>';
   const bodyHtml = rows.map(r=>{
     const dateText = fmtDashboardDate(r.deliveryDate || r.eta);
