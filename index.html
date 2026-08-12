@@ -3795,11 +3795,18 @@ function productBlockName(b){
   if(b.kind === 'fuel') return b.grade === 'other' ? (b.otherFuel||'') : (b.grade||'');
   return b.otherProductName === '__custom' ? (b.otherProductCustom||'') : (b.otherProductName||'');
 }
-// "MGO"/"AGO" rather than the raw lowercase grade code, for anywhere a
-// human-readable product name is needed (file names, email subjects).
+// Looks up the matching product's short name (e.g. "MGO") from the
+// Products list by name match - covers both the fuel grade dropdown
+// (which holds a full product name like "Marine Gas Oil", not a fixed
+// code) and the "Other Products" path. Falls back to the raw name
+// unchanged, NOT force-uppercased, if no short name is set for that
+// product - a product without one just isn't shortened, rather than
+// being mangled into e.g. "AUTOMOTIVE DIESEL OIL".
 function productBlockPrettyName(b){
   const raw = productBlockName(b);
-  return b.kind === 'fuel' && b.grade !== 'other' ? raw.toUpperCase() : raw;
+  if(!raw) return raw;
+  const match = (PRODUCTS||[]).find(p => p.name && p.name.toLowerCase() === raw.toLowerCase());
+  return (match && match.shortName) ? match.shortName : raw;
 }
 // Spec sheets are kept in their own storage bucket, keyed by a stable id
 // generated once at upload time (not by order_products.id, which gets
@@ -9693,7 +9700,8 @@ const ITEM_DETAIL_SCHEMAS = {
     fields: [
       {key:'name', label:'Product name', type:'text'},
       {key:'category', label:'Category', type:'select', options:['Fuel','Other Products']},
-      {key:'subType', label:'Sub type', type:'text'}
+      {key:'subType', label:'Sub type', type:'text'},
+      {key:'shortName', label:'Short name (used in file names, e.g. MGO)', type:'text'}
     ],
     afterSave: async (item) => { await saveReferenceItemRemote('product', item); },
     onSaved: () => { renderProductTable(); }
@@ -9908,7 +9916,7 @@ function renderVesselMap(item){
   }
   container.innerHTML = '<div id="itemDetailVesselMapCanvas" class="item-detail-map-canvas"></div>';
   const lat = Number(pos.latitude), lon = Number(pos.longitude);
-  const map = L.map('itemDetailVesselMapCanvas', { zoomControl: true }).setView([lat, lon], 10);
+  const map = L.map('itemDetailVesselMapCanvas', { zoomControl: true, scrollWheelZoom: false }).setView([lat, lon], 10);
   itemDetailMapInstance = map;
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
@@ -9975,7 +9983,7 @@ function renderItemDetail(){
   document.getElementById('itemDetailEditBtn').style.display = itemDetailState.editMode ? 'none' : '';
   document.getElementById('itemDetailSaveBar').style.display = itemDetailState.editMode ? 'inline-flex' : 'none';
   let anyFieldShown = false;
-  const fieldsHtml = schema.fields.map(f=>{
+  const renderOneField = f=>{
     const value = itemDetailFieldValue(item, f.key) || '';
     if(!itemDetailState.editMode){
       if(f.type === 'checkbox'){
@@ -10017,7 +10025,12 @@ function renderItemDetail(){
       <label class="item-detail-label" for="${fid}">${escHtml(f.label)}</label>
       ${inputHtml}
     </div>`;
-  }).join('');
+  };
+  // Split around 'notes' so document sections (vessel certificate/
+  // additional documents) can be inserted directly above it, per every
+  // schema's convention of 'notes' always being the last field.
+  const fieldsHtml = schema.fields.filter(f=>f.key !== 'notes').map(renderOneField).join('');
+  const notesFieldHtml = schema.fields.filter(f=>f.key === 'notes').map(renderOneField).join('');
   const emptyStateHtml = (!itemDetailState.editMode && !anyFieldShown)
     ? `<div class="item-detail-field"><div class="item-detail-value" style="color:var(--ink-soft);">No details recorded yet \u2014 click Edit to add some.</div></div>` : '';
   const rolesHtml = schema.roleListName ? `<div class="item-detail-field">
@@ -10038,11 +10051,20 @@ function renderItemDetail(){
       <span class="item-detail-label">Spec sheets supplied</span>
       <div id="itemDetailSpecSheetHistorySection"><div class="hint">Loading...</div></div>
     </div>` : '';
-  document.getElementById('itemDetailFields').innerHTML = imageSectionHtml + logoSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + positionSectionHtml + vesselMapSectionHtml + contactsSectionHtml + specSheetHistorySectionHtml;
+  const vesselDocumentsSectionHtml = (itemDetailState.kind === 'vessel') ? `<div class="item-detail-field">
+      <span class="item-detail-label">Documents</span>
+      <div id="itemDetailVesselDocumentsSection"><div class="hint">Loading...</div></div>
+    </div>` : '';
+  // Contacts first (right under the name/image), so the people you'd
+  // actually contact about this vessel/organization aren't buried below a
+  // long list of technical fields. Documents sit directly above Notes,
+  // which stays last across every schema.
+  document.getElementById('itemDetailFields').innerHTML = imageSectionHtml + logoSectionHtml + contactsSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + positionSectionHtml + vesselMapSectionHtml + specSheetHistorySectionHtml + vesselDocumentsSectionHtml + notesFieldHtml;
   if(schema.hasMap) renderItemDetailMap(item);
   if(itemDetailState.kind === 'vessel') renderVesselMap(item);
   if(schema.contactsFor) renderItemDetailContacts(item, schema);
   if(itemDetailState.kind === 'supplier') renderSupplierSpecSheetHistory(item);
+  if(itemDetailState.kind === 'vessel') renderVesselDocuments(item);
 }
 // Most-recent-first list of every spec sheet ever attached to a product
 // this supplier has supplied, across all past deals - lets a broker
@@ -10078,6 +10100,99 @@ async function openSupplierSpecSheetLink(path){
   }catch(e){
     console.error('TS: could not open spec sheet', e);
     alert('Could not open the spec sheet right now.');
+  }
+}
+// Certificate of Registration (single file, replaced on re-upload) and
+// Additional documents (any number, individually removable) - both stored
+// in the same vessel_documents table, distinguished by document_type.
+async function renderVesselDocuments(item){
+  const container = document.getElementById('itemDetailVesselDocumentsSection');
+  if(!container) return;
+  if(!isRealUuid(item.id)){ container.innerHTML = '<div class="hint">Save this vessel first to add documents.</div>'; return; }
+  if(!window.TS || !window.TS.getVesselDocuments){ container.innerHTML = '<div class="hint">Needs the database connection \u2014 not available right now.</div>'; return; }
+  try{
+    const docs = await window.TS.getVesselDocuments(item.id);
+    const cert = docs.find(d => d.documentType === 'certificate_of_registration');
+    const additional = docs.filter(d => d.documentType === 'additional');
+    const certHtml = `<div style="margin-bottom:14px;">
+      <div style="font-weight:600; font-size:12.5px; margin-bottom:4px;">Certificate of Registration</div>
+      ${cert ? `<div style="font-size:12.5px; margin-bottom:4px;"><a href="#" onclick="openVesselDocumentLink('${escAttr(cert.path)}'); return false;">\ud83d\udcce ${escHtml(cert.label)}</a></div>` : '<div class="hint" style="margin-bottom:4px;">None yet.</div>'}
+      <input type="file" id="vesselCertInput" accept=".pdf,image/*" style="display:none;" onchange="uploadVesselCertOfRegistration('${item.id}', this)">
+      <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('vesselCertInput').click()">${cert ? 'Replace' : 'Add'} certificate</button>
+    </div>`;
+    const additionalRows = additional.map(d => `<div style="font-size:12.5px; margin-bottom:4px; display:flex; align-items:center; gap:8px;">
+      <a href="#" onclick="openVesselDocumentLink('${escAttr(d.path)}'); return false;">\ud83d\udcce ${escHtml(d.label)}</a>
+      <button type="button" class="btn-ghost btn-sm" onclick="removeVesselAdditionalDocument('${d.id}', '${item.id}')">Remove</button>
+    </div>`).join('');
+    const additionalHtml = `<div>
+      <div style="font-weight:600; font-size:12.5px; margin-bottom:4px;">Additional documents</div>
+      ${additionalRows || '<div class="hint" style="margin-bottom:4px;">None yet.</div>'}
+      <input type="file" id="vesselAdditionalDocInput" accept=".pdf,image/*" style="display:none;" onchange="uploadVesselAdditionalDocument('${item.id}', this)">
+      <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('vesselAdditionalDocInput').click()">+ Add document</button>
+    </div>`;
+    container.innerHTML = certHtml + additionalHtml;
+  }catch(e){
+    console.error('TS: could not load vessel documents', e);
+    container.innerHTML = '<div class="hint">Could not load documents right now.</div>';
+  }
+}
+async function openVesselDocumentLink(path){
+  if(!path || !window.TS || !window.TS.getVesselDocumentUrl) return;
+  try{
+    const url = await window.TS.getVesselDocumentUrl(path);
+    window.open(url, '_blank');
+  }catch(e){
+    console.error('TS: could not open document', e);
+    alert('Could not open the document right now.');
+  }
+}
+async function uploadVesselCertOfRegistration(vesselId, inputEl){
+  const file = inputEl.files && inputEl.files[0];
+  if(!file) return;
+  if(!window.TS || !window.TS.uploadVesselDocument){ alert('Uploading needs the database connection \u2014 not available right now.'); inputEl.value = ''; return; }
+  try{
+    const base64 = await blobToBase64(file);
+    const extension = (file.name.split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g,'') || 'pdf';
+    await window.TS.uploadVesselDocument(vesselId, 'certificate_of_registration', 'Certificate of Registration.' + extension, base64, file.type || 'application/pdf', extension);
+    const schema = ITEM_DETAIL_SCHEMAS.vessel;
+    const item = schema.getList().find(x => x.id === vesselId);
+    if(item) await renderVesselDocuments(item);
+  }catch(e){
+    console.error('TS: certificate upload failed', e);
+    alert('Could not upload the certificate: ' + (e && e.message ? e.message : 'unknown error'));
+  }finally{
+    inputEl.value = '';
+  }
+}
+async function uploadVesselAdditionalDocument(vesselId, inputEl){
+  const file = inputEl.files && inputEl.files[0];
+  if(!file) return;
+  if(!window.TS || !window.TS.uploadVesselDocument){ alert('Uploading needs the database connection \u2014 not available right now.'); inputEl.value = ''; return; }
+  try{
+    const base64 = await blobToBase64(file);
+    const extension = (file.name.split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g,'') || 'pdf';
+    await window.TS.uploadVesselDocument(vesselId, 'additional', file.name, base64, file.type || 'application/pdf', extension);
+    const schema = ITEM_DETAIL_SCHEMAS.vessel;
+    const item = schema.getList().find(x => x.id === vesselId);
+    if(item) await renderVesselDocuments(item);
+  }catch(e){
+    console.error('TS: document upload failed', e);
+    alert('Could not upload the document: ' + (e && e.message ? e.message : 'unknown error'));
+  }finally{
+    inputEl.value = '';
+  }
+}
+async function removeVesselAdditionalDocument(docId, vesselId){
+  if(!confirm('Remove this document from the vessel record?')) return;
+  if(!window.TS || !window.TS.removeVesselDocument) return;
+  try{
+    await window.TS.removeVesselDocument(docId);
+    const schema = ITEM_DETAIL_SCHEMAS.vessel;
+    const item = schema.getList().find(x => x.id === vesselId);
+    if(item) await renderVesselDocuments(item);
+  }catch(e){
+    console.error('TS: could not remove document', e);
+    alert('Could not remove the document right now.');
   }
 }
 async function saveItemDetail(){
@@ -10165,7 +10280,7 @@ function renderItemDetailMap(item){
   container.innerHTML = '<span class="item-detail-label">Location</span>' +
     '<div id="itemDetailMapCanvas" class="item-detail-map-canvas"></div>' +
     (itemDetailState.editMode ? '<div class="item-detail-map-hint">Drag or scroll the map so the yacht marks the right spot \u2014 it stays fixed in the centre.</div>' : '');
-  const map = L.map('itemDetailMapCanvas', { zoomControl: true }).setView([lat, lon], hasCoords ? 12 : 4);
+  const map = L.map('itemDetailMapCanvas', { zoomControl: true, scrollWheelZoom: false }).setView([lat, lon], hasCoords ? 12 : 4);
   itemDetailMapInstance = map;
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
