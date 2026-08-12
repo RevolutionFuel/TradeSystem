@@ -343,8 +343,20 @@
   .mgmt-add-row{background:var(--amber-soft); border-radius:8px; padding:10px; margin-bottom:14px; display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;}
   .mgmt-add-row .field{margin-bottom:0; min-width:130px; flex:1;}
   .mgmt-count{font-size:11.5px; color:var(--ink-soft); margin-bottom:8px;}
-  .table-wrap{max-height:60vh; overflow-y:auto; border:1px solid var(--line-soft); border-radius:8px;}
+  .table-wrap{max-height:60vh; overflow-y:auto; overflow-x:auto; border:1px solid var(--line-soft); border-radius:8px;}
   table.mgmt-table thead th{position:sticky; top:0; background:#fff; z-index:1;}
+  /* On an intermediate ("small laptop") width, the widest tables
+     (vessels/owners/suppliers) genuinely don't fit without horizontal
+     scrolling even before the phone-oriented breakpoints below kick in.
+     Rather than just shrinking text further (which was already the only
+     response here and doesn't actually reduce the column count), the
+     secondary columns collapse into one stacked summary column, same
+     "merge fields" idea already used on the dashboard for mobile. */
+  .mgmt-compact-col{display:none;}
+  @media (max-width:1100px){
+    table.mgmt-table.mgmt-mergeable .mgmt-wide-col{display:none;}
+    table.mgmt-table.mgmt-mergeable .mgmt-compact-col{display:table-cell;}
+  }
   @media (max-width:900px){
     table.mgmt-table{font-size:10px;}
   }
@@ -1294,7 +1306,7 @@
         <div class="mgmt-search"><input type="text" id="vesselSearch" placeholder="Search vessels..." oninput="renderVesselTable()"></div>
         <div class="mgmt-count" id="vesselCount"></div>
         <div class="table-wrap">
-          <table class="mgmt-table">
+          <table class="mgmt-table mgmt-mergeable" id="vesselTable">
             <thead id="vesselTableHead"></thead>
             <tbody id="vesselTableBody"></tbody>
           </table>
@@ -1310,7 +1322,7 @@
         <div class="mgmt-search"><input type="text" id="ownerSearch" placeholder="Search registered owners..." oninput="renderOwnerTable()"></div>
         <div class="mgmt-count" id="ownerCount"></div>
         <div class="table-wrap">
-          <table class="mgmt-table">
+          <table class="mgmt-table mgmt-mergeable">
             <thead id="ownerTableHead"></thead>
             <tbody id="ownerTableBody"></tbody>
           </table>
@@ -1326,7 +1338,7 @@
         <div class="mgmt-search"><input type="text" id="supplierSearch" placeholder="Search suppliers..." oninput="renderSupplierTable()"></div>
         <div class="mgmt-count" id="supplierCount"></div>
         <div class="table-wrap">
-          <table class="mgmt-table">
+          <table class="mgmt-table mgmt-mergeable">
             <thead id="supplierTableHead"></thead>
             <tbody id="supplierTableBody"></tbody>
           </table>
@@ -1985,6 +1997,7 @@ async function draftInOutlookGeneric(opts){
   }
 }
 function draftEnquireInOutlook(){
+  if(confirmProgressStatus('enquire')) markStatus('awaitingPrices');
   return draftInOutlookGeneric({
     btnId: 'draftEnquireOutlookBtn', openCheckboxId: 'openDraftToSendEnquire',
     contacts: enqSelectedContacts, buildHtml: buildEnquiryEmailHtml,
@@ -1992,6 +2005,7 @@ function draftEnquireInOutlook(){
   });
 }
 function draftQuoteInOutlook(){
+  if(confirmProgressStatus('quote')) markStatus('quoted');
   return draftInOutlookGeneric({
     btnId: 'draftQuoteOutlookBtn', openCheckboxId: 'openDraftToSendQuote',
     contacts: quoteSelectedContacts, buildHtml: buildEmailHtml,
@@ -2000,6 +2014,7 @@ function draftQuoteInOutlook(){
   });
 }
 function draftSupplyInOutlook(){
+  markSupplierConfirmedForCurrentView();
   return draftInOutlookGeneric({
     btnId: 'draftSupplyOutlookBtn', openCheckboxId: 'openDraftToSendSupply',
     contacts: supSelectedContacts, buildHtml: buildSupplyEmailHtml,
@@ -2008,6 +2023,7 @@ function draftSupplyInOutlook(){
   });
 }
 function draftCustomerInOutlook(){
+  confirmCustomerAndAssignOrderNumber();
   return draftInOutlookGeneric({
     btnId: 'draftCustomerOutlookBtn', openCheckboxId: 'openDraftToSendCustomer',
     contacts: custSelectedContacts, buildHtml: buildCustomerEmailHtml,
@@ -2016,6 +2032,7 @@ function draftCustomerInOutlook(){
   });
 }
 function draftInvoiceInOutlook(){
+  if(getInvoiceType()==='invoice' && confirmProgressStatus('invoice')) markStatus('invoiced');
   return draftInOutlookGeneric({
     btnId: 'draftInvoiceOutlookBtn', openCheckboxId: 'openDraftToSendInvoice',
     contacts: custSelectedContacts, buildHtml: buildInvoiceEmailHtml,
@@ -10511,8 +10528,9 @@ function mgmtSortArrow(table, field){
   const s = mgmtSort[table];
   return s.field === field ? (s.dir===1 ? ' \u25b2' : ' \u25bc') : '';
 }
-function mgmtSortTh(table, field, label, renderFnName){
-  return `<th onclick="mgmtSortClick('${table}','${field}',${renderFnName})" style="cursor:pointer; user-select:none;" title="Click to sort">${escHtml(label)}${mgmtSortArrow(table, field)}</th>`;
+function mgmtSortTh(table, field, label, renderFnName, extraClass){
+  const cls = extraClass ? ` class="${extraClass}"` : '';
+  return `<th${cls} onclick="mgmtSortClick('${table}','${field}',${renderFnName})" style="cursor:pointer; user-select:none;" title="Click to sort">${escHtml(label)}${mgmtSortArrow(table, field)}</th>`;
 }
 // Sorts an array of {x, i} filter-result pairs by a string field accessor,
 // case-insensitively, respecting the current direction for that table.
@@ -10534,9 +10552,10 @@ function renderVesselTable(){
   const tbody = document.getElementById('vesselTableBody');
   tbody.innerHTML = '';
   document.getElementById('vesselTableHead').innerHTML = '<tr>' +
-    mgmtSortTh('vessels','name','Vessel','renderVesselTable') + mgmtSortTh('vessels','imo','IMO','renderVesselTable') +
-    mgmtSortTh('vessels','flag','Flag','renderVesselTable') + mgmtSortTh('vessels','owner','Registered owner','renderVesselTable') +
-    mgmtSortTh('vessels','fitting','Fuel fitting','renderVesselTable') + '<th>Speed</th></tr>';
+    mgmtSortTh('vessels','name','Vessel','renderVesselTable') +
+    mgmtSortTh('vessels','imo','IMO','renderVesselTable', 'mgmt-wide-col') + mgmtSortTh('vessels','flag','Flag','renderVesselTable', 'mgmt-wide-col') +
+    mgmtSortTh('vessels','owner','Registered owner','renderVesselTable', 'mgmt-wide-col') + mgmtSortTh('vessels','fitting','Fuel fitting','renderVesselTable', 'mgmt-wide-col') +
+    '<th class="mgmt-wide-col">Speed</th><th class="mgmt-compact-col">Details</th></tr>';
   let filtered = VESSELS.map((v,i)=>({v,i})).filter(({v})=> !q || v.name.toLowerCase().includes(q));
   filtered = mgmtSortPairs(filtered, 'vessels', p=>p.v[mgmtSort.vessels.field]);
   document.getElementById('vesselCount').textContent = `${filtered.length} of ${VESSELS.length} vessels`;
@@ -10544,13 +10563,18 @@ function renderVesselTable(){
     const tr = document.createElement('tr');
     tr.onclick = () => openItemDetail('vessel', v.id);
     const speedText = (v.trackAis && v.lastPosition && v.lastPosition.sog != null) ? `${v.lastPosition.sog} kn` : '\u2014';
+    const compactLines = [
+      v.imo ? `IMO ${v.imo}` : '', v.flag || '', ownerName(v.ownerId) || '', v.fitting || '',
+      speedText !== '\u2014' ? speedText : ''
+    ].filter(Boolean).join(' \u00b7 ');
     tr.innerHTML = `
       <td class="mgmt-item-name">${escHtml(v.name)}</td>
-      <td>${escHtml(v.imo || '\u2014')}</td>
-      <td>${escHtml(v.flag || '\u2014')}</td>
-      <td>${escHtml(ownerName(v.ownerId) || '\u2014')}</td>
-      <td>${escHtml(v.fitting || '\u2014')}</td>
-      <td>${escHtml(speedText)}</td>
+      <td class="mgmt-wide-col">${escHtml(v.imo || '\u2014')}</td>
+      <td class="mgmt-wide-col">${escHtml(v.flag || '\u2014')}</td>
+      <td class="mgmt-wide-col">${escHtml(ownerName(v.ownerId) || '\u2014')}</td>
+      <td class="mgmt-wide-col">${escHtml(v.fitting || '\u2014')}</td>
+      <td class="mgmt-wide-col">${escHtml(speedText)}</td>
+      <td class="mgmt-compact-col">${escHtml(compactLines || '\u2014')}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -10592,9 +10616,9 @@ function renderOwnerTable(){
   const tbody = document.getElementById('ownerTableBody');
   tbody.innerHTML = '';
   document.getElementById('ownerTableHead').innerHTML = '<tr>' +
-    mgmtSortTh('owners','name','Name','renderOwnerTable') + mgmtSortTh('owners','contactName','Contact','renderOwnerTable') +
-    '<th>Address</th>' + mgmtSortTh('owners','vatNumber','VAT number','renderOwnerTable') +
-    mgmtSortTh('owners','uboNationality','UBO nationality','renderOwnerTable') + '<th>Roles</th></tr>';
+    mgmtSortTh('owners','name','Name','renderOwnerTable') + mgmtSortTh('owners','contactName','Contact','renderOwnerTable', 'mgmt-wide-col') +
+    '<th class="mgmt-wide-col">Address</th>' + mgmtSortTh('owners','vatNumber','VAT number','renderOwnerTable', 'mgmt-wide-col') +
+    mgmtSortTh('owners','uboNationality','UBO nationality','renderOwnerTable', 'mgmt-wide-col') + '<th class="mgmt-wide-col">Roles</th><th class="mgmt-compact-col">Details</th></tr>';
   let filtered = REGISTERED_OWNERS.map((o,i)=>({o,i})).filter(({o})=> !q || o.name.toLowerCase().includes(q));
   filtered = mgmtSortPairs(filtered, 'owners', p=>p.o[mgmtSort.owners.field]);
   document.getElementById('ownerCount').textContent = `${filtered.length} of ${REGISTERED_OWNERS.length} registered owners`;
@@ -10603,14 +10627,15 @@ function renderOwnerTable(){
     const addr = normalizeAddress(o.address);
     const addrSummary = [addr.line1, addr.city, addr.country].filter(Boolean).join(', ');
     tr.onclick = () => openItemDetail('owner', o.id);
+    const compactLines = [o.contactName, addrSummary, o.vatNumber, o.uboNationality].filter(Boolean).join(' \u00b7 ');
     tr.innerHTML = `
       <td class="mgmt-item-name">${escHtml(o.name)}</td>
-      <td>${escHtml(o.contactName || '\u2014')}</td>
-      <td>${escHtml(addrSummary || '\u2014')}</td>
-      <td>${escHtml(o.vatNumber || '\u2014')}</td>
-      <td>${escHtml(o.uboNationality || '\u2014')}</td>
-      <td>${rolesSummaryHtml(o)}</td>
-      
+      <td class="mgmt-wide-col">${escHtml(o.contactName || '\u2014')}</td>
+      <td class="mgmt-wide-col">${escHtml(addrSummary || '\u2014')}</td>
+      <td class="mgmt-wide-col">${escHtml(o.vatNumber || '\u2014')}</td>
+      <td class="mgmt-wide-col">${escHtml(o.uboNationality || '\u2014')}</td>
+      <td class="mgmt-wide-col">${rolesSummaryHtml(o)}</td>
+      <td class="mgmt-compact-col">${escHtml(compactLines || '\u2014')}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -10673,8 +10698,8 @@ function renderSupplierTable(){
   const tbody = document.getElementById('supplierTableBody');
   tbody.innerHTML = '';
   document.getElementById('supplierTableHead').innerHTML = '<tr>' +
-    mgmtSortTh('suppliers','name','Name','renderSupplierTable') + mgmtSortTh('suppliers','contactName','Contact','renderSupplierTable') +
-    '<th>Address</th>' + mgmtSortTh('suppliers','vatNumber','VAT number','renderSupplierTable') + '<th>Roles</th></tr>';
+    mgmtSortTh('suppliers','name','Name','renderSupplierTable') + mgmtSortTh('suppliers','contactName','Contact','renderSupplierTable', 'mgmt-wide-col') +
+    '<th class="mgmt-wide-col">Address</th>' + mgmtSortTh('suppliers','vatNumber','VAT number','renderSupplierTable', 'mgmt-wide-col') + '<th class="mgmt-wide-col">Roles</th><th class="mgmt-compact-col">Details</th></tr>';
   let filtered = SUPPLIERS.map((s,i)=>({s,i})).filter(({s})=> !q || s.name.toLowerCase().includes(q));
   filtered = mgmtSortPairs(filtered, 'suppliers', p=>p.s[mgmtSort.suppliers.field]);
   document.getElementById('supplierCount').textContent = `${filtered.length} of ${SUPPLIERS.length} suppliers`;
@@ -10683,13 +10708,14 @@ function renderSupplierTable(){
     const addr = normalizeAddress(s.address);
     const addrSummary = [addr.line1, addr.city, addr.country].filter(Boolean).join(', ');
     tr.onclick = () => openItemDetail('supplier', s.id);
+    const compactLines = [s.contactName, addrSummary, s.vatNumber].filter(Boolean).join(' \u00b7 ');
     tr.innerHTML = `
       <td class="mgmt-item-name">${escHtml(s.name)}</td>
-      <td>${escHtml(s.contactName || '\u2014')}</td>
-      <td>${escHtml(addrSummary || '\u2014')}</td>
-      <td>${escHtml(s.vatNumber || '\u2014')}</td>
-      <td>${rolesSummaryHtml(s)}</td>
-      
+      <td class="mgmt-wide-col">${escHtml(s.contactName || '\u2014')}</td>
+      <td class="mgmt-wide-col">${escHtml(addrSummary || '\u2014')}</td>
+      <td class="mgmt-wide-col">${escHtml(s.vatNumber || '\u2014')}</td>
+      <td class="mgmt-wide-col">${rolesSummaryHtml(s)}</td>
+      <td class="mgmt-compact-col">${escHtml(compactLines || '\u2014')}</td>
     `;
     tbody.appendChild(tr);
   });
