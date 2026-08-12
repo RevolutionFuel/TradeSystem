@@ -111,6 +111,15 @@
   .dashboard-table tr:hover td{background:#FAF8F3;}
   .dashboard-ref-link{color:var(--amber); font-weight:700; text-decoration:none;}
   .dashboard-ref-link:hover{text-decoration:underline;}
+  @media (max-width:1300px){
+    /* Structural change only (table-layout so stacked cells wrap sanely) -
+       font size stays readable here since this is "small laptop", not a
+       phone; the much smaller sizes below are scoped to their own narrower
+       breakpoints and layer on top of this one at those widths. */
+    .dashboard-table{table-layout:fixed; font-size:12px;}
+    .dashboard-table th, .dashboard-table td{padding:6px 8px; word-break:break-word; overflow-wrap:break-word; white-space:normal;}
+    .dashboard-table td .tsb-status-badge{word-break:normal; overflow-wrap:normal; white-space:normal;}
+  }
   @media (max-width:900px){
     .dashboard-table{font-size:12px;}
     .dashboard-table th, .dashboard-table td{padding:8px 10px; white-space:normal;}
@@ -4200,14 +4209,16 @@ function renderDashboardList(){
     container.innerHTML = '<div class="hint">Nothing here right now.</div>';
     return;
   }
-  // Below the same 640px breakpoint the CSS itself uses for this table,
-  // several columns are combined into stacked pairs/triples rather than
-  // just shrinking further - eight-plus columns of real content doesn't
-  // fit a phone screen at any readable font size, and previously left the
-  // Status column too narrow to show its own label without wrapping.
-  // Re-checked on resize (see scheduleDashboardRerender) so rotating the
-  // phone or resizing a browser window switches layouts live.
-  const compact = window.innerWidth <= 640;
+  // Below this width, several columns are combined into stacked pairs/
+  // triples rather than just shrinking further - ten-plus columns of real
+  // content (reference, vessel, port, customer, supplier, ETA, purchase,
+  // sale, status, delete) doesn't fit even a small laptop screen at any
+  // readable font size, not just a phone - this was originally gated at
+  // 640px (phone-only), which left it overflowing on laptop widths between
+  // that and full desktop. Re-checked on resize (see
+  // scheduleDashboardRerender) so resizing the browser window switches
+  // layouts live.
+  const compact = window.innerWidth <= 1300;
   function th(field, label){
     return `<th onclick="setDashboardSort('${field}')">${escHtml(label)}${dashboardSortArrow(field)}</th>`;
   }
