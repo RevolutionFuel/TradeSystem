@@ -313,7 +313,7 @@
   .draft-options{display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; font-size:12.5px; color:var(--ink-soft); margin-top:4px;}
   .copybar button{flex-shrink:0; white-space:nowrap;}
   .footer-note{text-align:center; font-size:11px; color:rgba(255,255,255,0.75); margin-top:18px; text-shadow:0 1px 3px rgba(0,0,0,0.4);}
-  .mgmt-tabs{display:flex; gap:6px; margin-bottom:14px;}
+  .mgmt-tabs{display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap;}
   .mgmt-tabs button{background:var(--panel); border:1px solid var(--line); color:var(--ink-soft); font-size:12.5px;}
   .mgmt-tabs button.active{background:var(--teal-dark); color:#fff; border-color:var(--teal-dark);}
   .mgmt-tabs-select{background:#fff; border:1px solid var(--line); color:var(--teal-dark); font-size:13px; font-weight:600; padding:9px 14px; border-radius:8px; cursor:pointer; font-family:inherit; width:100%;}
@@ -10710,7 +10710,7 @@ function renderSupplierTable(){
   tbody.innerHTML = '';
   document.getElementById('supplierTableHead').innerHTML = '<tr>' +
     mgmtSortTh('suppliers','name','Name','renderSupplierTable') + mgmtSortTh('suppliers','contactName','Contact','renderSupplierTable', 'mgmt-wide-col') +
-    '<th class="mgmt-wide-col">Address</th>' + mgmtSortTh('suppliers','vatNumber','VAT number','renderSupplierTable', 'mgmt-wide-col') + '<th class="mgmt-wide-col">Roles</th><th class="mgmt-compact-col">Details</th></tr>';
+    '<th class="mgmt-wide-col">Address</th><th class="mgmt-wide-col">Roles</th><th class="mgmt-compact-col">Details</th></tr>';
   let filtered = SUPPLIERS.map((s,i)=>({s,i})).filter(({s})=> !q || s.name.toLowerCase().includes(q));
   filtered = mgmtSortPairs(filtered, 'suppliers', p=>p.s[mgmtSort.suppliers.field]);
   document.getElementById('supplierCount').textContent = `${filtered.length} of ${SUPPLIERS.length} suppliers`;
@@ -10719,12 +10719,11 @@ function renderSupplierTable(){
     const addr = normalizeAddress(s.address);
     const addrSummary = [addr.line1, addr.city, addr.country].filter(Boolean).join(', ');
     tr.onclick = () => openItemDetail('supplier', s.id);
-    const compactLines = [s.contactName, addrSummary, s.vatNumber].filter(Boolean).join(' \u00b7 ');
+    const compactLines = [s.contactName, addrSummary].filter(Boolean).join(' \u00b7 ');
     tr.innerHTML = `
       <td class="mgmt-item-name">${escHtml(s.name)}</td>
       <td class="mgmt-wide-col">${escHtml(s.contactName || '\u2014')}</td>
       <td class="mgmt-wide-col">${escHtml(addrSummary || '\u2014')}</td>
-      <td class="mgmt-wide-col">${escHtml(s.vatNumber || '\u2014')}</td>
       <td class="mgmt-wide-col">${rolesSummaryHtml(s)}</td>
       <td class="mgmt-compact-col">${escHtml(compactLines || '\u2014')}</td>
     `;
@@ -10946,7 +10945,8 @@ function renderProductTable(){
   const tbody = document.getElementById('productTableBody');
   tbody.innerHTML = '';
   document.getElementById('productTableHead').innerHTML = '<tr>' +
-    mgmtSortTh('products','name','Product name','renderProductTable') + mgmtSortTh('products','category','Category','renderProductTable') +
+    mgmtSortTh('products','name','Product name','renderProductTable') + mgmtSortTh('products','shortName','Short name','renderProductTable') +
+    mgmtSortTh('products','category','Category','renderProductTable') +
     mgmtSortTh('products','subType','Sub type','renderProductTable') + '</tr>';
   let filtered = PRODUCTS.map((p,i)=>({p,i})).filter(({p})=> !q || p.name.toLowerCase().includes(q));
   filtered = mgmtSortPairs(filtered, 'products', pr=>pr.p[mgmtSort.products.field]);
@@ -10956,6 +10956,7 @@ function renderProductTable(){
     tr.onclick = () => openItemDetail('product', p.id);
     tr.innerHTML = `
       <td class="mgmt-item-name">${escHtml(p.name)}</td>
+      <td>${escHtml(p.shortName || '\u2014')}</td>
       <td>${escHtml(p.category || '\u2014')}</td>
       <td>${escHtml(p.subType || '\u2014')}</td>
       
