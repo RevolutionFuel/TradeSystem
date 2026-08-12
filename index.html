@@ -3440,9 +3440,9 @@ function currentSupplierIdForPage(page){
 // someone from the list — which itself sets the default (see
 // toggleContactSelection) — rather than guessing on their behalf.
 async function autoSetSoleDefault(contacts, target){
-  if(contacts.length === 1 && !contacts[0].isPrimary && window.TS && window.TS.setPrimaryContact){
-    try{ await window.TS.setPrimaryContact(contacts[0].id, target); contacts[0].isPrimary = true; }
-    catch(e){ console.warn('TS: auto-setPrimaryContact failed', e); }
+  if(contacts.length === 1 && !contacts[0].isPrimary && window.TS && window.TS.setContactDefault){
+    try{ await window.TS.setContactDefault(contacts[0].id, true); contacts[0].isPrimary = true; }
+    catch(e){ console.warn('TS: auto-setContactDefault failed', e); }
   }
 }
 async function loadContactPicker(page){
@@ -3477,15 +3477,16 @@ async function loadContactPicker(page){
   }
   if(vesselId) await autoSetSoleDefault(result.vesselContacts, {vesselId});
   if(ownerId) await autoSetSoleDefault(result.orgContacts, {organizationId: ownerId});
-  // Auto-select whichever contact is marked default, the first time this
-  // loads with nothing already chosen — "the previous contact chosen"
-  // becoming the standing starting point, same idea as the formatting/
-  // signature preferences elsewhere in this app but scoped to the entity
-  // itself rather than the signed-in person (a vessel's default contact is
-  // the same for whoever picks that vessel).
+  // Auto-select every contact marked default, the first time this loads
+  // with nothing already chosen — "the previous contact(s) chosen" becoming
+  // the standing starting point, same idea as the formatting/signature
+  // preferences elsewhere in this app but scoped to the entity itself
+  // rather than the signed-in person. More than one contact can be marked
+  // default (e.g. captain and chief engineer both), so all of them get
+  // pre-selected here, not just the first.
   if(!contactsListForPage(page).length){
-    const primary = [...result.vesselContacts, ...result.orgContacts].find(c=>c.isPrimary);
-    if(primary) toggleContactSelection(page, {name:primary.name, jobTitle:primary.jobTitle, alias:primary.alias||''}, true);
+    const primaries = [...result.vesselContacts, ...result.orgContacts].filter(c=>c.isPrimary);
+    primaries.forEach(primary => toggleContactSelection(page, {name:primary.name, jobTitle:primary.jobTitle, alias:primary.alias||''}, true));
   }
   renderContactPicker(page, result);
 }
@@ -3573,12 +3574,8 @@ function toggleContactSelection(page, contact, checked, targetKind){
     // only present when this came from an actual picker checkbox click
     // (not from auto-select-on-load or save/load restoration, where
     // there's nothing new to persist).
-    if(contact.id && targetKind && window.TS && window.TS.setPrimaryContact){
-      let target;
-      if(targetKind === 'vessel') target = {vesselId: currentVesselAndOwnerIds().vesselId};
-      else if(targetKind === 'owner') target = {organizationId: currentVesselAndOwnerIds().ownerId};
-      else target = {organizationId: currentSupplierIdForPage(page)};
-      window.TS.setPrimaryContact(contact.id, target).catch(e=>console.warn('TS: setPrimaryContact on pick failed', e));
+    if(contact.id && targetKind && window.TS && window.TS.setContactDefault){
+      window.TS.setContactDefault(contact.id, true).catch(e=>console.warn('TS: setContactDefault on pick failed', e));
     }
   } else {
     list = list.filter(s => !(s.name === contact.name && s.jobTitle === contact.jobTitle));
@@ -10048,7 +10045,7 @@ function renderItemDetailContactsList(contacts){
         ${meta ? `<div class="item-detail-contact-meta">${escHtml(meta)}</div>` : ''}
       </div>
       <div class="item-detail-contact-actions">
-        ${!c.isPrimary ? `<button type="button" class="btn-ghost btn-sm" onclick="setContactAsDefault('${escAttr(c.id)}')" title="Use this contact by default wherever this is picked elsewhere">Set as default</button>` : ''}
+        <button type="button" class="btn-ghost btn-sm" onclick="toggleContactAsDefault('${escAttr(c.id)}', ${c.isPrimary ? 'false' : 'true'})" title="${c.isPrimary ? 'Stop using this contact by default' : 'Use this contact by default wherever this is picked elsewhere \u2014 more than one contact can be default at once'}">${c.isPrimary ? 'Remove as default' : 'Set as default'}</button>
         ${itemDetailState.editMode ? `
           <button type="button" class="btn-ghost btn-sm" onclick="startEditContact('${escAttr(c.id)}')">Edit</button>
           <button type="button" class="mgmt-del" onclick="deleteContactConfirm('${escAttr(c.id)}')">\u2715</button>
@@ -10062,13 +10059,15 @@ function renderItemDetailContactsList(contacts){
   const emptyHtml = (!contacts.length && !addFormHtml) ? `<div class="hint">No contacts recorded${itemDetailState.editMode ? ' yet.' : '.'}</div>` : '';
   container.innerHTML = rows + emptyHtml + addFormHtml + addBtnHtml;
 }
-async function setContactAsDefault(contactId){
+// More than one contact can be the default at once (e.g. both the captain
+// and chief engineer) - messages/pickers pre-select all of them, not just
+// one, so this is a genuine toggle rather than "set the one default".
+async function toggleContactAsDefault(contactId, makeDefault){
   const { schema, item } = currentItemDetailItemAndSchema();
   if(!schema || !item) return;
-  if(!window.TS || !window.TS.setPrimaryContact){ alert('Setting a default contact needs the database connection \u2014 not available right now.'); return; }
-  const target = schema.contactsFor(item);
-  try{ await window.TS.setPrimaryContact(contactId, target); }
-  catch(e){ console.error('TS: setPrimaryContact failed', e); flashSaveError(); return; }
+  if(!window.TS || !window.TS.setContactDefault){ alert('Setting a default contact needs the database connection \u2014 not available right now.'); return; }
+  try{ await window.TS.setContactDefault(contactId, makeDefault); }
+  catch(e){ console.error('TS: setContactDefault failed', e); flashSaveError(); return; }
   await renderItemDetailContacts(item, schema);
 }
 function itemDetailContactFormHtml(contact){
