@@ -319,6 +319,31 @@
   .mgmt-roles-summary{font-size:11px; color:var(--ink-soft);}
   .item-detail-toolbar{display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 14px;}
   #viewItemDetail > .item-detail-toolbar .btn-ghost{color:#F7BF4A; border-color:rgba(247,191,74,0.5);}
+  /* Hero header: big gold name (with a thin dark outline for contrast
+     against whatever's behind it - a photo, or the plain gradient
+     fallback when there's no image) plus a smaller gold subtitle line
+     (IMO/flag for vessels; empty for schemas that don't define
+     heroSubtitleFields yet). Deliberately built as a generic block, not
+     vessel-specific, so other entity types can adopt the same treatment
+     later just by supplying heroSubtitleFields in their own schema. */
+  .item-detail-hero{position:relative; border-radius:12px; overflow:hidden; margin-bottom:16px; min-height:150px; display:flex; flex-direction:column; justify-content:flex-end; padding:20px; background:linear-gradient(135deg, var(--teal-dark) 0%, #0A2E38 100%); background-size:cover; background-position:center;}
+  .item-detail-hero::before{content:''; position:absolute; inset:0; background:linear-gradient(0deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.1) 55%, rgba(0,0,0,0.25) 100%); pointer-events:none;}
+  .item-detail-hero-name, .item-detail-hero-subtitle{position:relative; z-index:1; color:var(--amber); font-family:var(--disp);}
+  .item-detail-hero-name{font-size:clamp(22px, 4vw, 34px); font-weight:800; line-height:1.1; -webkit-text-stroke:1px rgba(20,10,0,0.65); text-shadow:0 1px 3px rgba(0,0,0,0.6), 0 0 1px rgba(0,0,0,0.8);}
+  .item-detail-hero-subtitle{font-size:clamp(13px, 1.6vw, 16px); font-weight:600; margin-top:4px; -webkit-text-stroke:0.5px rgba(20,10,0,0.5); text-shadow:0 1px 2px rgba(0,0,0,0.6);}
+  .item-detail-hero-nameinput{position:relative; z-index:1; font-family:var(--disp); font-size:20px; font-weight:800; padding:8px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.4); width:100%; box-sizing:border-box; background:rgba(255,255,255,0.92);}
+  /* Image + map side by side on wide screens, image wider - stacked full-
+     width on narrow ones (see media query below), since squeezing both a
+     photo and a usable map into half-width each doesn't work on a phone. */
+  .item-detail-hero-row{display:flex; gap:14px; align-items:stretch; margin-bottom:16px;}
+  .item-detail-hero-row .item-detail-hero{flex:0 0 62%; margin-bottom:0;}
+  .item-detail-hero-row .item-detail-hero-mapwrap{flex:1 1 auto; min-width:0;}
+  .item-detail-hero-row .item-detail-hero-mapwrap .item-detail-map-canvas{height:100%; min-height:150px;}
+  @media (max-width:800px){
+    .item-detail-hero-row{flex-direction:column;}
+    .item-detail-hero-row .item-detail-hero{flex:none; width:100%;}
+    .item-detail-hero-row .item-detail-hero-mapwrap .item-detail-map-canvas{height:200px;}
+  }
   .item-detail-field{padding:12px 0; border-bottom:1px solid var(--line-soft);}
   .item-detail-field:last-child{border-bottom:none;}
   .item-detail-label{font-family:var(--disp); font-size:10.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--ink-soft); margin-bottom:4px; display:block;}
@@ -9659,6 +9684,14 @@ async function renderSummary(){
 const ITEM_DETAIL_SCHEMAS = {
   vessel: {
     kindLabel: 'Vessel', listKey: 'ql-vessels', getList: () => VESSELS,
+    // Shown as smaller gold text under the name in the hero header -
+    // generic property any schema can use; only vessel has values for it
+    // today. Each entry's value is looked up via itemDetailFieldValue like
+    // any other field, with an optional prefix/formatter.
+    heroSubtitleFields: [
+      {key:'imo', prefix:'IMO '},
+      {key:'flag'}
+    ],
     fields: [
       {key:'name', label:'Vessel name', type:'text'},
       {key:'imo', label:'IMO number (or official number, if no IMO)', type:'text'},
@@ -9878,6 +9911,32 @@ function cancelItemDetailEdit(){
 // is a one-off action, not something that needs the full edit/save cycle.
 // kind is 'main' or 'logo'; pathField distinguishes which item property to
 // read/write so vessels (which have both) don't collide with each other.
+// Generic hero header: big gold name (with the name field itself, not
+// shown again further down in view mode - editing it happens right here
+// too, via a plain input standing in for the fancy styled text while in
+// edit mode). If the schema has a main image, it becomes the background;
+// otherwise a plain gradient fallback keeps the header looking intentional
+// rather than broken. heroSubtitleFields (e.g. IMO/flag for vessels) is
+// optional per schema - schemas that don't define it just get a bare name.
+function itemDetailHeroHtml(item, schema){
+  const imageUrl = (schema.hasMainImage && item.mainImagePath && window.TS && window.TS.getItemImageUrl) ? window.TS.getItemImageUrl(item.mainImagePath) : null;
+  const bgStyle = imageUrl ? ` style="background-image:url('${escAttr(imageUrl)}');"` : '';
+  const nameHtml = itemDetailState.editMode
+    ? `<input type="text" class="item-detail-hero-nameinput" id="${itemDetailInputId('name')}" value="${escAttr(item.name || '')}" placeholder="${escAttr(schema.kindLabel)} name">`
+    : `<div class="item-detail-hero-name">${escHtml(item.name || '(unnamed)')}</div>`;
+  const subtitleParts = (schema.heroSubtitleFields || [])
+    .map(f => { const v = itemDetailFieldValue(item, f.key); return v ? `${f.prefix || ''}${v}` : ''; })
+    .filter(Boolean);
+  const subtitleHtml = (subtitleParts.length && !itemDetailState.editMode)
+    ? `<div class="item-detail-hero-subtitle">${escHtml(subtitleParts.join(' \u00b7 '))}</div>` : '';
+  const inputId = 'itemDetailImageInput-main';
+  const imageButtonHtml = (schema.hasMainImage && itemDetailState.editMode)
+    ? `<div style="margin-top:8px;">
+        <input type="file" id="${inputId}" accept="image/*" style="display:none;" onchange="uploadItemDetailImage('main', this)">
+        <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${imageUrl ? 'Replace' : 'Add'} image</button>
+      </div>` : '';
+  return `<div class="item-detail-hero"${bgStyle}>${nameHtml}${subtitleHtml}</div>${imageButtonHtml}`;
+}
 function itemDetailImageFieldHtml(item, kind, label){
   const pathField = kind === 'main' ? 'mainImagePath' : 'logoPath';
   const path = item[pathField];
@@ -10035,7 +10094,7 @@ function renderItemDetail(){
   const list = schema.getList();
   const item = list.find(x => x.id === itemDetailState.id);
   if(!item){ closeItemDetail(); return; } // item deleted from elsewhere while this was open
-  document.getElementById('itemDetailTitle').textContent = schema.kindLabel + ': ' + (item.name || '(unnamed)');
+  document.getElementById('itemDetailTitle').textContent = schema.kindLabel;
   document.getElementById('itemDetailEditBtn').style.display = itemDetailState.editMode ? 'none' : '';
   document.getElementById('itemDetailSaveBar').style.display = itemDetailState.editMode ? 'inline-flex' : 'none';
   let anyFieldShown = false;
@@ -10085,7 +10144,7 @@ function renderItemDetail(){
   // Split around 'notes' so document sections (vessel certificate/
   // additional documents) can be inserted directly above it, per every
   // schema's convention of 'notes' always being the last field.
-  const fieldsHtml = schema.fields.filter(f=>f.key !== 'notes').map(renderOneField).join('');
+  const fieldsHtml = schema.fields.filter(f=>f.key !== 'notes' && f.key !== 'name').map(renderOneField).join('');
   const notesFieldHtml = schema.fields.filter(f=>f.key === 'notes').map(renderOneField).join('');
   const emptyStateHtml = (!itemDetailState.editMode && !anyFieldShown)
     ? `<div class="item-detail-field"><div class="item-detail-value" style="color:var(--ink-soft);">No details recorded yet \u2014 click Edit to add some.</div></div>` : '';
@@ -10096,8 +10155,16 @@ function renderItemDetail(){
   const mapSectionHtml = schema.hasMap ? `<div class="item-detail-field" id="itemDetailMapSection"></div>` : '';
   const checkDetailsButtonHtml = (itemDetailState.kind === 'vessel') ? vesselCheckDetailsButtonHtml(item) : '';
   const positionSectionHtml = (itemDetailState.kind === 'vessel') ? vesselPositionFieldHtml(item) : '';
-  const vesselMapSectionHtml = (itemDetailState.kind === 'vessel') ? `<div class="item-detail-field" id="itemDetailVesselMapSection"></div>` : '';
-  const imageSectionHtml = schema.hasMainImage ? itemDetailImageFieldHtml(item, 'main', 'Main image') : '';
+  // Side-by-side with the hero (image wider than the map) only when the
+  // vessel actually has a known position to show - otherwise the map
+  // container renders completely empty (see renderVesselMap), which would
+  // leave an awkward blank gap next to the hero rather than just not
+  // showing the row at all.
+  const vesselHasKnownPosition = itemDetailState.kind === 'vessel' && item.trackAis && item.lastPosition && item.lastPosition.latitude != null;
+  const heroHtml = itemDetailHeroHtml(item, schema);
+  const heroSectionHtml = vesselHasKnownPosition
+    ? `<div class="item-detail-hero-row">${heroHtml}<div class="item-detail-hero-mapwrap" id="itemDetailVesselMapSection"></div></div>`
+    : heroHtml;
   const logoSectionHtml = schema.hasLogo ? itemDetailImageFieldHtml(item, 'logo', 'Logo') : '';
   const contactsSectionHtml = schema.contactsFor ? `<div class="item-detail-field">
       <span class="item-detail-label">Contacts</span>
@@ -10111,13 +10178,13 @@ function renderItemDetail(){
       <span class="item-detail-label">Documents</span>
       <div id="itemDetailVesselDocumentsSection"><div class="hint">Loading...</div></div>
     </div>` : '';
-  // Contacts first (right under the name/image), so the people you'd
-  // actually contact about this vessel/organization aren't buried below a
-  // long list of technical fields. Documents sit directly above Notes,
-  // which stays last across every schema.
-  document.getElementById('itemDetailFields').innerHTML = imageSectionHtml + logoSectionHtml + contactsSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + positionSectionHtml + vesselMapSectionHtml + specSheetHistorySectionHtml + vesselDocumentsSectionHtml + notesFieldHtml;
+  // Hero (name + image, side-by-side with the position map when there is
+  // one) leads every schema now. Contacts come right after it, so the
+  // people you'd actually contact aren't buried below a long list of
+  // technical fields. Documents sit directly above Notes, which stays last.
+  document.getElementById('itemDetailFields').innerHTML = heroSectionHtml + logoSectionHtml + contactsSectionHtml + fieldsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + positionSectionHtml + specSheetHistorySectionHtml + vesselDocumentsSectionHtml + notesFieldHtml;
   if(schema.hasMap) renderItemDetailMap(item);
-  if(itemDetailState.kind === 'vessel') renderVesselMap(item);
+  if(vesselHasKnownPosition) renderVesselMap(item);
   if(schema.contactsFor) renderItemDetailContacts(item, schema);
   if(itemDetailState.kind === 'supplier') renderSupplierSpecSheetHistory(item);
   if(itemDetailState.kind === 'vessel') renderVesselDocuments(item);
