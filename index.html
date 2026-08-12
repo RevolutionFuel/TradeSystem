@@ -1909,29 +1909,32 @@ async function draftInOutlookGeneric(opts){
       if(btn) btn.textContent = 'Drafting...';
     }
 
-    // Spec sheets — any product with "Specifications attached" ticked AND
-    // an actual file uploaded gets that file attached to the draft too.
-    // Fetched fresh via a signed URL each time rather than cached, since
-    // the file itself never changes but a stale signed URL could expire.
-    const specProducts = (productBlocks||[]).filter(b => b.specsAttached && b.specSheetPath);
+    // Spec sheets — any product with "Specifications attached" ticked gets
+    // ALL of its attached spec sheets attached to the draft too, not just
+    // one. Fetched fresh via a signed URL each time rather than cached,
+    // since the file itself never changes but a stale signed URL could
+    // expire.
+    const specProducts = (productBlocks||[]).filter(b => b.specsAttached && b.specSheets && b.specSheets.length);
     if(specProducts.length && window.TS && window.TS.getSpecSheetUrl){
       if(btn) btn.textContent = 'Attaching spec sheets...';
       for(const b of specProducts){
-        try{
-          const url = await window.TS.getSpecSheetUrl(b.specSheetPath);
-          const fileRes = await fetch(url);
-          const blob = await fileRes.blob();
-          const base64 = await blobToBase64(blob);
-          attachments.push({
-            '@odata.type': '#microsoft.graph.fileAttachment',
-            name: b.specSheetDisplayName || 'Spec sheet.pdf',
-            contentType: blob.type || 'application/octet-stream',
-            contentBytes: base64
-          });
-        }catch(e){
-          console.error('TS: spec sheet attachment failed for', b.id, e);
-          const proceed = confirm(`Could not attach the spec sheet for ${productBlockPrettyName(b) || 'a product'} (${e && e.message ? e.message : 'unknown error'}).\n\nCreate the draft anyway, without that attachment?`);
-          if(!proceed){ if(btn){ btn.disabled=false; btn.textContent = originalLabel; } return; }
+        for(const sheet of b.specSheets){
+          try{
+            const url = await window.TS.getSpecSheetUrl(sheet.path);
+            const fileRes = await fetch(url);
+            const blob = await fileRes.blob();
+            const base64 = await blobToBase64(blob);
+            attachments.push({
+              '@odata.type': '#microsoft.graph.fileAttachment',
+              name: sheet.displayName || 'Spec sheet.pdf',
+              contentType: blob.type || 'application/octet-stream',
+              contentBytes: base64
+            });
+          }catch(e){
+            console.error('TS: spec sheet attachment failed for', b.id, e);
+            const proceed = confirm(`Could not attach a spec sheet for ${productBlockPrettyName(b) || 'a product'} (${e && e.message ? e.message : 'unknown error'}).\n\nCreate the draft anyway, without that attachment?`);
+            if(!proceed){ if(btn){ btn.disabled=false; btn.textContent = originalLabel; } return; }
+          }
         }
       }
       if(btn) btn.textContent = 'Drafting...';
@@ -3810,29 +3813,32 @@ function productBlockPrettyName(b){
 }
 // Spec sheets are kept in their own storage bucket, keyed by a stable id
 // generated once at upload time (not by order_products.id, which gets
-// replaced on every save - see saveOrder). The pretty "[Port] [Product]
-// Specs" name is what's shown/downloaded as; multiple deals for the same
-// port+product genuinely can produce that same display name, which is
-// fine since the underlying files are still kept fully separate by their
-// own storage id.
+// replaced on every save - see saveOrder). A product can have more than
+// one spec sheet attached (e.g. a base grade sheet plus a certificate of
+// analysis) - the pretty "[Port] [Product] Specs" name is what's shown/
+// downloaded as, with a "(2)", "(3)" etc. suffix added automatically once
+// more than one sheet exists for the same product on the same deal, purely
+// so they're distinguishable in the list - the underlying files are always
+// kept fully separate by their own storage id regardless.
 function specSheetFieldHTML(b){
-  const hasFile = !!b.specSheetPath;
+  const sheets = b.specSheets || [];
   const inputId = 'specSheetInput-' + b.id;
-  const url = (hasFile && window.TS && window.TS.getSpecSheetUrl) ? window.TS.getSpecSheetUrl(b.specSheetPath) : null;
+  const rows = sheets.map((s, i) => `<div style="font-size:12.5px; margin-bottom:4px; display:flex; align-items:center; gap:8px;">
+    <a href="#" onclick="openSpecSheetLink('${b.id}', ${i}); return false;">\ud83d\udcce ${escHtml(s.displayName || 'Spec sheet')}</a>
+    <button type="button" class="btn-ghost btn-sm" onclick="removeProductSpecSheet('${b.id}', ${i})">Remove</button>
+  </div>`).join('');
   return `<div style="margin:4px 0 12px 24px;">
-    ${hasFile ? `<div style="font-size:12.5px; margin-bottom:4px;">
-        ${url ? `<a href="#" onclick="openSpecSheetLink('${b.id}'); return false;">\ud83d\udcce ${escHtml(b.specSheetDisplayName || 'Spec sheet')}</a>` : escHtml(b.specSheetDisplayName || 'Spec sheet')}
-      </div>` : ''}
+    ${rows}
     <input type="file" id="${inputId}" accept=".pdf,image/*" style="display:none;" onchange="uploadProductSpecSheet('${b.id}', this)">
-    <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${hasFile ? 'Replace' : 'Add'} spec sheet</button>
-    ${hasFile ? `<button type="button" class="btn-ghost btn-sm" onclick="removeProductSpecSheet('${b.id}')">Remove</button>` : ''}
+    <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">+ Add spec sheet</button>
   </div>`;
 }
-async function openSpecSheetLink(blockId){
+async function openSpecSheetLink(blockId, index){
   const b = (productBlocks||[]).find(x => x.id === blockId);
-  if(!b || !b.specSheetPath || !window.TS || !window.TS.getSpecSheetUrl) return;
+  const sheet = b && (b.specSheets||[])[index];
+  if(!sheet || !window.TS || !window.TS.getSpecSheetUrl) return;
   try{
-    const url = await window.TS.getSpecSheetUrl(b.specSheetPath);
+    const url = await window.TS.getSpecSheetUrl(sheet.path);
     window.open(url, '_blank');
   }catch(e){
     console.error('TS: could not open spec sheet', e);
@@ -3852,9 +3858,17 @@ async function uploadProductSpecSheet(blockId, inputEl){
     const path = await window.TS.uploadSpecSheet(storageId, base64, file.type || 'application/pdf', extension);
     const portName = fv('port') || 'Port';
     const productName = productBlockPrettyName(b) || 'Product';
-    b.specSheetPath = path;
-    b.specSheetDisplayName = `${portName} ${productName} Specs.${extension}`;
-    b.specSheetUploadedAt = new Date().toISOString();
+    if(!b.specSheets) b.specSheets = [];
+    // Only number the file once a second one actually exists for this
+    // product - the first stays plain "Port Product Specs.ext" so the
+    // common single-file case isn't cluttered with a "(1)".
+    const ordinal = b.specSheets.length + 1;
+    const suffix = ordinal > 1 ? ` (${ordinal})` : '';
+    b.specSheets.push({
+      path,
+      displayName: `${portName} ${productName} Specs${suffix}.${extension}`,
+      uploadedAt: new Date().toISOString()
+    });
     renderProductBlocks();
     render();
   }catch(e){
@@ -3864,13 +3878,11 @@ async function uploadProductSpecSheet(blockId, inputEl){
     inputEl.value = '';
   }
 }
-function removeProductSpecSheet(blockId){
+function removeProductSpecSheet(blockId, index){
   const b = (productBlocks||[]).find(x => x.id === blockId);
-  if(!b) return;
+  if(!b || !b.specSheets) return;
   if(!confirm('Remove this spec sheet from the product? This only removes it from this deal, not from anywhere it has already been sent.')) return;
-  b.specSheetPath = null;
-  b.specSheetDisplayName = null;
-  b.specSheetUploadedAt = null;
+  b.specSheets.splice(index, 1);
   renderProductBlocks();
   render();
 }
@@ -3926,9 +3938,7 @@ function buildOrderProductLines(){
       costCurrency: b.costCurrency || null,
       costUnit: b.costPriceUnit || null,
       exchangeRate: parseFloat(b.exchangeRate) || null,
-      specSheetPath: b.specSheetPath || null,
-      specSheetDisplayName: b.specSheetDisplayName || null,
-      specSheetUploadedAt: b.specSheetUploadedAt || null,
+      specSheets: b.specSheets || [],
       fees
     };
   });
@@ -9500,7 +9510,12 @@ async function renderSummary(){
         let name;
         if(pb.kind==='fuel'){ name = pb.grade==='other' ? (pb.otherFuel||'Fuel') : (pb.grade||'Fuel').toUpperCase(); }
         else { name = (pb.otherProductName==='__custom' ? pb.otherProductCustom : pb.otherProductName) || 'Product'; }
-        const specLink = pb.specSheetPath ? `<a href="#" onclick="openSpecSheetLink('${pb.id}'); return false;" title="${escAttr(pb.specSheetDisplayName||'Spec sheet')}">\ud83d\udcce</a>` : '';
+        const sheets = pb.specSheets || [];
+        const specLink = sheets.length === 1
+          ? `<a href="#" onclick="openSpecSheetLink('${pb.id}', 0); return false;" title="${escAttr(sheets[0].displayName||'Spec sheet')}">\ud83d\udcce</a>`
+          : sheets.length > 1
+            ? sheets.map((s,i)=>`<a href="#" onclick="openSpecSheetLink('${pb.id}', ${i}); return false;" title="${escAttr(s.displayName||'Spec sheet')}">\ud83d\udcce</a>`).join(' ')
+            : '';
         return `<tr><td>${escHtml(name)}</td><td>${escHtml(pb.quantity||'')} ${escHtml(pb.unit||'')}</td><td>${specLink}</td></tr>`;
       }).join('');
       body += `<div class="item-detail-field"><span class="item-detail-label">Products</span><table class="summary-products-table"><tbody>${rows}</tbody></table></div>`;
