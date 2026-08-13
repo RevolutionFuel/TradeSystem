@@ -1186,6 +1186,7 @@
             <div class="draft-options">
               <label class="opt-inline"><input type="checkbox" id="openDraftToSendCustomer" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
               <label class="opt-inline"><input type="checkbox" id="attachPdfCustomer" onchange="onDraftOptionChange()"> Attach PDF to the draft</label>
+              <label class="opt-inline"><input type="checkbox" id="attachSpecsCustomer" onchange="onDraftOptionChange()"> Attach spec sheets</label>
             </div>
             <div class="copybar">
               <button class="btn-amber" id="draftCustomerOutlookBtn" onclick="draftCustomerInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
@@ -1952,7 +1953,7 @@ async function draftInOutlookGeneric(opts){
         const result = await generatePdfViaBackend(opts.pdfDocType, html);
         attachments.push({
           '@odata.type': '#microsoft.graph.fileAttachment',
-          name: `${safeFilenamePart(fv('vessel'))}-${opts.pdfDocType}.pdf`,
+          name: pdfDisplayFilename(opts.pdfDocType),
           contentType: 'application/pdf',
           contentBytes: result.pdfBase64
         });
@@ -1965,12 +1966,17 @@ async function draftInOutlookGeneric(opts){
       if(btn) btn.textContent = 'Drafting...';
     }
 
-    // Spec sheets — any product with "Specifications attached" ticked gets
-    // ALL of its attached spec sheets attached to the draft too, not just
-    // one. Fetched fresh via a signed URL each time rather than cached,
-    // since the file itself never changes but a stale signed URL could
-    // expire.
-    const specProducts = (productBlocks||[]).filter(b => b.specsAttached && b.specSheets && b.specSheets.length);
+    // Spec sheets — opt-in, and only offered on Customer Confirmation (see
+    // opts.attachSpecsCheckboxId, only passed for that page). Previously
+    // this attached to EVERY draft type whenever a product had
+    // "Specifications attached" ticked, including Supplier Confirmation,
+    // where the supplier obviously doesn't need their own spec sheet sent
+    // back to them - and a failed fetch for one of those files could
+    // surface as an opaque "Failed to fetch" error blocking an unrelated
+    // draft. Off by default even on Customer Confirmation, since most
+    // customer confirmations don't need it attached.
+    const attachSpecsCb = opts.attachSpecsCheckboxId ? document.getElementById(opts.attachSpecsCheckboxId) : null;
+    const specProducts = (attachSpecsCb && attachSpecsCb.checked) ? (productBlocks||[]).filter(b => b.specsAttached && b.specSheets && b.specSheets.length) : [];
     if(specProducts.length && window.TS && window.TS.getSpecSheetUrl){
       if(btn) btn.textContent = 'Attaching spec sheets...';
       for(const b of specProducts){
@@ -2072,7 +2078,7 @@ function draftCustomerInOutlook(){
     btnId: 'draftCustomerOutlookBtn', openCheckboxId: 'openDraftToSendCustomer',
     contacts: custSelectedContacts, buildHtml: buildCustomerEmailHtml,
     subject: buildDraftSubject('Fuel Confirmation', true),
-    pdfDocType: 'customer', attachCheckboxId: 'attachPdfCustomer'
+    pdfDocType: 'customer', attachCheckboxId: 'attachPdfCustomer', attachSpecsCheckboxId: 'attachSpecsCustomer'
   });
 }
 function draftInvoiceInOutlook(){
@@ -7127,10 +7133,8 @@ async function openInvoicePdf(btnEl){
   try{
     const html = buildInvoicePdfHtml();
     const result = await generatePdfViaBackend('invoice', html);
-    const invType = getInvoiceType();
-    const label = invType === 'proforma' ? 'Proforma-Invoice' : invType === 'commission' ? 'Commission-Invoice' : 'Invoice';
     const blob = base64ToBlob(result.pdfBase64, 'application/pdf');
-    await downloadPdfBlob(blob, `${safeFilenamePart(fv('vessel'))}-${label}.pdf`);
+    await downloadPdfBlob(blob, pdfDisplayFilename('invoice'));
     if(result.path){ lastStoredPdfPaths.invoice = result.path; if(document.getElementById('summaryContent')) renderSummary(); }
   }catch(e){
     console.error('TS: openInvoicePdf failed', e);
@@ -7241,6 +7245,28 @@ function ensurePdfLibs(){
   return pdfLibsLoadPromise;
 }
 function safeFilenamePart(s){ return (s||'').trim().replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,'') || 'Document'; }
+// Strips characters that are actually unsafe in filenames/email attachments
+// (path separators, quotes, etc.) but - unlike safeFilenamePart above -
+// keeps spaces and casing exactly as typed, since this builds the
+// human-facing "[Order number] [Vessel] [Port] Nomination/Confirmation"
+// name rather than a URL-safe slug.
+function safeFilenameText(s){ return String(s||'').trim().replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g,' ').trim(); }
+// Uses the per-supplier lettered order number (RF1746A, RF1746B, ...) for
+// supplier confirmations in multi-supplier mode - the same number already
+// shown on that supplier's own document - so each supplier's PDF gets a
+// naturally distinct filename rather than colliding on a shared base name.
+function pdfDisplayFilename(docType){
+  const orderNum = docType === 'supplier' ? getSupplyOrderNumberForView() : (fv('orderNumberSupply') || fv('orderNumberCustomer') || fv('orderNumberInvoice') || fv('quoteRef'));
+  const vessel = fv('vessel');
+  const port = fv('port');
+  let label = { quotation:'Quotation', supplier:'Nomination', customer:'Confirmation', invoice:'Invoice' }[docType] || 'Document';
+  if(docType === 'invoice'){
+    const invType = getInvoiceType();
+    label = invType === 'proforma' ? 'Proforma Invoice' : invType === 'commission' ? 'Commission Invoice' : 'Invoice';
+  }
+  const parts = [orderNum, vessel, port, label].filter(Boolean).map(safeFilenameText).filter(Boolean);
+  return (parts.join(' ') || 'Document') + '.pdf';
+}
 
 // A small layout helper wrapping jsPDF's raw text-positioning API — tracks
 // the current vertical cursor, wraps text, and pages automatically.
@@ -7508,7 +7534,6 @@ async function openPdfQuotation(docType, btnEl){
   if(docType==='quotation' && confirmProgressStatus('quote')) markStatus('quoted');
   if(docType==='supplier') markSupplierConfirmedForCurrentView();
   if(docType==='customer') await confirmCustomerAndAssignOrderNumber();
-  const label = { quotation:'Quotation', supplier:'Supplier-Confirmation', customer:'Customer-Confirmation' }[docType] || 'Document';
   const btn = btnEl || null;
   const originalLabel = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF...'; }
@@ -7516,7 +7541,7 @@ async function openPdfQuotation(docType, btnEl){
     const html = buildPdfQuotationHtml(docType);
     const result = await generatePdfViaBackend(docType, html);
     const blob = base64ToBlob(result.pdfBase64, 'application/pdf');
-    await downloadPdfBlob(blob, `${safeFilenamePart(fv('vessel'))}-${label}.pdf`);
+    await downloadPdfBlob(blob, pdfDisplayFilename(docType));
     if(result.path){ lastStoredPdfPaths[docType] = result.path; if(document.getElementById('summaryContent')) renderSummary(); }
   }catch(e){
     console.error('TS: openPdfQuotation failed', e);
