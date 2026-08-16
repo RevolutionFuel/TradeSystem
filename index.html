@@ -1481,10 +1481,13 @@
   <div class="view" id="viewItemDetail">
     <div class="item-detail-toolbar">
       <button class="btn-ghost btn-sm" id="itemDetailBackBtn" onclick="closeItemDetail()">Back to list</button>
-      <button class="btn-primary btn-sm" id="itemDetailEditBtn" onclick="toggleItemDetailEdit()">Edit</button>
-      <span id="itemDetailSaveBar" style="display:none; gap:8px;">
-        <button class="btn-primary btn-sm" onclick="saveItemDetail()">Save</button>
-        <button class="btn-ghost btn-sm" onclick="cancelItemDetailEdit()">Cancel</button>
+      <span style="display:flex; align-items:center; gap:8px;">
+        <button class="btn-ghost btn-sm" id="itemDetailDeleteBtn" onclick="deleteCurrentItemDetailEntity()" style="display:none; color:#B3492E; border-color:rgba(179,73,46,0.5);">Delete</button>
+        <button class="btn-primary btn-sm" id="itemDetailEditBtn" onclick="toggleItemDetailEdit()">Edit</button>
+        <span id="itemDetailSaveBar" style="display:none; gap:8px;">
+          <button class="btn-primary btn-sm" onclick="saveItemDetail()">Save</button>
+          <button class="btn-ghost btn-sm" onclick="cancelItemDetailEdit()">Cancel</button>
+        </span>
       </span>
     </div>
     <div class="panel">
@@ -10155,6 +10158,33 @@ function discardUnsavedNewItem(){
   const idx = list.findIndex(x => x.id === itemDetailState.id);
   if(idx !== -1) list.splice(idx, 1);
 }
+// Soft-deletes the currently open vessel/owner/supplier/agent/port - reuses
+// deleteReferenceItemRemote, the same backend call the Manage Lists table
+// rows already use, so the deletion behaviour (and the fact that the name
+// stays intact on any past deals, since orders store their own independent
+// name snapshot rather than a live reference to this record) is identical
+// either way. Confirms with the entity's own name for clarity, then
+// removes it from the local list and returns to the list view.
+async function deleteCurrentItemDetailEntity(){
+  const schema = ITEM_DETAIL_SCHEMAS[itemDetailState.kind];
+  if(!schema) return;
+  const list = schema.getList();
+  const idx = list.findIndex(x => x.id === itemDetailState.id);
+  if(idx === -1) return;
+  const item = list[idx];
+  if(!confirm(`Delete "${item.name}"? This can't be undone from here, but its name will still show correctly on any past deals it's linked to.`)) return;
+  const removed = list[idx];
+  const deletedKind = itemDetailState.kind;
+  list.splice(idx, 1);
+  await saveList(schema.listKey, list);
+  await deleteReferenceItemRemote(deletedKind, removed.id);
+  closeItemDetail();
+  if(deletedKind === 'vessel') renderVesselTable();
+  else if(deletedKind === 'owner') renderOwnerTable();
+  else if(deletedKind === 'supplier') renderSupplierTable();
+  else if(deletedKind === 'agent') renderAgentTable();
+  else if(deletedKind === 'port') renderPortTable();
+}
 function closeItemDetail(){
   discardUnsavedNewItem();
   document.getElementById('viewItemDetail').classList.remove('active');
@@ -10408,6 +10438,9 @@ function renderItemDetail(){
   if(!item){ closeItemDetail(); return; } // item deleted from elsewhere while this was open
   document.getElementById('itemDetailEditBtn').style.display = itemDetailState.editMode ? 'none' : '';
   document.getElementById('itemDetailSaveBar').style.display = itemDetailState.editMode ? 'inline-flex' : 'none';
+  const deletableKinds = ['vessel', 'owner', 'supplier', 'agent', 'port'];
+  const deleteBtn = document.getElementById('itemDetailDeleteBtn');
+  deleteBtn.style.display = (deletableKinds.includes(itemDetailState.kind) && !itemDetailState.editMode && !itemDetailState.isNew && isRealUuid(item.id)) ? '' : 'none';
   let anyFieldShown = false;
   const renderOneField = f=>{
     const value = itemDetailFieldValue(item, f.key) || '';
