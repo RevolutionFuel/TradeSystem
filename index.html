@@ -10514,22 +10514,82 @@ function renderItemDetail(){
       <span class="item-detail-label">Documents</span>
       <div id="itemDetailVesselDocumentsSection"><div class="hint">Loading...</div></div>
     </div>` : '';
+  // Every enquiry/order for this vessel or supplier, most recent first,
+  // including Dead/Cancelled - a complete record, not just the live deals.
+  const vesselDealsSectionHtml = (itemDetailState.kind === 'vessel') ? `<div class="item-detail-field">
+      <span class="item-detail-label">Deal history</span>
+      <div id="itemDetailVesselDealsSection"><div class="hint">Loading...</div></div>
+    </div>` : '';
+  const supplierDealsSectionHtml = (itemDetailState.kind === 'supplier') ? `<div class="item-detail-field">
+      <span class="item-detail-label">Deal history</span>
+      <div id="itemDetailSupplierDealsSection"><div class="hint">Loading...</div></div>
+    </div>` : '';
   // Hero (name + image, side-by-side with the position map when there is
   // one) leads every schema now. Contacts come right after it, so the
   // people you'd actually contact aren't buried below a long list of
   // technical fields. Documents sit directly above Notes, which stays last.
-  document.getElementById('itemDetailFields').innerHTML = heroSectionHtml + logoSectionHtml + contactsSectionHtml + fieldsHtml + registryDetailsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + specSheetHistorySectionHtml + vesselDocumentsSectionHtml + notesFieldHtml;
+  document.getElementById('itemDetailFields').innerHTML = heroSectionHtml + logoSectionHtml + contactsSectionHtml + fieldsHtml + registryDetailsHtml + checkDetailsButtonHtml + emptyStateHtml + rolesHtml + mapSectionHtml + specSheetHistorySectionHtml + supplierDealsSectionHtml + vesselDocumentsSectionHtml + vesselDealsSectionHtml + notesFieldHtml;
   if(schema.hasMap) renderItemDetailMap(item);
   if(useMapAsHero) renderVesselMap(item, 'itemDetailVesselMapFullSection');
   else if(vesselHasKnownPosition) renderVesselMap(item, 'itemDetailVesselMapSection');
   if(schema.contactsFor) renderItemDetailContacts(item, schema);
   if(itemDetailState.kind === 'supplier') renderSupplierSpecSheetHistory(item);
   if(itemDetailState.kind === 'vessel') renderVesselDocuments(item);
+  if(itemDetailState.kind === 'vessel') renderVesselDealsHistory(item);
+  if(itemDetailState.kind === 'supplier') renderSupplierDealsHistory(item);
 }
 // Most-recent-first list of every spec sheet ever attached to a product
 // this supplier has supplied, across all past deals - lets a broker
 // quickly find "what did we send this supplier's product as" without
 // digging back through old orders individually.
+// Shared row renderer for both the vessel and supplier deal history lists
+// - format is identical either way, just which "other party" name shows
+// alongside the port differs (supplier, when viewed from the vessel page;
+// vessel, when viewed from the supplier page). Deliberately shows every
+// status including Dead/Cancelled, per how these lists are meant to work -
+// a complete record of every deal ever attempted, not just the live ones.
+function dealHistoryRowHtml(d, otherPartyName){
+  const dealLabel = d.orderNumber || d.quoteRef || '(no reference)';
+  const dateText = d.eta ? fmtDashboardDate(d.eta) : (d.createdAt ? fmtDashboardDate(d.createdAt) : '');
+  const statusLabel = statusEnumToLabel(d.status);
+  const statusColor = getOrderStatusColor(statusLabel);
+  const context = [otherPartyName, d.portName].filter(Boolean).join(' \u00b7 ');
+  return `<div style="padding:6px 0; border-bottom:1px solid var(--line); font-size:13px; cursor:pointer;" onclick="openOrderFromDashboard('${d.id}')">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+      <a href="#" onclick="event.preventDefault(); openOrderFromDashboard('${d.id}');" style="color:var(--amber); font-weight:600;">${escHtml(dealLabel)}</a>
+      <span class="tsb-status-badge" style="background:${statusColor}; color:#fff; font-size:10.5px; padding:2px 8px; border-radius:10px; white-space:nowrap;">${escHtml(statusLabel)}</span>
+    </div>
+    <div style="font-size:11.5px; color:var(--ink-soft);">${escHtml(context)}${dateText ? (context ? ' \u00b7 ' : '') + escHtml(dateText) : ''}</div>
+  </div>`;
+}
+async function renderVesselDealsHistory(item){
+  const container = document.getElementById('itemDetailVesselDealsSection');
+  if(!container) return;
+  if(!isRealUuid(item.id)){ container.innerHTML = '<div class="hint">Save this vessel first to see its deal history.</div>'; return; }
+  if(!window.TS || !window.TS.getVesselDeals){ container.innerHTML = '<div class="hint">Needs the database connection \u2014 not available right now.</div>'; return; }
+  try{
+    const deals = await window.TS.getVesselDeals(item.id);
+    if(!deals.length){ container.innerHTML = '<div class="hint">No enquiries or orders recorded for this vessel yet.</div>'; return; }
+    container.innerHTML = deals.map(d => dealHistoryRowHtml(d, d.supplierName)).join('');
+  }catch(e){
+    console.error('TS: could not load vessel deal history', e);
+    container.innerHTML = '<div class="hint">Could not load deal history right now.</div>';
+  }
+}
+async function renderSupplierDealsHistory(item){
+  const container = document.getElementById('itemDetailSupplierDealsSection');
+  if(!container) return;
+  if(!isRealUuid(item.id)){ container.innerHTML = '<div class="hint">Save this supplier first to see their deal history.</div>'; return; }
+  if(!window.TS || !window.TS.getSupplierDeals){ container.innerHTML = '<div class="hint">Needs the database connection \u2014 not available right now.</div>'; return; }
+  try{
+    const deals = await window.TS.getSupplierDeals(item.id);
+    if(!deals.length){ container.innerHTML = '<div class="hint">No enquiries or orders recorded for this supplier yet.</div>'; return; }
+    container.innerHTML = deals.map(d => dealHistoryRowHtml(d, d.vesselName)).join('');
+  }catch(e){
+    console.error('TS: could not load supplier deal history', e);
+    container.innerHTML = '<div class="hint">Could not load deal history right now.</div>';
+  }
+}
 async function renderSupplierSpecSheetHistory(item){
   const container = document.getElementById('itemDetailSpecSheetHistorySection');
   if(!container) return;
