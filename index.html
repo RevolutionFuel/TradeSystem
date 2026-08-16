@@ -1043,6 +1043,7 @@
               <button class="btn-amber" id="draftSupplyOutlookBtn" onclick="draftSupplyInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
               <button class="btn-ghost" onclick="copySupplyRich()">📋 Copy for email</button>
               <button class="btn-ghost" onclick="openPdfQuotation('supplier', this)" title="Generates and downloads a real PDF (via headless Chrome), saved for later viewing too">📄 Download PDF Supplier Confirmation</button>
+              <button class="btn-ghost" onclick="copyOrderForSpreadsheetBooking(this)" title="Tab-separated row for the management spreadsheet, in red">📊 Copy for spreadsheet</button>
               <span class="status-msg" id="supplyCopyStatus">✓ Copied</span>
             </div>
             <div id="profitSummarySupply"></div>
@@ -1192,6 +1193,7 @@
               <button class="btn-amber" id="draftCustomerOutlookBtn" onclick="draftCustomerInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
               <button class="btn-ghost" onclick="copyCustomerRich()">📋 Copy for email</button>
               <button class="btn-ghost" onclick="openPdfQuotation('customer', this)" title="Generates and downloads a real PDF (via headless Chrome), saved for later viewing too">📄 Download PDF Order Confirmation</button>
+              <button class="btn-ghost" onclick="copyOrderForSpreadsheetBooking(this)" title="Tab-separated row for the management spreadsheet, in red">📊 Copy for spreadsheet</button>
               <span class="status-msg" id="customerCopyStatus">✓ Copied</span>
             </div>
             <div id="profitSummaryCustomer"></div>
@@ -1257,6 +1259,12 @@
             </fieldset>
 
             <fieldset>
+              <legend>Supplier's invoice</legend>
+              <div class="field"><label for="supplierInvoiceNumber">Supplier's invoice number</label><input type="text" id="supplierInvoiceNumber" placeholder="e.g. the number on their invoice to us" oninput="render()"></div>
+              <div class="hint">Their reference on the invoice they've sent us for this delivery — separate from our own invoice number, for tracking purposes only.</div>
+            </fieldset>
+
+            <fieldset>
               <legend>Formatting options</legend>
               <label class="opt-inline" style="margin-bottom:6px;"><input type="checkbox" id="capitaliseHeadersInvoice" onchange="onFormattingOptionChange('capitaliseHeaders','Invoice')"> Capitalise section headers</label>
               <label class="opt-inline" style="margin-bottom:6px;"><input type="checkbox" id="removeBoldInvoice" onchange="onFormattingOptionChange('removeBold','Invoice')"> Remove bold text</label>
@@ -1297,6 +1305,7 @@
               <button class="btn-amber" id="draftInvoiceOutlookBtn" onclick="draftInvoiceInOutlook()" title="Creates a real draft in your connected Outlook mailbox, with the invoice PDF attached">✉️ Draft in Outlook</button>
               <button class="btn-ghost" onclick="copyInvoiceEmailRich()">📋 Copy for email</button>
               <button class="btn-ghost" onclick="openInvoicePdf(this)" id="invoicePdfButton" title="Generates and downloads a real PDF (via headless Chrome), saved for later viewing too">📄 Download PDF</button>
+              <button class="btn-ghost" onclick="copyOrderForSpreadsheetInvoiced(this)" title="Tab-separated row for the management spreadsheet, in blue">📊 Copy for spreadsheet</button>
               <span class="status-msg" id="invoiceCopyStatus">✓ Copied</span>
             </div>
             <div id="invoiceSummaryPreview"></div>
@@ -1313,7 +1322,14 @@
          Go-to links for anything not started yet. -->
     <div class="order-page active" id="orderPageSummary">
       <div class="panel">
-        <div class="panel-head"><h2>Order Summary</h2><div id="summaryDeleteBtnContainer"></div></div>
+        <div class="panel-head">
+          <h2>Order Summary</h2>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button type="button" class="btn-ghost btn-sm" onclick="copyOrderForSpreadsheetBooking(this)" title="Tab-separated row for the management spreadsheet, in red — booking-time fields only">Copy (booking)</button>
+            <button type="button" class="btn-ghost btn-sm" onclick="copyOrderForSpreadsheetInvoiced(this)" title="Tab-separated row for the management spreadsheet, in blue — includes invoicing fields">Copy (invoiced)</button>
+            <div id="summaryDeleteBtnContainer"></div>
+          </div>
+        </div>
         <div class="panel-body" id="summaryContent"></div>
       </div>
     </div>
@@ -6796,6 +6812,107 @@ function computeDueDate(deliveryDateIso, paymentTermsText, invoiceDate){
 function isoDate(d){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
+// Due dates are always computed live from the current delivery date +
+// payment terms, never stored as a fixed value - so they automatically
+// stay correct if the final delivery date changes on invoicing, or if the
+// originally-expected ETA changes beforehand. Uses whichever delivery date
+// is actually known yet (final, once invoiced; otherwise the expected ETA).
+function orderDueDates(){
+  const deliveryIso = fv('finalETA') || fv('eta') || '';
+  const today = new Date();
+  const custDate = computeDueDate(deliveryIso, getPaymentLine(), today);
+  const supDate = computeDueDate(deliveryIso, getSupPaymentLine(), today);
+  return {
+    customerDueDate: (custDate && custDate !== today) ? isoDate(custDate) : '',
+    supplierDueDate: (supDate && supDate !== today) ? isoDate(supDate) : ''
+  };
+}
+// Initials from a full broker name (e.g. "Barnaby Skipwith" -> "BS") -
+// the management spreadsheet wants initials, but the order itself stores
+// the full name. Mirrors the email->name mapping shared-js already uses
+// for the same two people.
+function brokerInitials(fullName){
+  return (fullName || '').split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase()).join('');
+}
+const SPREADSHEET_BROKER_NAMES = {
+  'barnaby@revolutionfuel.com': 'Barnaby Skipwith',
+  'john@revolutionfuel.com': 'John Sipson'
+};
+function currentBrokerFullName(){
+  const email = (graphAccount && graphAccount.username || '').toLowerCase();
+  return SPREADSHEET_BROKER_NAMES[email] || '';
+}
+// Builds the 23-column row (matching the management spreadsheet's own
+// column order exactly) as an array, so both the booking and invoiced
+// variants can share the same column layout and just differ in which
+// cells they populate - a booking-time copy leaves invoicing/payment
+// columns blank since none of that exists yet; the invoiced copy fills in
+// what's known by then (still leaving Amount Received/Rcvd Date/Paid Date
+// blank, since those are recorded later still, once money actually moves).
+function buildSpreadsheetRow(includeInvoiceFields){
+  const vesselId = resolveVesselId();
+  const orderNumberVal = fv('orderNumberSupply') || fv('orderNumberCustomer') || fv('orderNumberInvoice');
+  const orderPart = (multiSupplierMode && orderNumberVal) ? (getSupplierLetterMap()[currentSupplyViewSupplier] || '') : '';
+  const reference = vesselId ? vesselPaymentReference(vesselId) : '';
+  const dueDates = includeInvoiceFields ? orderDueDates() : { customerDueDate:'', supplierDueDate:'' };
+  const todayIso = isoDate(new Date());
+  const totals = computeOrderSaveTotals();
+  return [
+    orderNumberVal || '', orderPart, reference, fv('quoteDate') || '', fv('finalETA') || fv('eta') || '',
+    fv('vessel') || '', fv('port') || '', totals.totalVolumeLitres != null ? String(totals.totalVolumeLitres) : '',
+    brokerInitials(currentBrokerFullName()), getOrderStatus(),
+    includeInvoiceFields ? todayIso : '',
+    fv('vOwner') || '', totals.salesCurrency || '', totals.salesTotal != null ? String(totals.salesTotal) : '',
+    includeInvoiceFields ? dueDates.customerDueDate : '',
+    currentOrderAmountReceived != null ? String(currentOrderAmountReceived) : '',
+    currentOrderReceivedDate || '',
+    fv('supplierName') || '',
+    includeInvoiceFields ? (fv('supplierInvoiceNumber') || '') : '',
+    totals.purchaseCurrency || '', totals.purchaseTotal != null ? String(totals.purchaseTotal) : '',
+    includeInvoiceFields ? dueDates.supplierDueDate : '',
+    ''
+  ];
+}
+// Copies as real HTML (a one-row table) alongside a tab-separated plain-
+// text fallback, via the multi-format clipboard write - this is what lets
+// the red/blue text colour survive the paste into Excel/Sheets, which a
+// plain writeText() call can't carry.
+async function copyOrderRowForSpreadsheet(includeInvoiceFields, color, btnEl){
+  const row = buildSpreadsheetRow(includeInvoiceFields);
+  const plainText = row.join('\t');
+  const cellsHtml = row.map(v => `<td>${escHtml(String(v))}</td>`).join('');
+  const html = `<table><tr style="color:${color};">${cellsHtml}</tr></table>`;
+  try{
+    if(navigator.clipboard && window.ClipboardItem){
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([html], {type:'text/html'}),
+          'text/plain': new Blob([plainText], {type:'text/plain'})
+        })
+      ]);
+    } else {
+      await navigator.clipboard.writeText(plainText);
+    }
+    if(btnEl){
+      const original = btnEl.textContent;
+      btnEl.textContent = '\u2713 Copied';
+      setTimeout(() => { btnEl.textContent = original; }, 1800);
+    }
+  }catch(e){
+    console.error('TS: copyOrderRowForSpreadsheet failed', e);
+    alert('Could not copy to the clipboard: ' + (e && e.message ? e.message : 'unknown error'));
+  }
+}
+// Booking-time copy - red, matching the management spreadsheet's own
+// colour convention for a freshly-booked order.
+function copyOrderForSpreadsheetBooking(btnEl){
+  return copyOrderRowForSpreadsheet(false, '#FF0000', btnEl);
+}
+// Post-invoicing copy - blue, matching the spreadsheet's convention for an
+// order that's since been invoiced.
+function copyOrderForSpreadsheetInvoiced(btnEl){
+  return copyOrderRowForSpreadsheet(true, '#0070C0', btnEl);
+}
 
 // Invoice / Proforma Invoice / Commission Invoice — a genuinely different
 // document shape from the Quotation/Supplier/Customer PDFs (a flat line-item
@@ -7261,6 +7378,7 @@ async function clearInvoiceFields(){
   document.getElementById('finalETA').value = '';
   document.getElementById('costAdjustmentAmount').value = '';
   document.getElementById('costAdjustmentDescription').value = '';
+  document.getElementById('supplierInvoiceNumber').value = '';
   buildRadioGroup('invoiceTypeGroup', 'invoiceType', [
     {value:'invoice', label:'Invoice — addressed to customer, full selling price'},
     {value:'proforma', label:'Proforma Invoice — same as Invoice, marked as proforma'},
@@ -9275,6 +9393,7 @@ async function clearOrder(){
     });
   });
   document.getElementById('costAdjustmentDescription').value = '';
+  document.getElementById('supplierInvoiceNumber').value = '';
   customNotes = [''];
   productBlocks = []; pbCounter = 0;
   supPaymentManuallySet = false;
@@ -11421,6 +11540,7 @@ function collectQuoteState(){
     costAdjustmentAmount: fv('costAdjustmentAmount'),
     costAdjustmentCurrency: fv('costAdjustmentCurrency'),
     costAdjustmentDescription: fv('costAdjustmentDescription'),
+    supplierInvoiceNumber: fv('supplierInvoiceNumber'),
     invoiceType: getInvoiceType(),
     enqGreeting: fv('enqGreeting'),
     enqSpecsRequest: document.getElementById('enqSpecsRequest').checked,
@@ -11628,6 +11748,7 @@ async function applyQuoteState(data){
   document.getElementById('costAdjustmentAmount').value = data.costAdjustmentAmount || '';
   document.getElementById('costAdjustmentCurrency').value = data.costAdjustmentCurrency || 'USD';
   document.getElementById('costAdjustmentDescription').value = data.costAdjustmentDescription || '';
+  document.getElementById('supplierInvoiceNumber').value = data.supplierInvoiceNumber || '';
   const invTypeRadio = document.querySelector(`input[name="invoiceType"][value="${data.invoiceType || 'invoice'}"]`);
   if(invTypeRadio){ invTypeRadio.checked = true; onRadioChange('invoiceTypeGroup','invoiceType','renderInvoicePreviewOnly'); }
 
