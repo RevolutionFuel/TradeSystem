@@ -3784,6 +3784,12 @@ let selectedSupplier = null;
 let currentOrderDbId = null;
 let lastSavedStateJson = null;
 let orderIsDirty = false;
+// Paid Date / Amount Received - not part of the order's own JSONB details
+// blob (they're real columns, edited standalone on the Summary tab for
+// invoiced orders, not part of the quote-builder form flow at all), so
+// tracked here separately rather than folded into collectQuoteState().
+let currentOrderAmountReceived = null;
+let currentOrderReceivedDate = null;
 let orderSaveInProgress = false;
 
 // Excludes savedAt (which changes on every single call, by design, for the
@@ -3839,6 +3845,31 @@ function resolveVesselId(){
   const name = (fv('vessel') || fv('vesselOrder') || '').trim().toLowerCase();
   const v = VESSELS.find(x=>x.name.trim().toLowerCase()===name);
   return v ? v.id : null;
+}
+// Reverse of the full-name migration applied to Vessels.flag - needed here
+// because payment references use the 2-letter code, but the flag field
+// itself now stores the full flag state name for readability elsewhere in
+// the app. Covers exactly the flag states present in this fleet.
+const FLAG_NAME_TO_CODE = {
+  'Cayman Islands':'KY', 'Malta':'MT', 'Marshall Islands':'MH', 'United Kingdom':'GB',
+  'Isle of Man':'IM', 'Bermuda':'BM', 'Nigeria':'NG', 'Cook Islands':'CK', 'Norway':'NO',
+  'United States':'US', 'Cyprus':'CY', 'British Virgin Islands':'VG', 'Vanuatu':'VU',
+  'Australia':'AU', 'Gibraltar':'GI', 'Channel Islands':'CI', 'Luxembourg':'LU',
+  'Jamaica':'JM', 'Canada':'CA'
+};
+// The payment reference banks require when settling a deal: the vessel's
+// IMO number (or MMSI if it has no IMO - some smaller/older vessels only
+// carry an MMSI) followed by the 2-letter flag state code. Looked up from
+// the vessel's own master record (not the order's copied-in vIMO/vFlag
+// fields), since MMSI specifically was never copied onto the order form at
+// all - the master record is the one reliable source for all three values.
+function vesselPaymentReference(vesselId){
+  const v = VESSELS.find(x => x.id === vesselId);
+  if(!v) return '';
+  const idPart = v.imo || v.mmsi || '';
+  if(!idPart) return '';
+  const flagCode = FLAG_NAME_TO_CODE[v.flag] || v.flag || '';
+  return idPart + flagCode;
 }
 // Prefers the vessel's own linked owner (kept correct by the owner picker
 // built earlier) — falls back to matching the free-text field directly only
@@ -4076,9 +4107,29 @@ async function loadOrderFromDatabase(id){
   const row = await window.TS.loadOrder(id);
   await applyQuoteState(row.details || {});
   currentOrderDbId = row.id;
+  currentOrderAmountReceived = row.amount_received;
+  currentOrderReceivedDate = row.received_date;
   lastSavedStateJson = stateForComparison(collectQuoteState());
   orderIsDirty = false;
   updateSaveBar();
+}
+// Saved immediately on change (not part of the main Save flow) - see
+// updateOrderPaymentInfo in shared-js for why this is a standalone update.
+async function saveOrderPaymentInfo(){
+  if(!isRealUuid(currentOrderDbId) || !window.TS || !window.TS.updateOrderPaymentInfo) return;
+  const statusEl = document.getElementById('summaryPaymentInfoStatus');
+  const amount = fv('summaryAmountReceived');
+  const date = fv('summaryReceivedDate');
+  if(statusEl) statusEl.textContent = 'Saving...';
+  try{
+    await window.TS.updateOrderPaymentInfo(currentOrderDbId, amount, date);
+    currentOrderAmountReceived = amount === '' ? null : Number(amount);
+    currentOrderReceivedDate = date || null;
+    if(statusEl){ statusEl.textContent = 'Saved'; setTimeout(() => { if(statusEl) statusEl.textContent = ''; }, 2000); }
+  }catch(e){
+    console.error('TS: saveOrderPaymentInfo failed', e);
+    if(statusEl) statusEl.textContent = 'Could not save — check your connection and try again.';
+  }
 }
 
 /* ===================== MANAGE DASHBOARD (enquiries/orders list) ===================== */
@@ -9172,6 +9223,8 @@ function showManualCopyModal(html){
 // scoped, single-page versions.
 async function clearOrder(){
   currentOrderDbId = null;
+  currentOrderAmountReceived = null;
+  currentOrderReceivedDate = null;
   lastSavedStateJson = null;
   orderIsDirty = false;
   orderStatusFlags = { awaitingPrices:false, quoted:false, supplierConfirmed:false, customerConfirmed:false, invoiced:false };
@@ -9636,6 +9689,8 @@ async function renderSummary(){
     body += summaryField('Port', summaryEntityLink('port', portId, portName));
     body += summaryField('ETA', escHtml(fv('eta')));
     body += summaryField('Delivery time', escHtml(fv('deliveryTime')));
+    const paymentRef = vesselId ? vesselPaymentReference(vesselId) : '';
+    if(paymentRef) body += summaryField('Payment reference', `<span title="IMO/MMSI + flag state code — quote this when making or receiving payment for this deal">${escHtml(paymentRef)}</span>`);
     if(productBlocks.length){
       const rows = productBlocks.map(pb=>{
         let name;
@@ -9720,6 +9775,20 @@ async function renderSummary(){
     body += summaryField('Invoice type', invTypeEl ? escHtml(cap(invTypeEl.value)) : '');
     body += summaryField('Final ETA', escHtml(fv('finalETA')));
     if(lastStoredPdfPaths.invoice) body += summaryField('Stored PDF', '<button type="button" class="btn-ghost btn-sm" onclick="openStoredPdf(\'invoice\')">View PDF</button>');
+    // Payment tracking - editable only once the order has actually been
+    // invoiced (before that there's nothing to have been paid yet) and
+    // only once it has a real saved id to update against.
+    if(started && isRealUuid(currentOrderDbId)){
+      body += `<div class="item-detail-field">
+        <span class="item-detail-label">Amount received</span>
+        <input type="number" step="0.01" id="summaryAmountReceived" value="${currentOrderAmountReceived != null ? escAttr(String(currentOrderAmountReceived)) : ''}" onchange="saveOrderPaymentInfo()" style="max-width:180px;">
+      </div>
+      <div class="item-detail-field">
+        <span class="item-detail-label">Paid date</span>
+        <input type="date" id="summaryReceivedDate" value="${currentOrderReceivedDate ? escAttr(currentOrderReceivedDate) : ''}" onchange="saveOrderPaymentInfo()" style="max-width:180px;">
+      </div>
+      <div class="hint" id="summaryPaymentInfoStatus" style="margin-top:-6px;"></div>`;
+    }
     html.push(summarySection('Invoice', started, body, 'invoice'));
   }
 
