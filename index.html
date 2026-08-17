@@ -7012,7 +7012,8 @@ function buildSpreadsheetRow(includeInvoiceFields){
   return [
     orderNumberVal || '', orderPart, reference, fv('quoteDate') || '', fv('finalETA') || fv('eta') || '',
     fv('vessel') || '', fv('port') || '', totals.totalVolumeLitres != null ? String(totals.totalVolumeLitres) : '',
-    brokerInitials(currentBrokerFullName()), getOrderStatus(),
+    brokerInitials(currentBrokerFullName()),
+    '', // Status - deliberately left blank: this cell holds the spreadsheet's own live formula (derived from Inv Date/Rcvd Date/Paid Date), so pasting a computed value here would overwrite it with static text that stops updating
     includeInvoiceFields ? todayIso : '',
     fv('vOwner') || '', currencyDisplayName(totals.salesCurrency), totals.salesTotal != null ? String(totals.salesTotal) : '',
     includeInvoiceFields ? dueDates.customerDueDate : '',
