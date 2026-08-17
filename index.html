@@ -10687,12 +10687,15 @@ function vesselRegistryDetailsHtml(item){
   </div>`;
 }
 function vesselCheckDetailsButtonHtml(item){
-  // Only useful once saved (needs a real id) and once an IMO's actually
-  // been entered - matches the same "must save first" pattern already used
-  // for images.
-  if(!isRealUuid(item.id) || !item.imo) return '';
+  // Only useful once saved (needs a real id) and once an IMO or MMSI has
+  // actually been entered - matches the same "must save first" pattern
+  // already used for images. Prefers IMO when both are present (see the
+  // backend's own preference for the same reason), but works from MMSI
+  // alone for vessels that only have one.
+  if(!isRealUuid(item.id) || (!item.imo && !item.mmsi)) return '';
+  const label = item.imo ? 'Check details from IMO' : 'Check details from MMSI';
   return `<div class="item-detail-field">
-    <button type="button" class="btn-ghost btn-sm" id="checkVesselDetailsBtn" onclick="checkVesselDetailsNow('${item.id}')">Check details from IMO</button>
+    <button type="button" class="btn-ghost btn-sm" id="checkVesselDetailsBtn" onclick="checkVesselDetailsNow('${item.id}')">${label}</button>
     <div id="checkVesselDetailsResult" style="font-size:12px; color:var(--ink-soft); margin-top:4px;"></div>
   </div>`;
 }
@@ -10732,7 +10735,11 @@ async function checkVesselDetailsNow(vesselId){
     console.error('TS: checkVesselDetailsNow failed', e);
     if(resultEl) resultEl.textContent = 'Could not check details: ' + (e.message || 'unknown error');
   }finally{
-    if(btn){ btn.disabled = false; btn.textContent = 'Check details from IMO'; }
+    if(btn){
+      btn.disabled = false;
+      const v = VESSELS.find(x => x.id === vesselId);
+      btn.textContent = (v && v.imo) ? 'Check details from IMO' : 'Check details from MMSI';
+    }
   }
 }
 function renderItemDetail(){
