@@ -1723,16 +1723,18 @@ async function loadReleaseNotes(){
 // System login. This phase only covers the connect/sign-in step itself;
 // actually drafting emails via Graph is a later phase.
 //
-// Uses loginRedirect rather than loginPopup — Microsoft's own guidance is
-// that popup sign-in is unreliable on mobile browsers specifically (confirmed
-// in practice: worked on tablet, failed on phone with block_nested_popups).
-// Redirect is the flow Microsoft recommends for cross-device reliability.
-// The trade-off is a full page navigation away and back, which is why
-// connectOutlook() checks orderIsDirty first — a popup never left the page,
-// so this is a genuinely new way to lose unsaved work that didn't exist
-// before, and needs its own explicit warning rather than relying on the
-// browser's native beforeunload prompt, which isn't consistently shown for
-// JS-initiated navigations across browsers.
+// Tries loginPopup first, since it doesn't navigate away and so doesn't
+// lose the order currently being worked on (unsaved changes and all) the
+// way a full page redirect does. Falls back to loginRedirect automatically
+// if the popup fails - Microsoft's own guidance is that popup sign-in is
+// unreliable on mobile browsers specifically (confirmed in practice:
+// worked on tablet, failed on phone with block_nested_popups), so the
+// redirect path stays in place as a working fallback rather than being
+// removed. connectOutlookViaRedirect() (the fallback) still checks
+// orderIsDirty first and warns explicitly, since that's a genuinely new
+// way to lose unsaved work that a popup never created, and the browser's
+// native beforeunload prompt isn't consistently shown for JS-initiated
+// navigations across browsers anyway.
 let msalInstance = null;
 let graphAccount = null;
 const GRAPH_SCOPES = ['Mail.ReadWrite', 'User.Read', 'offline_access'];
@@ -1767,13 +1769,35 @@ async function initGraphAuth(){
   renderOutlookConnectButton();
 }
 
-function connectOutlook(){
+// Tries loginPopup first - doesn't navigate away, so the current order and
+// any unsaved changes survive connecting Outlook. Falls back to
+// loginRedirect automatically if the popup fails for any reason (blocked,
+// closed by the person, or the mobile-specific block_nested_popups issue
+// noted above) - this keeps the proven mobile-reliable path available
+// without forcing everyone through the page-navigation experience by
+// default, which is what this whole change is for.
+async function connectOutlook(){
   if(!msalInstance){
     alert('Outlook connect isn\'t ready yet — try reloading the page fully and waiting a few seconds before pressing Connect Outlook again.');
     return;
   }
+  try{
+    const result = await msalInstance.loginPopup({ scopes: GRAPH_SCOPES });
+    if(result && result.account){
+      graphAccount = result.account;
+      renderOutlookConnectButton();
+    }
+  }catch(e){
+    if(e && e.errorCode === 'user_cancelled'){
+      return; // they closed the popup on purpose - not a failure to fall back from
+    }
+    console.warn('TS: loginPopup failed, falling back to loginRedirect', e);
+    connectOutlookViaRedirect();
+  }
+}
+function connectOutlookViaRedirect(){
   if(orderIsDirty){
-    const proceed = confirm('Connecting Outlook will leave this page and come back — any unsaved changes to the order you\'re working on will be lost.\n\nSave your order first (the Save button on the Order page), or press Cancel to stay here.');
+    const proceed = confirm('Connecting Outlook this way will leave this page and come back — any unsaved changes to the order you\'re working on will be lost.\n\nSave your order first (the Save button on the Order page), or press Cancel to stay here.');
     if(!proceed) return;
   }
   msalInstance.loginRedirect({ scopes: GRAPH_SCOPES }).catch(function(e){
@@ -1819,11 +1843,13 @@ function renderOutlookConnectButton(){
 // (token, recipient resolution, the Graph call itself, opening the result)
 // actually works before extending it to Enquire/Supply/Customer/Invoice.
 
-// Refreshes a Graph token silently where possible. Only falls back to an
-// interactive redirect if the cached token has genuinely expired beyond
-// silent renewal (rare — MSAL renews well ahead of real expiry) — that
-// fallback is a full page navigation just like the original connect, so
-// it carries the same unsaved-work warning.
+// Refreshes a Graph token silently where possible. Only interactive if the
+// cached token has genuinely expired beyond silent renewal (rare — MSAL
+// renews well ahead of real expiry) — tries acquireTokenPopup first, same
+// reasoning as connectOutlook, and this matters even more here since it
+// happens mid-draft rather than at a deliberate "connect" moment. Falls
+// back to acquireTokenRedirect (a full page navigation, hence the
+// unsaved-work warning) only if the popup itself fails.
 async function getGraphToken(){
   if(!msalInstance || !graphAccount) throw new Error('Outlook not connected — click Connect Outlook in the header first.');
   try{
@@ -1831,6 +1857,13 @@ async function getGraphToken(){
     return result.accessToken;
   }catch(e){
     if(e && e.name === 'InteractionRequiredAuthError'){
+      try{
+        const popupResult = await msalInstance.acquireTokenPopup({ scopes: GRAPH_SCOPES, account: graphAccount });
+        return popupResult.accessToken;
+      }catch(popupError){
+        if(popupError && popupError.errorCode === 'user_cancelled') throw new Error('cancelled');
+        console.warn('TS: acquireTokenPopup failed, falling back to acquireTokenRedirect', popupError);
+      }
       if(orderIsDirty){
         const proceed = confirm('Outlook needs you to sign in again, which means leaving this page and coming back — any unsaved changes to the order you\'re working on will be lost.\n\nSave your order first (the Save button on the Order page), or press Cancel to stay here.');
         if(!proceed) throw new Error('cancelled');
