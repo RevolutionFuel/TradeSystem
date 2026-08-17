@@ -8247,6 +8247,7 @@ function renderTradeSummaryBar(){
   // fresh node with the right id/onclick each time the bar is rebuilt.
   const saveHtml = `<span class="tsb-item tsb-save-item">
     <span id="unsavedBanner" class="unsaved-banner" style="display:none;">\u26a0 Unsaved</span>
+    <button class="btn-ghost btn-sm" onclick="clearOrder()" title="Clears everything — vessel, supplier, products, pricing, all pages — to start a new order">New order</button>
     <button id="orderSaveBtn" class="btn-primary btn-sm" onclick="saveOrderToDatabase()">Save</button>
   </span>`;
   // The info items (status + vessel/port/etc) are joined with dividers and
