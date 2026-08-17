@@ -1262,6 +1262,10 @@
               <legend>Supplier's invoice</legend>
               <div class="field"><label for="supplierInvoiceNumber">Supplier's invoice number</label><input type="text" id="supplierInvoiceNumber" placeholder="e.g. the number on their invoice to us" oninput="render()"></div>
               <div class="hint">Their reference on the invoice they've sent us for this delivery — separate from our own invoice number, for tracking purposes only.</div>
+              <div class="field" style="margin-top:10px;">
+                <label>Supplier's invoice copy</label>
+                <div id="supplierInvoiceFileSection"><div class="hint">Loading...</div></div>
+              </div>
             </fieldset>
 
             <fieldset>
@@ -3809,6 +3813,12 @@ let orderIsDirty = false;
 // tracked here separately rather than folded into collectQuoteState().
 let currentOrderAmountReceived = null;
 let currentOrderReceivedDate = null;
+// The supplier's own invoice file (PDF/image) - a real column, not part of
+// the order's JSONB details blob, same reasoning as the payment tracking
+// fields above: it's tied to a specific saved order row via its storage
+// path, not something that makes sense inside the reconstructable form state.
+let currentSupplierInvoiceFilePath = null;
+let currentSupplierInvoiceFileUploadedAt = null;
 let orderSaveInProgress = false;
 
 // Excludes savedAt (which changes on every single call, by design, for the
@@ -4128,6 +4138,8 @@ async function loadOrderFromDatabase(id){
   currentOrderDbId = row.id;
   currentOrderAmountReceived = row.amount_received;
   currentOrderReceivedDate = row.received_date;
+  currentSupplierInvoiceFilePath = row.supplier_invoice_file_path;
+  currentSupplierInvoiceFileUploadedAt = row.supplier_invoice_file_uploaded_at;
   lastSavedStateJson = stateForComparison(collectQuoteState());
   orderIsDirty = false;
   updateSaveBar();
@@ -7334,10 +7346,70 @@ async function openInvoicePdf(btnEl){
 // A simple on-screen recap — the Invoice page's real output is the PDF, not a
 // copyable email like the other pages, so this just confirms what's about to
 // go into it before you open the print view.
+// The supplier's own invoice (PDF or a photo/scan of it) alongside their
+// invoice number - requires a real saved order, since the storage path is
+// keyed to the order id, same constraint as the vessel documents feature.
+function renderSupplierInvoiceFileSection(){
+  const container = document.getElementById('supplierInvoiceFileSection');
+  if(!container) return;
+  if(!isRealUuid(currentOrderDbId)){ container.innerHTML = '<div class="hint">Save this order first to attach the supplier\'s invoice.</div>'; return; }
+  if(!window.TS || !window.TS.uploadSupplierInvoiceFile){ container.innerHTML = '<div class="hint">Needs the database connection \u2014 not available right now.</div>'; return; }
+  const inputId = 'supplierInvoiceFileInput';
+  const hasFile = !!currentSupplierInvoiceFilePath;
+  const fileLinkHtml = hasFile
+    ? `<div style="font-size:12.5px; margin-bottom:4px;"><a href="#" onclick="openSupplierInvoiceFileLink(); return false;">\ud83d\udcce View supplier's invoice</a></div>`
+    : '<div class="hint" style="margin-bottom:4px;">Not attached yet.</div>';
+  container.innerHTML = `${fileLinkHtml}
+    <input type="file" id="${inputId}" accept=".pdf,image/*" style="display:none;" onchange="uploadSupplierInvoiceFileHandler(this)">
+    <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${hasFile ? 'Replace' : 'Add'} PDF or image</button>
+    ${hasFile ? `<button type="button" class="btn-ghost btn-sm" onclick="removeSupplierInvoiceFileHandler()">Remove</button>` : ''}`;
+}
+async function openSupplierInvoiceFileLink(){
+  if(!currentSupplierInvoiceFilePath || !window.TS || !window.TS.getSupplierInvoiceFileUrl) return;
+  try{
+    const url = await window.TS.getSupplierInvoiceFileUrl(currentSupplierInvoiceFilePath);
+    window.open(url, '_blank');
+  }catch(e){
+    console.error('TS: could not open supplier invoice file', e);
+    alert('Could not open the supplier\'s invoice right now.');
+  }
+}
+async function uploadSupplierInvoiceFileHandler(inputEl){
+  const file = inputEl.files && inputEl.files[0];
+  if(!file) return;
+  if(!isRealUuid(currentOrderDbId) || !window.TS || !window.TS.uploadSupplierInvoiceFile){ alert('Save this order first, then add the supplier\'s invoice.'); inputEl.value = ''; return; }
+  try{
+    const base64 = await blobToBase64(file);
+    const extension = (file.name.split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g,'') || 'pdf';
+    const path = await window.TS.uploadSupplierInvoiceFile(currentOrderDbId, base64, file.type || 'application/octet-stream', extension);
+    currentSupplierInvoiceFilePath = path;
+    currentSupplierInvoiceFileUploadedAt = new Date().toISOString();
+    renderSupplierInvoiceFileSection();
+  }catch(e){
+    console.error('TS: supplier invoice file upload failed', e);
+    alert('Could not upload the supplier\'s invoice: ' + (e && e.message ? e.message : 'unknown error'));
+  }finally{
+    inputEl.value = '';
+  }
+}
+async function removeSupplierInvoiceFileHandler(){
+  if(!confirm('Remove the attached copy of the supplier\'s invoice?')) return;
+  if(!isRealUuid(currentOrderDbId) || !window.TS || !window.TS.removeSupplierInvoiceFile) return;
+  try{
+    await window.TS.removeSupplierInvoiceFile(currentOrderDbId);
+    currentSupplierInvoiceFilePath = null;
+    currentSupplierInvoiceFileUploadedAt = null;
+    renderSupplierInvoiceFileSection();
+  }catch(e){
+    console.error('TS: could not remove supplier invoice file', e);
+    alert('Could not remove the supplier\'s invoice right now.');
+  }
+}
 function renderInvoicePreviewOnly(){
   scheduleUpdatePanelHeightLock();
   renderInvoiceEmailPreview();
   renderMissingDataWarning('invoice');
+  renderSupplierInvoiceFileSection();
   const el = document.getElementById('invoiceSummaryPreview');
   if(!el) return;
   const invType = getInvoiceType();
@@ -9346,6 +9418,8 @@ async function clearOrder(){
   currentOrderDbId = null;
   currentOrderAmountReceived = null;
   currentOrderReceivedDate = null;
+  currentSupplierInvoiceFilePath = null;
+  currentSupplierInvoiceFileUploadedAt = null;
   lastSavedStateJson = null;
   orderIsDirty = false;
   orderStatusFlags = { awaitingPrices:false, quoted:false, supplierConfirmed:false, customerConfirmed:false, invoiced:false };
