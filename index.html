@@ -3865,6 +3865,12 @@ function stateForComparison(state){
 function hasAnyOrderContent(){
   return !!(fv('vessel') || fv('port') || (typeof productBlocks !== 'undefined' && productBlocks.length));
 }
+// Guards saveOrderDraftToLocalStorage() from running before startup has
+// had its chance to restore an existing draft - without this, the very
+// first 1.5s poll tick could see the still-blank startup form, decide
+// there's "no order content", and delete the draft it was about to be
+// restored from, before restoreOrderDraftFromLocalStorage() ever runs.
+let appStartupComplete = false;
 function checkDirtyState(){
   if(lastSavedStateJson === null){
     orderIsDirty = hasAnyOrderContent();
@@ -3872,8 +3878,47 @@ function checkDirtyState(){
     orderIsDirty = stateForComparison(collectQuoteState()) !== lastSavedStateJson;
   }
   updateSaveBar();
+  if(appStartupComplete) saveOrderDraftToLocalStorage();
 }
 setInterval(checkDirtyState, 1500);
+// A plain browser refresh wipes every in-memory JS variable, including the
+// whole order being worked on - previously only *which page* was open
+// survived that (see ts-last-view/ts-last-order-page below), leaving the
+// actual vessel/products/pricing gone even though you land back on the
+// right tab. This piggybacks on the same 1.5s poll that already tracks
+// unsaved-changes state (so no new timer, and it's already recomputing
+// collectQuoteState() every tick anyway) to also keep localStorage holding
+// a live snapshot of the order currently open - restored on startup by
+// restoreOrderDraftFromLocalStorage(), further down. Skips writing when
+// there's genuinely nothing open, so a fresh "New Order" click doesn't
+// immediately create a draft of nothing.
+function saveOrderDraftToLocalStorage(){
+  try{
+    if(!hasAnyOrderContent()){ localStorage.removeItem('ts-order-draft'); return; }
+    localStorage.setItem('ts-order-draft', JSON.stringify({ state: collectQuoteState(), dbId: currentOrderDbId }));
+  }catch(e){ /* private browsing, storage full, or similar - fine to just skip persistence */ }
+}
+// The counterpart restore, called once at startup (see start() at the
+// bottom of this file) - only when the last-open view was actually the
+// order builder, so this never fires and unexpectedly pulls up an old
+// order while someone's sitting on the Dashboard or Manage Lists.
+async function restoreOrderDraftFromLocalStorage(){
+  try{
+    const raw = localStorage.getItem('ts-order-draft');
+    if(!raw) return false;
+    const draft = JSON.parse(raw);
+    if(!draft || !draft.state) return false;
+    await applyQuoteState(draft.state);
+    currentOrderDbId = draft.dbId || null;
+    lastSavedStateJson = stateForComparison(collectQuoteState());
+    orderIsDirty = false;
+    updateSaveBar();
+    return true;
+  }catch(e){
+    console.warn('TS: could not restore the order draft', e);
+    return false;
+  }
+}
 
 function hasOrderNumberSet(){
   return !!(fv('orderNumberSupply') || fv('orderNumberCustomer') || fv('orderNumberInvoice'));
@@ -4269,7 +4314,14 @@ function showDeleteOrderModal(referenceLabel, isOrder, onDelete, onMarkStatus){
 }
 function deleteOrderFromDashboard(id, referenceLabel, isOrder){
   showDeleteOrderModal(referenceLabel, isOrder,
-    async () => { await window.TS.deleteOrder(id); loadDashboardData(); },
+    async () => {
+      await window.TS.deleteOrder(id);
+      try{
+        const raw = localStorage.getItem('ts-order-draft');
+        if(raw && JSON.parse(raw).dbId === id) localStorage.removeItem('ts-order-draft');
+      }catch(e){ /* fine to skip */ }
+      loadDashboardData();
+    },
     async () => { await window.TS.markOrderStatus(id, isOrder ? 'cancelled' : 'dead'); loadDashboardData(); }
   );
 }
@@ -4280,7 +4332,7 @@ function deleteCurrentOrder(){
   const vesselLabel = fv('vessel') || fv('vesselOrder');
   const fullLabel = vesselLabel ? `${referenceLabel} \u2014 ${vesselLabel}` : referenceLabel;
   showDeleteOrderModal(fullLabel, isOrder,
-    async () => { await window.TS.deleteOrder(currentOrderDbId); currentOrderDbId = null; switchView('dashboard'); },
+    async () => { await window.TS.deleteOrder(currentOrderDbId); currentOrderDbId = null; try{ localStorage.removeItem('ts-order-draft'); }catch(e){} switchView('dashboard'); },
     async () => {
       await window.TS.markOrderStatus(currentOrderDbId, isOrder ? 'cancelled' : 'dead');
       setManualStatus(isOrder ? 'Cancelled' : 'Dead');
@@ -9449,6 +9501,7 @@ function showManualCopyModal(html){
 // starting a new order. See clearQuoteFields()/clearSupplyFields() for the
 // scoped, single-page versions.
 async function clearOrder(){
+  try{ localStorage.removeItem('ts-order-draft'); }catch(e){ /* private browsing or similar - fine to skip */ }
   currentOrderDbId = null;
   currentOrderAmountReceived = null;
   currentOrderReceivedDate = null;
@@ -12121,6 +12174,7 @@ async function checkSystemAlerts(){
       switchView(lastView);
     }
     if(lastView === 'build'){
+      await restoreOrderDraftFromLocalStorage();
       const lastOrderPage = localStorage.getItem('ts-last-order-page');
       if(['order','enquire','quote','supply','customer','invoice','summary'].includes(lastOrderPage)) switchOrderPage(lastOrderPage);
     }
@@ -12136,6 +12190,7 @@ async function checkSystemAlerts(){
       if(validKinds.includes(kind) && id) openItemDetail(kind, id);
     }
   }catch(e){ /* private browsing or similar - default view is fine */ }
+  appStartupComplete = true;
 })();
 </script>
 </body>
