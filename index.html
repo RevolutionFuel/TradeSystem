@@ -2325,15 +2325,18 @@ function updateReminderStatusHint(){
 // Delivered / Customer Paid / Supplier Paid / Fully Settled are never set by
 // this tool's own buttons — they're expected to arrive via the manual picker
 // or by reloading an order from the future separate order-management system.
-// Dead / Cancelled are parked states, reachable only manually.
+// Cancelled is a parked state, reachable only manually. "Dead" used to be a
+// separate parked state for enquiries specifically, but has been merged
+// into Cancelled - there's only one terminal/parked status now, regardless
+// of whether the deal ever reached an order number.
 const STATUS_LIST = [
   'Enquiry', 'Awaiting Prices', 'Quoted', 'Supplier Confirmed', 'Customer Confirmed', 'Fully Confirmed',
-  'Invoiced', 'Delivered', 'Customer Paid', 'Supplier Paid', 'Fully Settled', 'Cancelled', 'Dead'
+  'Invoiced', 'Delivered', 'Customer Paid', 'Supplier Paid', 'Fully Settled', 'Cancelled'
 ];
 const STATUS_RANK = {
   'Enquiry':0, 'Awaiting Prices':1, 'Quoted':2, 'Supplier Confirmed':3, 'Customer Confirmed':3,
   'Fully Confirmed':4, 'Invoiced':5, 'Delivered':6, 'Customer Paid':7, 'Supplier Paid':7, 'Fully Settled':8,
-  'Dead':-1, 'Cancelled':-1
+  'Cancelled':-1
 };
 function getAutoDerivedStatus(){
   if(orderStatusFlags.invoiced) return 'Invoiced';
@@ -2348,7 +2351,7 @@ function markStatus(flag){
   if(orderStatusFlags[flag]) return; // already reached — no-op, keeps this cheap to call unconditionally
   const oldStatus = getOrderStatus();
   orderStatusFlags[flag] = true;
-  if(manualStatusOverride !== null && manualStatusOverride !== 'Dead' && manualStatusOverride !== 'Cancelled'){
+  if(manualStatusOverride !== null && manualStatusOverride !== 'Cancelled'){
     const autoStatus = getAutoDerivedStatus();
     if(STATUS_RANK[autoStatus] > STATUS_RANK[manualStatusOverride]) manualStatusOverride = autoStatus;
   }
@@ -2401,7 +2404,7 @@ function getOrderStatusColor(status){
     'Supplier Confirmed': '#0F5C6E', 'Customer Confirmed': '#0F5C6E', 'Fully Confirmed': '#1F064F',
     'Invoiced': '#2E7D53', 'Delivered': '#2E7D53', 'Customer Paid': '#2E7D53', 'Supplier Paid': '#2E7D53',
     'Fully Settled': '#1F5C3A',
-    'Cancelled': '#8a5044', 'Dead': '#6b6b6b'
+    'Cancelled': '#8a5044'
   };
   return colors[status] || '#8a8f98';
 }
@@ -4267,7 +4270,7 @@ const DASHBOARD_FILTERS = [
 function showDeleteOrderModal(referenceLabel, isOrder, onDelete, onMarkStatus){
   const existing = document.getElementById('deleteOrderModalOverlay');
   if(existing) existing.remove();
-  const statusLabel = isOrder ? 'Cancelled' : 'Dead';
+  const statusLabel = 'Cancelled';
   const overlay = document.createElement('div');
   overlay.id = 'deleteOrderModalOverlay';
   overlay.style.cssText = 'position:fixed; inset:0; background:rgba(20,10,10,0.55); z-index:100000; display:flex; align-items:center; justify-content:center; padding:20px;';
@@ -4312,19 +4315,6 @@ function showDeleteOrderModal(referenceLabel, isOrder, onDelete, onMarkStatus){
     }
   };
 }
-function deleteOrderFromDashboard(id, referenceLabel, isOrder){
-  showDeleteOrderModal(referenceLabel, isOrder,
-    async () => {
-      await window.TS.deleteOrder(id);
-      try{
-        const raw = localStorage.getItem('ts-order-draft');
-        if(raw && JSON.parse(raw).dbId === id) localStorage.removeItem('ts-order-draft');
-      }catch(e){ /* fine to skip */ }
-      loadDashboardData();
-    },
-    async () => { await window.TS.markOrderStatus(id, isOrder ? 'cancelled' : 'dead'); loadDashboardData(); }
-  );
-}
 function deleteCurrentOrder(){
   if(!isRealUuid(currentOrderDbId)) return;
   const referenceLabel = fv('orderNumberSupply') || fv('orderNumberCustomer') || fv('quoteRef') || 'this order';
@@ -4334,8 +4324,8 @@ function deleteCurrentOrder(){
   showDeleteOrderModal(fullLabel, isOrder,
     async () => { await window.TS.deleteOrder(currentOrderDbId); currentOrderDbId = null; try{ localStorage.removeItem('ts-order-draft'); }catch(e){} switchView('dashboard'); },
     async () => {
-      await window.TS.markOrderStatus(currentOrderDbId, isOrder ? 'cancelled' : 'dead');
-      setManualStatus(isOrder ? 'Cancelled' : 'Dead');
+      await window.TS.markOrderStatus(currentOrderDbId, 'cancelled');
+      setManualStatus('Cancelled');
     }
   );
 }
@@ -4485,15 +4475,13 @@ function renderDashboardList(){
   // widths here the compact layout left a lot of visibly wasted space on
   // the right rather than actually using it for the columns that need it.
   const headHtml = compact
-    ? th('reference','Reference','15%') + thStacked('27%','vessel','Vessel','port','Port','eta','ETA') + thStacked('30%','customer','Customer','supplier','Supplier') + thStacked('16%','purchase','Purchase','sale','Sale') + th('status','Status','8%') + '<th style="width:4%"></th>'
-    : th('reference','Reference') + th('vessel','Vessel') + th('port','Port') + th('customer','Customer') + th('supplier','Supplier') + th('eta','ETA / Delivery') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status') + '<th></th>';
+    ? th('reference','Reference','15%') + thStacked('27%','vessel','Vessel','port','Port','eta','ETA') + thStacked('30%','customer','Customer','supplier','Supplier') + thStacked('16%','purchase','Purchase','sale','Sale') + th('status','Status','8%')
+    : th('reference','Reference') + th('vessel','Vessel') + th('port','Port') + th('customer','Customer') + th('supplier','Supplier') + th('eta','ETA / Delivery') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status');
   const bodyHtml = rows.map(r=>{
     const dateText = fmtDashboardDate(r.deliveryDate || r.eta);
     const refText = r.orderNumber || r.quoteRef || '\u2014';
     const refCell = `<td><a href="#" class="dashboard-ref-link" onclick="openOrderFromDashboard('${r.id}'); return false;">${escHtml(refText)}</a></td>`;
     const statusCell = `<td><span class="tsb-status-badge" style="background:${getOrderStatusColor(statusEnumToLabel(r.status))};">${escHtml(statusEnumToLabel(r.status))}</span></td>`;
-    const deleteLabel = r.vesselName ? `${refText} \u2014 ${r.vesselName}` : refText;
-    const deleteCell = `<td><button type="button" class="btn-ghost btn-sm" style="color:var(--bad); border-color:var(--bad); padding:3px 8px;" onclick="deleteOrderFromDashboard('${r.id}', ${JSON.stringify(deleteLabel).replace(/"/g,'&quot;')}, ${!!r.orderNumber})" title="Delete this order">\u2715</button></td>`;
     const purchaseText = fmtDashboardMoney(r.purchaseTotal, r.purchaseCurrency);
     const saleText = fmtDashboardMoney(r.salesTotal, r.salesCurrency);
     if(compact){
@@ -4501,7 +4489,7 @@ function renderDashboardList(){
         <td>${escHtml(r.vesselName || '\u2014')}<br>${escHtml(r.portName || '\u2014')}<br>${escHtml(dateText)}</td>
         <td>${escHtml(r.customerName || '\u2014')}<br>${escHtml(r.supplierName || '\u2014')}</td>
         <td>${escHtml(purchaseText)}<br>${escHtml(saleText)}</td>
-        ${statusCell}${deleteCell}</tr>`;
+        ${statusCell}</tr>`;
     }
     return `<tr>${refCell}
       <td>${escHtml(r.vesselName || '\u2014')}</td>
@@ -4511,7 +4499,7 @@ function renderDashboardList(){
       <td>${escHtml(dateText)}</td>
       <td>${escHtml(purchaseText)}</td>
       <td>${escHtml(saleText)}</td>
-      ${statusCell}${deleteCell}</tr>`;
+      ${statusCell}</tr>`;
   }).join('');
   container.innerHTML = `<table class="dashboard-table">
     <thead><tr>${headHtml}</tr></thead>
