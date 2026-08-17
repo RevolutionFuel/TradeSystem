@@ -8248,7 +8248,7 @@ function renderTradeSummaryBar(){
   // fresh node with the right id/onclick each time the bar is rebuilt.
   const saveHtml = `<span class="tsb-item tsb-save-item">
     <span id="unsavedBanner" class="unsaved-banner" style="display:none;">\u26a0 Unsaved</span>
-    <button class="btn-ghost btn-sm" onclick="clearOrder()" title="Clears everything — vessel, supplier, products, pricing, all pages — to start a new order">New order</button>
+    <button class="btn-ghost btn-sm" onclick="startNewOrderFromBar()" title="Clears everything — vessel, supplier, products, pricing, all pages — to start a new order">New order</button>
     <button id="orderSaveBtn" class="btn-primary btn-sm" onclick="saveOrderToDatabase()">Save</button>
   </span>`;
   // The info items (status + vessel/port/etc) are joined with dividers and
@@ -9544,6 +9544,14 @@ function showManualCopyModal(html){
 // The comprehensive reset — everything, every page, back to a blank slate for
 // starting a new order. See clearQuoteFields()/clearSupplyFields() for the
 // scoped, single-page versions.
+// Used by the New Order button in the trade summary bar - properly awaits
+// clearOrder() (which itself awaits a new quote reference being generated)
+// before navigating, so the Details page never renders with the previous
+// order's data still lingering for a moment mid-clear.
+async function startNewOrderFromBar(){
+  await clearOrder();
+  switchOrderPage('order');
+}
 async function clearOrder(){
   try{ localStorage.removeItem('ts-order-draft'); }catch(e){ /* private browsing or similar - fine to skip */ }
   currentOrderDbId = null;
