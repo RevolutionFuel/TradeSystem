@@ -2322,30 +2322,55 @@ function updateReminderStatusHint(){
     hint.style.color = 'var(--ink-soft)';
   }
 }
-// Delivered / Customer Paid / Supplier Paid / Fully Settled are never set by
-// this tool's own buttons — they're expected to arrive via the manual picker
-// or by reloading an order from the future separate order-management system.
-// Cancelled is a parked state, reachable only manually. "Dead" used to be a
-// separate parked state for enquiries specifically, but has been merged
-// into Cancelled - there's only one terminal/parked status now, regardless
-// of whether the deal ever reached an order number.
+// Fully Settled/Customer Paid/Supplier Paid are now auto-derived from the
+// Amount Received/Paid Date/Supplier Paid Date fields (see
+// getAutoDerivedStatus) rather than only reachable via the manual picker.
+// Delivered has been dropped as a stored status entirely - "has the
+// delivery date passed" is now just a computed fact shown alongside the
+// status, not a status of its own (see deliveryDateHasPassed()). Cancelled
+// is a parked state, reachable only manually.
 const STATUS_LIST = [
-  'Enquiry', 'Awaiting Prices', 'Quoted', 'Supplier Confirmed', 'Customer Confirmed', 'Fully Confirmed',
-  'Invoiced', 'Delivered', 'Customer Paid', 'Supplier Paid', 'Fully Settled', 'Cancelled'
+  'Enquiry', 'Awaiting Prices', 'Quoted', 'Unconfirmed', 'Supplier Confirmed', 'Customer Confirmed', 'Fully Confirmed',
+  'Invoiced', 'Customer Paid', 'Supplier Paid', 'Fully Settled', 'Cancelled'
 ];
 const STATUS_RANK = {
-  'Enquiry':0, 'Awaiting Prices':1, 'Quoted':2, 'Supplier Confirmed':3, 'Customer Confirmed':3,
-  'Fully Confirmed':4, 'Invoiced':5, 'Delivered':6, 'Customer Paid':7, 'Supplier Paid':7, 'Fully Settled':8,
+  'Enquiry':0, 'Awaiting Prices':1, 'Quoted':2, 'Unconfirmed':3, 'Supplier Confirmed':4, 'Customer Confirmed':4,
+  'Fully Confirmed':5, 'Invoiced':6, 'Customer Paid':7, 'Supplier Paid':7, 'Fully Settled':8,
   'Cancelled':-1
 };
+// Customer Paid: both Amount Received and Paid Date are set (see the
+// warning in saveOrderPaymentInfo() for what happens if only one is).
+// Supplier Paid: the Supplier Paid Date is set - no separate amount field,
+// since paying a supplier is always assumed to be the full purchase total,
+// unlike a customer who might pay in instalments. Fully Settled once both
+// sides are paid, mirroring how Fully Confirmed already works for the two
+// confirmation flags.
+function isCustomerPaid(){ return currentOrderAmountReceived != null && !!currentOrderReceivedDate; }
+function isSupplierPaid(){ return !!currentOrderSupplierPaidDate; }
 function getAutoDerivedStatus(){
+  if(isCustomerPaid() && isSupplierPaid()) return 'Fully Settled';
+  if(isSupplierPaid()) return 'Supplier Paid';
+  if(isCustomerPaid()) return 'Customer Paid';
   if(orderStatusFlags.invoiced) return 'Invoiced';
   if(orderStatusFlags.supplierConfirmed && orderStatusFlags.customerConfirmed) return 'Fully Confirmed';
   if(orderStatusFlags.supplierConfirmed) return 'Supplier Confirmed';
   if(orderStatusFlags.customerConfirmed) return 'Customer Confirmed';
+  // An order number has been assigned (this deal has become an Order, not
+  // just an Enquiry) but neither confirmation has gone out yet.
+  if(hasOrderNumberSet()) return 'Unconfirmed';
   if(orderStatusFlags.quoted) return 'Quoted';
   if(orderStatusFlags.awaitingPrices) return 'Awaiting Prices';
   return 'Enquiry';
+}
+// Purely a computed display fact, not a stored status - true once the
+// order's known delivery date (final, if invoicing has started; otherwise
+// the expected ETA) is in the past. Shown alongside the status badge
+// rather than replacing it, since a deal can be e.g. both "Invoiced" and
+// "past its delivery date" at once.
+function deliveryDateHasPassed(){
+  const deliveryIso = fv('finalETA') || fv('eta');
+  if(!deliveryIso) return false;
+  return new Date(deliveryIso) < new Date(new Date().toDateString());
 }
 function markStatus(flag){
   if(orderStatusFlags[flag]) return; // already reached — no-op, keeps this cheap to call unconditionally
@@ -2400,9 +2425,9 @@ function getOrderStatus(){
 // Dead/Cancelled in a distinct muted red-brown so they read as "parked".
 function getOrderStatusColor(status){
   const colors = {
-    'Enquiry': '#8a8f98', 'Awaiting Prices': '#D98A2C', 'Quoted': '#D98A2C',
+    'Enquiry': '#8a8f98', 'Awaiting Prices': '#D98A2C', 'Quoted': '#D98A2C', 'Unconfirmed': '#8a6a2c',
     'Supplier Confirmed': '#0F5C6E', 'Customer Confirmed': '#0F5C6E', 'Fully Confirmed': '#1F064F',
-    'Invoiced': '#2E7D53', 'Delivered': '#2E7D53', 'Customer Paid': '#2E7D53', 'Supplier Paid': '#2E7D53',
+    'Invoiced': '#2E7D53', 'Customer Paid': '#2E7D53', 'Supplier Paid': '#2E7D53',
     'Fully Settled': '#1F5C3A',
     'Cancelled': '#8a5044'
   };
@@ -3849,6 +3874,9 @@ let orderIsDirty = false;
 // tracked here separately rather than folded into collectQuoteState().
 let currentOrderAmountReceived = null;
 let currentOrderReceivedDate = null;
+// The date the supplier was paid - no separate amount field, since paying
+// a supplier is always assumed to be the full purchase total.
+let currentOrderSupplierPaidDate = null;
 // The supplier's own invoice file (PDF/image) - a real column, not part of
 // the order's JSONB details blob, same reasoning as the payment tracking
 // fields above: it's tied to a specific saved order row via its storage
@@ -4219,6 +4247,7 @@ async function loadOrderFromDatabase(id){
   currentOrderDbId = row.id;
   currentOrderAmountReceived = row.amount_received;
   currentOrderReceivedDate = row.received_date;
+  currentOrderSupplierPaidDate = row.paid_date;
   currentSupplierInvoiceFilePath = row.supplier_invoice_file_path;
   currentSupplierInvoiceFileUploadedAt = row.supplier_invoice_file_uploaded_at;
   lastSavedStateJson = stateForComparison(collectQuoteState());
@@ -4227,16 +4256,30 @@ async function loadOrderFromDatabase(id){
 }
 // Saved immediately on change (not part of the main Save flow) - see
 // updateOrderPaymentInfo in shared-js for why this is a standalone update.
+// Warns (but doesn't block) if only one of Amount Received/Customer Paid
+// Date is filled in - both are needed together for the order to actually
+// be recognised as Customer Paid, so a half-filled pair is worth flagging
+// rather than silently sitting there looking complete.
 async function saveOrderPaymentInfo(){
   if(!isRealUuid(currentOrderDbId) || !window.TS || !window.TS.updateOrderPaymentInfo) return;
   const statusEl = document.getElementById('summaryPaymentInfoStatus');
   const amount = fv('summaryAmountReceived');
   const date = fv('summaryReceivedDate');
+  const supplierPaidDate = fv('summarySupplierPaidDate');
+  const amountFilled = amount !== '';
+  const dateFilled = date !== '';
+  if(amountFilled !== dateFilled){
+    const missing = amountFilled ? 'Customer Paid Date' : 'Amount Received';
+    const proceed = confirm(`You've entered ${amountFilled ? 'an amount received' : 'a customer paid date'} but not the ${missing} \u2014 both are needed for this order to be marked Customer Paid.\n\nSave anyway?`);
+    if(!proceed) return;
+  }
   if(statusEl) statusEl.textContent = 'Saving...';
   try{
-    await window.TS.updateOrderPaymentInfo(currentOrderDbId, amount, date);
+    await window.TS.updateOrderPaymentInfo(currentOrderDbId, amount, date, supplierPaidDate);
     currentOrderAmountReceived = amount === '' ? null : Number(amount);
     currentOrderReceivedDate = date || null;
+    currentOrderSupplierPaidDate = supplierPaidDate || null;
+    renderTradeSummaryBar(); // the status badge may have just changed (e.g. -> Customer Paid / Supplier Paid / Fully Settled)
     if(statusEl){ statusEl.textContent = 'Saved'; setTimeout(() => { if(statusEl) statusEl.textContent = ''; }, 2000); }
   }catch(e){
     console.error('TS: saveOrderPaymentInfo failed', e);
@@ -9493,6 +9536,7 @@ async function clearOrder(){
   currentOrderDbId = null;
   currentOrderAmountReceived = null;
   currentOrderReceivedDate = null;
+  currentOrderSupplierPaidDate = null;
   currentSupplierInvoiceFilePath = null;
   currentSupplierInvoiceFileUploadedAt = null;
   lastSavedStateJson = null;
@@ -10055,10 +10099,15 @@ async function renderSummary(){
         <input type="number" step="0.01" id="summaryAmountReceived" value="${currentOrderAmountReceived != null ? escAttr(String(currentOrderAmountReceived)) : ''}" onchange="saveOrderPaymentInfo()" style="max-width:180px;">
       </div>
       <div class="item-detail-field">
-        <span class="item-detail-label">Paid date</span>
+        <span class="item-detail-label">Customer paid date</span>
         <input type="date" id="summaryReceivedDate" value="${currentOrderReceivedDate ? escAttr(currentOrderReceivedDate) : ''}" onchange="saveOrderPaymentInfo()" style="max-width:180px;">
       </div>
-      <div class="hint" id="summaryPaymentInfoStatus" style="margin-top:-6px;"></div>`;
+      <div class="hint" id="summaryPaymentInfoStatus" style="margin-top:-6px;"></div>
+      <div class="item-detail-field">
+        <span class="item-detail-label">Supplier paid date</span>
+        <input type="date" id="summarySupplierPaidDate" value="${currentOrderSupplierPaidDate ? escAttr(currentOrderSupplierPaidDate) : ''}" onchange="saveOrderPaymentInfo()" style="max-width:180px;">
+        <div class="hint" style="margin-top:2px;">Assumes the full purchase total was paid.</div>
+      </div>`;
     }
     html.push(summarySection('Invoice', started, body, 'invoice'));
   }
