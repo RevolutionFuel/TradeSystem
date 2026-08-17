@@ -10772,8 +10772,8 @@ async function renderVesselDocuments(item){
   if(!window.TS || !window.TS.getVesselDocuments){ container.innerHTML = '<div class="hint">Needs the database connection \u2014 not available right now.</div>'; return; }
   try{
     const docs = await window.TS.getVesselDocuments(item.id);
-    const cert = docs.find(d => d.documentType === 'certificate_of_registration');
-    const additional = docs.filter(d => d.documentType === 'additional');
+    const cert = docs.find(d => d.documentType === 'certificate_of_registry');
+    const additional = docs.filter(d => d.documentType === 'other');
     const certHtml = `<div style="margin-bottom:14px;">
       <div style="font-weight:600; font-size:12.5px; margin-bottom:4px;">Certificate of Registration</div>
       ${cert ? `<div style="font-size:12.5px; margin-bottom:4px;"><a href="#" onclick="openVesselDocumentLink('${escAttr(cert.path)}'); return false;">\ud83d\udcce ${escHtml(cert.label)}</a></div>` : '<div class="hint" style="margin-bottom:4px;">None yet.</div>'}
@@ -10813,7 +10813,7 @@ async function uploadVesselCertOfRegistration(vesselId, inputEl){
   try{
     const base64 = await blobToBase64(file);
     const extension = (file.name.split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g,'') || 'pdf';
-    await window.TS.uploadVesselDocument(vesselId, 'certificate_of_registration', 'Certificate of Registration.' + extension, base64, file.type || 'application/pdf', extension);
+    await window.TS.uploadVesselDocument(vesselId, 'certificate_of_registry', 'Certificate of Registration.' + extension, base64, file.type || 'application/pdf', extension);
     const schema = ITEM_DETAIL_SCHEMAS.vessel;
     const item = schema.getList().find(x => x.id === vesselId);
     if(item) await renderVesselDocuments(item);
@@ -10831,7 +10831,7 @@ async function uploadVesselAdditionalDocument(vesselId, inputEl){
   try{
     const base64 = await blobToBase64(file);
     const extension = (file.name.split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g,'') || 'pdf';
-    await window.TS.uploadVesselDocument(vesselId, 'additional', file.name, base64, file.type || 'application/pdf', extension);
+    await window.TS.uploadVesselDocument(vesselId, 'other', file.name, base64, file.type || 'application/pdf', extension);
     const schema = ITEM_DETAIL_SCHEMAS.vessel;
     const item = schema.getList().find(x => x.id === vesselId);
     if(item) await renderVesselDocuments(item);
