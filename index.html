@@ -10679,10 +10679,15 @@ function vesselRegistryDetailsHtml(item){
   if(item.draughtM) parts.push(roundToSigFigs(Number(item.draughtM), 3) + 'm draught');
   if(item.grossTonnage) parts.push(escHtml(String(item.grossTonnage)) + ' GT');
   if(item.yearBuilt) parts.push('Built ' + escHtml(String(item.yearBuilt)));
-  if(!parts.length) return '';
+  const formerNames = item.formerNames || [];
+  if(!parts.length && !formerNames.length) return '';
+  const formerNamesLine = formerNames.length
+    ? `<div class="item-detail-value" style="margin-top:4px; font-size:12.5px; color:var(--ink-soft);">Formerly: ${formerNames.map(fn => escHtml(fn.name) + (fn.yearUntil ? ` (until ${escHtml(String(fn.yearUntil))})` : '')).join(', ')}</div>`
+    : '';
   return `<div class="item-detail-field">
     <span class="item-detail-label">Registry details</span>
-    <div class="item-detail-value">${parts.join(' \u00b7 ')}</div>
+    ${parts.length ? `<div class="item-detail-value">${parts.join(' \u00b7 ')}</div>` : ''}
+    ${formerNamesLine}
     <div class="hint" style="margin-top:2px;">From the vessel registry.</div>
   </div>`;
 }
