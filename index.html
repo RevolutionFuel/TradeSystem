@@ -8279,7 +8279,23 @@ function closeStatusPickerOnce(){
   const menu = document.getElementById('statusPickerMenu');
   if(menu) menu.style.display = 'none';
 }
-function pickManualStatus(status){
+// Order-stage statuses only make real sense once a deal has an order
+// number - a deal manually set to one of these without a number would
+// still show up as an open enquiry on the dashboard (which classifies by
+// order number, not status), which is confusing since the status itself
+// says "Order" territory. Offers to auto-assign the next available number
+// on the spot, reusing the same mechanism a real confirmation already
+// triggers - but doesn't block setting the status either way, since there
+// might be a good reason to hold off.
+const ORDER_STAGE_STATUSES = ['Unconfirmed', 'Supplier Confirmed', 'Customer Confirmed', 'Fully Confirmed', 'Invoiced', 'Customer Paid', 'Supplier Paid', 'Fully Settled'];
+async function pickManualStatus(status){
+  if(ORDER_STAGE_STATUSES.includes(status) && !hasOrderNumberSet()){
+    const assign = confirm(`"${status}" is an order-stage status, but this deal doesn't have an order number yet — without one it'll still show up as an open enquiry on the dashboard, not as an order.\n\nAssign the next available order number now?`);
+    if(assign){
+      await ensureOrderNumberAssigned();
+      render();
+    }
+  }
   setManualStatus(status);
   closeStatusPickerOnce();
 }
