@@ -4010,7 +4010,12 @@ function vesselPaymentReference(vesselId){
   if(!v) return '';
   const idPart = v.imo || v.mmsi || '';
   if(!idPart) return '';
-  const flagCode = FLAG_NAME_TO_CODE[v.flag] || v.flag || '';
+  // Prefer the code stored directly on the vessel (set by "Check details
+  // from IMO", straight from VesselAPI) - only falls back to the small
+  // hardcoded name table for vessels that predate this or haven't been
+  // refreshed yet, which only covers the ~19 flags already seen in the
+  // fleet and can't be relied on for anything outside that set.
+  const flagCode = v.flagCode || FLAG_NAME_TO_CODE[v.flag] || v.flag || '';
   return idPart + flagCode;
 }
 // Prefers the vessel's own linked owner (kept correct by the owner picker
