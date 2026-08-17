@@ -6993,6 +6993,14 @@ function currentBrokerFullName(){
 // columns blank since none of that exists yet; the invoiced copy fills in
 // what's known by then (still leaving Amount Received/Rcvd Date/Paid Date
 // blank, since those are recorded later still, once money actually moves).
+// The spreadsheet convention uses spelled-out currency names, not the
+// 3-letter codes used everywhere else in the app (confirmed for EUR-vs-
+// EURO specifically; USD/GBP follow the same pattern as a reasonable
+// extrapolation, worth confirming if that assumption is wrong).
+const CURRENCY_DISPLAY_NAMES = { USD:'DOLLAR', EUR:'EURO', GBP:'POUND' };
+function currencyDisplayName(code){
+  return CURRENCY_DISPLAY_NAMES[code] || code || '';
+}
 function buildSpreadsheetRow(includeInvoiceFields){
   const vesselId = resolveVesselId();
   const orderNumberVal = fv('orderNumberSupply') || fv('orderNumberCustomer') || fv('orderNumberInvoice');
@@ -7006,13 +7014,13 @@ function buildSpreadsheetRow(includeInvoiceFields){
     fv('vessel') || '', fv('port') || '', totals.totalVolumeLitres != null ? String(totals.totalVolumeLitres) : '',
     brokerInitials(currentBrokerFullName()), getOrderStatus(),
     includeInvoiceFields ? todayIso : '',
-    fv('vOwner') || '', totals.salesCurrency || '', totals.salesTotal != null ? String(totals.salesTotal) : '',
+    fv('vOwner') || '', currencyDisplayName(totals.salesCurrency), totals.salesTotal != null ? String(totals.salesTotal) : '',
     includeInvoiceFields ? dueDates.customerDueDate : '',
     currentOrderAmountReceived != null ? String(currentOrderAmountReceived) : '',
     currentOrderReceivedDate || '',
     fv('supplierName') || '',
     includeInvoiceFields ? (fv('supplierInvoiceNumber') || '') : '',
-    totals.purchaseCurrency || '', totals.purchaseTotal != null ? String(totals.purchaseTotal) : '',
+    currencyDisplayName(totals.purchaseCurrency), totals.purchaseTotal != null ? String(totals.purchaseTotal) : '',
     includeInvoiceFields ? dueDates.supplierDueDate : '',
     ''
   ];
