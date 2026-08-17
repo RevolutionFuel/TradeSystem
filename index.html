@@ -427,7 +427,9 @@
      section layout and its links. */
   .summary-section{padding:14px 0; border-bottom:1px solid var(--line-soft);}
   .summary-section:last-child{border-bottom:none;}
-  .summary-section-head{font-family:var(--disp); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--teal-dark); margin-bottom:8px;}
+  .summary-section-head{font-family:var(--disp); font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--teal-dark); margin-bottom:10px; display:flex; align-items:center; gap:8px;}
+  .summary-status-dot{width:8px; height:8px; border-radius:50%; background:var(--line); flex-shrink:0;}
+  .summary-status-dot.is-started{background:#2E7D53;}
   .summary-empty{font-size:13px; color:var(--ink-soft); padding:4px 0;}
   .summary-link{color:var(--amber); font-weight:600; text-decoration:none;}
   .summary-link:hover{text-decoration:underline;}
@@ -4417,7 +4419,7 @@ const DASHBOARD_SORT_GETTERS = {
   sale: r => (r.salesTotal === null || r.salesTotal === undefined || r.salesTotal === '') ? null : Number(r.salesTotal),
   status: r => r.status || ''
 };
-let dashboardSort = { field: null, dir: 1 };
+let dashboardSort = { field: 'eta', dir: 1 };
 function sortDashboardRows(rows){
   const getter = DASHBOARD_SORT_GETTERS[dashboardSort.field];
   if(!getter) return rows;
@@ -9914,6 +9916,7 @@ function switchView(v){
   try{ localStorage.setItem('ts-last-view', v); }catch(e){ /* private browsing or similar - fine to just skip persistence */ }
   updatePanelHeightLock();
   scheduleStickyOffsetUpdate();
+  window.scrollTo(0, 0); // see the matching comment in switchOrderPage() - same stuck-scroll risk when switching into a locked page
 }
 function switchOrderPage(page){
   ['order','enquire','quote','supply','customer','invoice','summary'].forEach(p=>{
@@ -9937,6 +9940,14 @@ function switchOrderPage(page){
   }
   try{ localStorage.setItem('ts-last-order-page', page); }catch(e){ /* private browsing or similar - fine to skip */ }
   updatePanelHeightLock();
+  // Some pages (Order/Enquire/Quote/Supply/Customer/Invoice) lock body
+  // scroll on wide screens (see updatePanelHeightLock) - the Summary page
+  // doesn't, so navigating away from it while scrolled down used to leave
+  // the scroll position frozen wherever it was the moment overflow:hidden
+  // kicked in, with the top nav now unreachable above it and no way back
+  // up without a refresh. Resetting to the top on every page switch avoids
+  // that regardless of which page it's switching to or from.
+  window.scrollTo(0, 0);
 }
 function switchMgmt(which){
   ['vessels','registeredowners','suppliers','agents','ports','products','notes'].forEach(w=>{
@@ -9964,10 +9975,11 @@ function summaryField(label, safeValueHtml){
   return `<div class="item-detail-field"><span class="item-detail-label">${escHtml(label)}</span><div class="item-detail-value">${safeValueHtml}</div></div>`;
 }
 function summarySection(title, started, bodyHtml, gotoPage){
+  const dot = `<span class="summary-status-dot ${started ? 'is-started' : ''}" title="${started ? 'Started' : 'Not started yet'}"></span>`;
   if(started && bodyHtml){
-    return `<div class="summary-section"><div class="summary-section-head">${escHtml(title)}</div>${bodyHtml}</div>`;
+    return `<div class="summary-section"><div class="summary-section-head">${dot}${escHtml(title)}</div>${bodyHtml}</div>`;
   }
-  return `<div class="summary-section"><div class="summary-section-head">${escHtml(title)}</div>` +
+  return `<div class="summary-section"><div class="summary-section-head">${dot}${escHtml(title)}</div>` +
     `<div class="summary-empty">Not started yet. <a href="#" class="summary-goto" onclick="switchOrderPage('${gotoPage}'); return false;">Go to ${escHtml(title)} →</a></div></div>`;
 }
 // A clickable link into the shared item-detail page (Manage Lists
