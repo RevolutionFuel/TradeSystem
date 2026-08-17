@@ -7026,15 +7026,61 @@ function buildSpreadsheetRow(includeInvoiceFields){
     ''
   ];
 }
+// Per-column formatting, matching the management spreadsheet's own layout
+// exactly (columns A-W, in order) - background colour groups (A-I customer
+// deal info, J status + R-V supplier info, K-P invoicing info; Q and W
+// deliberately uncoloured, matching the spreadsheet), alignment (amounts
+// and dates right, everything else centred except A-C left), and which
+// columns hold a plain number that needs 2-decimal/comma formatting rather
+// than being left as text.
+const SPREADSHEET_COLUMN_META = [
+  {align:'left',   bg:'#DCE6F1'}, // A - Order Number
+  {align:'left',   bg:'#DCE6F1'}, // B - Order Part
+  {align:'left',   bg:'#DCE6F1'}, // C - Reference
+  {align:'right',  bg:'#DCE6F1'}, // D - Order Date
+  {align:'right',  bg:'#DCE6F1'}, // E - Del Date
+  {align:'center', bg:'#DCE6F1'}, // F - Vessel
+  {align:'center', bg:'#DCE6F1'}, // G - Port
+  {align:'right',  bg:'#DCE6F1', number:true}, // H - Total Volume
+  {align:'center', bg:'#DCE6F1'}, // I - Broker
+  {align:'center', bg:'#FCE4D6'}, // J - Status (left blank, see buildSpreadsheetRow)
+  {align:'right',  bg:'#FFF3FF'}, // K - Inv Date
+  {align:'center', bg:'#FFF3FF'}, // L - Customer
+  {align:'center', bg:'#FFF3FF'}, // M - CUR (sales)
+  {align:'right',  bg:'#FFF3FF', number:true}, // N - Sales Total
+  {align:'right',  bg:'#FFF3FF'}, // O - Due Date (customer)
+  {align:'right',  bg:'#FFF3FF', number:true}, // P - Amount Received
+  {align:'right',  bg:null},      // Q - Rcvd Date (deliberately uncoloured, matching the sheet)
+  {align:'center', bg:'#FCE4D6'}, // R - Supplier
+  {align:'center', bg:'#FCE4D6'}, // S - Invoice No
+  {align:'center', bg:'#FCE4D6'}, // T - CUR (purchase)
+  {align:'right',  bg:'#FCE4D6', number:true}, // U - Purchase Total
+  {align:'right',  bg:'#FCE4D6'}, // V - Due Date (supplier)
+  {align:'right',  bg:null}       // W - Paid Date (deliberately uncoloured, matching the sheet)
+];
+// 2 decimal places, comma thousands separator - applied to every numeric
+// column regardless of what it represents (volume, totals, amount
+// received), matching "all the numbers" rather than only currency totals.
+function formatSpreadsheetNumber(v){
+  const n = Number(v);
+  if(v === '' || isNaN(n)) return v;
+  return n.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+}
 // Copies as real HTML (a one-row table) alongside a tab-separated plain-
 // text fallback, via the multi-format clipboard write - this is what lets
-// the red/blue text colour survive the paste into Excel/Sheets, which a
+// the red/blue text colour, Calibri 12pt font, per-column background
+// colours, and alignment all survive the paste into Excel/Sheets, which a
 // plain writeText() call can't carry.
 async function copyOrderRowForSpreadsheet(includeInvoiceFields, color, btnEl){
   const row = buildSpreadsheetRow(includeInvoiceFields);
   const plainText = row.join('\t');
-  const cellsHtml = row.map(v => `<td>${escHtml(String(v))}</td>`).join('');
-  const html = `<table><tr style="color:${color};">${cellsHtml}</tr></table>`;
+  const cellsHtml = row.map((v, i) => {
+    const meta = SPREADSHEET_COLUMN_META[i] || {align:'center', bg:null};
+    const displayValue = meta.number ? formatSpreadsheetNumber(v) : v;
+    const bgStyle = meta.bg ? `background-color:${meta.bg};` : '';
+    return `<td style="font-family:Calibri, sans-serif; font-size:12pt; text-align:${meta.align}; ${bgStyle}">${escHtml(String(displayValue))}</td>`;
+  }).join('');
+  const html = `<table><tr style="color:${color}; font-family:Calibri, sans-serif; font-size:12pt;">${cellsHtml}</tr></table>`;
   try{
     if(navigator.clipboard && window.ClipboardItem){
       await navigator.clipboard.write([
