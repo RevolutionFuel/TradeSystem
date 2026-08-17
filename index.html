@@ -51,6 +51,7 @@
     background-repeat: no-repeat;
   }
   .app{max-width:1220px; margin:0 auto; padding:0 18px 100px;}
+  @media (min-width:1600px){ .app{max-width:1440px;} }
   header.top{
     margin: 0 0 12px; padding: 0;
   }
@@ -100,6 +101,7 @@
   .unsaved-banner{display:inline-flex; align-items:center; gap:6px; background:#FCE8E6; color:#B3492E; border:1px solid #E5A099; font-weight:700; font-size:12px; padding:8px 14px; border-radius:20px; white-space:nowrap;}
   .dashboard-filter-bar{margin:14px 0 20px;}
   .dashboard-filter-bar select{background:#fff; border:1px solid var(--line); color:var(--teal-dark); font-size:13px; font-weight:600; padding:9px 14px; border-radius:8px; cursor:pointer; font-family:inherit; min-width:220px;}
+  .dashboard-section-heading{font-size:15px; font-weight:700; color:var(--teal-dark); margin:0 0 10px; padding-bottom:6px; border-bottom:2px solid var(--line);}
   .dashboard-table{width:100%; border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,0.12); table-layout:fixed; font-size:11px;}
   .dashboard-table th{text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-soft); padding:6px 8px; border-bottom:2px solid var(--line); cursor:pointer; user-select:none; word-break:break-word; overflow-wrap:break-word;}
   .dashboard-table th:hover{color:var(--teal-dark);}
@@ -132,7 +134,7 @@
   .missing-data-warning ul{margin:0; padding-left:20px; color:#8a2e22; font-size:12.5px; line-height:1.6;}
   .missing-data-link{color:#8a2e22; text-decoration:underline; cursor:pointer;}
   .missing-data-link:hover{color:#5c1e15;}
-  .status-picker-menu{position:absolute; top:calc(100% + 6px); left:0; z-index:20; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,0.18); padding:6px; min-width:190px; max-height:320px; overflow-y:auto;}
+  .status-picker-menu{position:absolute; top:calc(100% + 6px); right:0; z-index:20; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,0.18); padding:6px; min-width:190px; max-height:320px; overflow-y:auto;}
   .status-picker-item{display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:6px; font-size:13px; color:var(--ink); cursor:pointer; white-space:nowrap;}
   .status-picker-item:hover{background:var(--brand-purple-soft);}
   .status-picker-item.current{font-weight:700; background:var(--amber-soft);}
@@ -4289,19 +4291,21 @@ async function saveOrderPaymentInfo(){
 
 /* ===================== MANAGE DASHBOARD (enquiries/orders list) ===================== */
 let dashboardRows = [];
-let dashboardActiveFilter = 'open_enquiries';
+let dashboardActiveFilter = 'home';
 // Each filter is just a predicate over the same flat row shape listOrders()
 // already returns — "order" here means "has a real order_number assigned",
 // matching how the rest of the app already distinguishes a draft enquiry
 // from a confirmed order, rather than inferring it from status alone.
+// 'home' is handled specially in renderDashboardList() (two sections, not
+// a single filtered table) rather than as a predicate here.
 const DASHBOARD_FILTERS = [
-  { key:'open_enquiries', label:'Open enquiries', test:r => !r.orderNumber && r.status!=='dead' && r.status!=='cancelled' },
-  { key:'unbilled_orders', label:'Unbilled orders', test:r => !!r.orderNumber && !r.invoiceNumber && r.status!=='dead' && r.status!=='cancelled' },
-  { key:'unpaid_suppliers', label:'Unpaid suppliers', test:r => !!r.orderNumber && !r.paidDate && r.status!=='dead' && r.status!=='cancelled' },
-  { key:'unpaid_customers', label:'Unpaid customers', test:r => !!r.orderNumber && !r.receivedDate && r.status!=='dead' && r.status!=='cancelled' },
-  { key:'all_unpaid', label:'All unpaid', test:r => !!r.orderNumber && (!r.paidDate || !r.receivedDate) && r.status!=='dead' && r.status!=='cancelled' },
-  { key:'dead_enquiries', label:'Dead enquiries', test:r => r.status==='dead' },
-  { key:'cancelled_orders', label:'Cancelled orders', test:r => r.status==='cancelled' },
+  { key:'home', label:'Dashboard (open enquiries + unbilled orders)' },
+  { key:'open_enquiries', label:'Open enquiries', test:r => !r.orderNumber && r.status!=='cancelled' },
+  { key:'unbilled_orders', label:'Unbilled orders', test:r => !!r.orderNumber && !r.invoiceNumber && r.status!=='cancelled' },
+  { key:'unpaid_suppliers', label:'Unpaid suppliers', test:r => !!r.orderNumber && !r.paidDate && r.status!=='cancelled' },
+  { key:'unpaid_customers', label:'Unpaid customers', test:r => !!r.orderNumber && !r.receivedDate && r.status!=='cancelled' },
+  { key:'all_unpaid', label:'All unpaid', test:r => !!r.orderNumber && (!r.paidDate || !r.receivedDate) && r.status!=='cancelled' },
+  { key:'cancelled', label:'Cancelled', test:r => r.status==='cancelled' },
   { key:'all_orders', label:'All orders', test:r => !!r.orderNumber },
   { key:'all_enquiries', label:'All enquiries', test:r => !r.orderNumber },
   { key:'all', label:'All', test:r => true }
@@ -4460,40 +4464,39 @@ function setDashboardFilter(key){
 }
 function renderDashboardList(){
   const container = document.getElementById('dashboardListContainer');
-  const filterDef = DASHBOARD_FILTERS.find(f=>f.key===dashboardActiveFilter) || DASHBOARD_FILTERS[0];
+  const availableWidth = container.clientWidth || window.innerWidth;
+  if(dashboardActiveFilter === 'home'){
+    const openEnquiries = sortDashboardRows(dashboardRows.filter(r => !r.orderNumber && r.status!=='cancelled'));
+    const unbilledOrders = sortDashboardRows(dashboardRows.filter(r => !!r.orderNumber && !r.invoiceNumber && r.status!=='cancelled'));
+    container.innerHTML =
+      `<div class="dashboard-section-heading">Open enquiries</div>` +
+      (openEnquiries.length ? dashboardTableHtml(openEnquiries, availableWidth) : `<div class="hint">No open enquiries right now.</div>`) +
+      `<div class="dashboard-section-heading" style="margin-top:20px;">Unbilled orders</div>` +
+      (unbilledOrders.length ? dashboardTableHtml(unbilledOrders, availableWidth) : `<div class="hint">No unbilled orders right now.</div>`);
+    return;
+  }
+  const filterDef = DASHBOARD_FILTERS.find(f=>f.key===dashboardActiveFilter) || DASHBOARD_FILTERS[1];
   let rows = dashboardRows.filter(filterDef.test);
   rows = sortDashboardRows(rows);
   if(!rows.length){
     container.innerHTML = '<div class="hint">Nothing here right now.</div>';
     return;
   }
-  // Below this width, several columns are combined into stacked pairs/
-  // triples rather than just shrinking further - ten-plus columns of real
-  // content (reference, vessel, port, customer, supplier, ETA, purchase,
-  // sale, status, delete) doesn't fit even a small laptop screen at any
-  // readable font size, not just a phone - this was originally gated at
-  // 640px (phone-only), which left it overflowing on laptop widths between
-  // that and full desktop. Re-checked on resize (see
-  // scheduleDashboardRerender) so resizing the browser window switches
-  // layouts live.
-  // Compares against the CONTAINER's actual rendered width, not
-  // window.innerWidth - the app itself is capped at max-width:1220px (see
-  // .app), so on any screen wider than that the available space stops
-  // growing at ~1184px regardless of how wide the monitor actually is.
-  // Comparing against window.innerWidth directly (the original approach)
-  // meant this never actually triggered on ordinary laptop/desktop screens,
-  // since their viewport width is well above any reasonable threshold even
-  // though the rendered content area is capped much narrower - this table
-  // genuinely doesn't have room for its 10-column full layout within that
-  // cap, so it needs the real available width, not the screen's.
-  const availableWidth = container.clientWidth || window.innerWidth;
-  // The app's own max-width:1220px cap means available space never exceeds
-  // ~1184px on any screen, however wide - this table's full 10-column
-  // layout needs more room than that, so compact mode is effectively
-  // always in effect today. The threshold still sits just above that cap
-  // (rather than hardcoding compact=true) so this adapts correctly if
-  // .app's max-width is ever increased later, instead of silently staying
-  // wrong the way the previous window.innerWidth-based check did.
+  container.innerHTML = dashboardTableHtml(rows, availableWidth);
+}
+// Below this width, several columns are combined into stacked pairs/
+// triples rather than just shrinking further - ten-plus columns of real
+// content (reference, vessel, port, customer, supplier, ETA, purchase,
+// sale, status) doesn't fit even a small laptop screen at any readable
+// font size, not just a phone - this was originally gated at 640px
+// (phone-only), which left it overflowing on laptop widths between that
+// and full desktop. Re-checked on resize (see scheduleDashboardRerender)
+// so resizing the browser window switches layouts live.
+// Compares against the container's actual rendered width, not
+// window.innerWidth - the app itself is capped at max-width (see .app),
+// so on any screen wider than that the available space stops growing
+// regardless of how wide the monitor actually is.
+function dashboardTableHtml(rows, availableWidth){
   const compact = availableWidth <= 1200;
   function th(field, label, width){
     const style = width ? ` style="width:${width}"` : '';
@@ -4513,12 +4516,12 @@ function renderDashboardList(){
   }
   // table-layout:fixed (needed so stacked cells wrap sanely) otherwise
   // divides space equally across every column regardless of what it
-  // actually holds - Status and the delete button need far less room than
-  // Vessel/Customer's stacked, often-long content, so without explicit
-  // widths here the compact layout left a lot of visibly wasted space on
-  // the right rather than actually using it for the columns that need it.
+  // actually holds - Status needs far less room than Vessel/Customer's
+  // stacked, often-long content, so without explicit widths here the
+  // compact layout left a lot of visibly wasted space on the right rather
+  // than actually using it for the columns that need it.
   const headHtml = compact
-    ? th('reference','Reference','15%') + thStacked('27%','vessel','Vessel','port','Port','eta','ETA') + thStacked('30%','customer','Customer','supplier','Supplier') + thStacked('16%','purchase','Purchase','sale','Sale') + th('status','Status','8%')
+    ? th('reference','Reference','15%') + thStacked('27%','vessel','Vessel','port','Port','eta','ETA') + thStacked('30%','customer','Customer','supplier','Supplier') + thStacked('16%','purchase','Purchase','sale','Sale') + th('status','Status','12%')
     : th('reference','Reference') + th('vessel','Vessel') + th('port','Port') + th('customer','Customer') + th('supplier','Supplier') + th('eta','ETA / Delivery') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status');
   const bodyHtml = rows.map(r=>{
     const dateText = fmtDashboardDate(r.deliveryDate || r.eta);
@@ -4544,7 +4547,7 @@ function renderDashboardList(){
       <td>${escHtml(saleText)}</td>
       ${statusCell}</tr>`;
   }).join('');
-  container.innerHTML = `<table class="dashboard-table">
+  return `<table class="dashboard-table">
     <thead><tr>${headHtml}</tr></thead>
     <tbody>${bodyHtml}</tbody>
   </table>`;
