@@ -7078,7 +7078,8 @@ function computeInvoiceData(){
   const deliveryDateIso = fv('finalETA') || fv('eta');
   const dueDateObj = computeDueDate(deliveryDateIso, getPaymentLine(), today);
   const orderRef = fv('orderNumberInvoice') || fv('quoteRef') || '';
-  const invoiceNumber = orderRef ? `${orderRef}-${(fv('vIMO')||'').slice(-6)}`.replace(/-$/,'') : `RFM-${today.getFullYear()}-DRAFT`;
+  const vesselRef = vesselPaymentReference(resolveVesselId());
+  const invoiceNumber = orderRef ? `${orderRef}-${vesselRef}`.replace(/-$/,'') : `RFM-${today.getFullYear()}-DRAFT`;
 
   return {invType, isCommission, title, vesselName, billLines, rows, productRows, anyExcluded, currency, total, today, deliveryDateIso, dueDateObj, invoiceNumber};
 }
@@ -11912,6 +11913,7 @@ async function applyQuoteState(data){
 
   document.getElementById('orderNumberSupply').value = data.orderNumber || '';
   document.getElementById('orderNumberCustomer').value = data.orderNumber || '';
+  document.getElementById('orderNumberInvoice').value = data.orderNumber || '';
 
   document.getElementById('supplierName').value = data.supplierName || '';
   document.getElementById('supplierNameOrder').value = data.supplierName || '';
