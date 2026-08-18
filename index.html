@@ -669,7 +669,6 @@
             <div id="missingDataWarningEnquire"></div>
             <div class="draft-options">
               <label class="opt-inline"><input type="checkbox" id="openDraftToSendEnquire" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
-              <label class="opt-inline"><input type="checkbox" id="attachSpecsEnquire" onchange="onDraftOptionChange()"> Attach spec sheets</label>
             </div>
             <div class="copybar">
               <button class="btn-amber" id="draftEnquireOutlookBtn" onclick="draftEnquireInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
@@ -865,6 +864,7 @@
           <div class="draft-options">
             <label class="opt-inline"><input type="checkbox" id="openDraftToSendQuote" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
             <label class="opt-inline"><input type="checkbox" id="attachPdfQuote" onchange="onDraftOptionChange()"> Attach PDF to the draft</label>
+            <label class="opt-inline"><input type="checkbox" id="attachSpecsQuote" onchange="onDraftOptionChange()"> Attach spec sheets</label>
           </div>
           <div class="copybar">
             <button class="btn-amber" id="draftQuoteOutlookBtn" onclick="draftQuoteInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
@@ -2058,15 +2058,17 @@ async function draftInOutlookGeneric(opts){
       if(btn) btn.textContent = 'Drafting...';
     }
 
-    // Spec sheets — opt-in, offered on Enquire and Customer Confirmation
-    // (see opts.attachSpecsCheckboxId, only passed for those two pages).
-    // Previously this attached to EVERY draft type whenever a product had
-    // "Specifications attached" ticked, including Supplier Confirmation,
-    // where the supplier obviously doesn't need their own spec sheet sent
-    // back to them - and a failed fetch for one of those files could
-    // surface as an opaque "Failed to fetch" error blocking an unrelated
-    // draft. Off by default on both pages it's offered on, since most
-    // drafts don't need it attached.
+    // Spec sheets — opt-in, offered on Quote and Customer Confirmation (see
+    // opts.attachSpecsCheckboxId, only passed for those two pages) - the
+    // customer needs the specs, not the supplier, so this was deliberately
+    // never offered on Enquire or Supplier Confirmation. Previously this
+    // attached to EVERY draft type whenever a product had "Specifications
+    // attached" ticked, including Supplier Confirmation, where the
+    // supplier obviously doesn't need their own spec sheet sent back to
+    // them - and a failed fetch for one of those files could surface as an
+    // opaque "Failed to fetch" error blocking an unrelated draft. Off by
+    // default on both pages it's offered on, since most drafts don't need
+    // it attached.
     const attachSpecsCb = opts.attachSpecsCheckboxId ? document.getElementById(opts.attachSpecsCheckboxId) : null;
     const specProducts = (attachSpecsCb && attachSpecsCb.checked) ? (productBlocks||[]).filter(b => b.specsAttached && b.specSheets && b.specSheets.length) : [];
     if(specProducts.length && window.TS && window.TS.getSpecSheetUrl){
@@ -2180,8 +2182,7 @@ function draftEnquireInOutlook(){
   return draftInOutlookGeneric({
     btnId: 'draftEnquireOutlookBtn', openCheckboxId: 'openDraftToSendEnquire',
     page: 'enquire', buildHtml: buildEnquiryEmailHtml,
-    subject: buildDraftSubject('Enquiry', false),
-    attachSpecsCheckboxId: 'attachSpecsEnquire'
+    subject: buildDraftSubject('Enquiry', false)
   });
 }
 function draftQuoteInOutlook(){
@@ -2190,7 +2191,7 @@ function draftQuoteInOutlook(){
     btnId: 'draftQuoteOutlookBtn', openCheckboxId: 'openDraftToSendQuote',
     page: 'quote', buildHtml: buildEmailHtml,
     subject: buildDraftSubject('Quotation', false),
-    pdfDocType: 'quotation', attachCheckboxId: 'attachPdfQuote'
+    pdfDocType: 'quotation', attachCheckboxId: 'attachPdfQuote', attachSpecsCheckboxId: 'attachSpecsQuote'
   });
 }
 function draftSupplyInOutlook(){
