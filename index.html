@@ -669,6 +669,7 @@
             <div id="missingDataWarningEnquire"></div>
             <div class="draft-options">
               <label class="opt-inline"><input type="checkbox" id="openDraftToSendEnquire" checked onchange="onDraftOptionChange()"> Open draft to review &amp; send</label>
+              <label class="opt-inline"><input type="checkbox" id="attachSpecsEnquire" onchange="onDraftOptionChange()"> Attach spec sheets</label>
             </div>
             <div class="copybar">
               <button class="btn-amber" id="draftEnquireOutlookBtn" onclick="draftEnquireInOutlook()" title="Creates a real draft in your connected Outlook mailbox">✉️ Draft in Outlook</button>
@@ -1891,21 +1892,42 @@ async function getGraphToken(){
 // Selected correspondence contacts only ever store {name, jobTitle} (kept
 // deliberately minimal for Save/Load) — never an email or which parent
 // they came from. Resolved here by re-fetching this order's actual
-// vessel/owner contacts and matching by name+jobTitle — the same approach
-// already used for the Summary tab's contact links.
-async function resolveSelectedContactEmails(selectedContacts){
-  if(!selectedContacts.length || !window.TS || !window.TS.fetchContacts) return [];
-  const { vesselId, ownerId } = currentVesselAndOwnerIds();
-  if(!vesselId && !ownerId) return [];
+// contacts and matching by name+jobTitle — the same approach already used
+// for the Summary tab's contact links.
+//
+// Takes the page identifier (not the raw contact list) so it can look up
+// the correct organization per CONTACT_PICKER_PAGES[page].source: Enquire
+// and Supply's contacts come from the supplier, not the vessel's
+// registered owner. Resolving via currentVesselAndOwnerIds() regardless of
+// page — as this used to do — meant a supplier contact picked on Enquire
+// could never actually be matched here, since the supplier's contacts
+// were never even fetched; the "to" list would end up silently empty.
+// Returns both lists in one fetch since a to/cc split only differs by
+// which selection array is matched against, not by data source.
+async function resolveSelectedContactEmails(page){
+  const toContacts = contactsListForPage(page, 'to');
+  const ccContacts = contactsListForPage(page, 'cc');
+  if((!toContacts.length && !ccContacts.length) || !window.TS || !window.TS.fetchContacts) return { toEmails: [], ccEmails: [] };
+  const { source } = CONTACT_PICKER_PAGES[page];
+  let vesselId = null, ownerId = null;
+  if(source === 'supplier'){
+    ownerId = currentSupplierIdForPage(page);
+  } else {
+    ({ vesselId, ownerId } = currentVesselAndOwnerIds());
+  }
+  if(!vesselId && !ownerId) return { toEmails: [], ccEmails: [] };
   let fetched;
-  try{ fetched = await window.TS.fetchContacts(vesselId, ownerId); }catch(e){ return []; }
+  try{ fetched = await window.TS.fetchContacts(vesselId, ownerId); }catch(e){ return { toEmails: [], ccEmails: [] }; }
   const all = [...(fetched.vesselContacts||[]), ...(fetched.orgContacts||[])];
-  const emails = [];
-  selectedContacts.forEach(sel=>{
-    const match = all.find(c=>c.name===sel.name && c.jobTitle===sel.jobTitle);
-    if(match && match.email) emails.push(match.email);
-  });
-  return emails;
+  const resolve = (selected) => {
+    const emails = [];
+    selected.forEach(sel=>{
+      const match = all.find(c=>c.name===sel.name && c.jobTitle===sel.jobTitle);
+      if(match && match.email) emails.push(match.email);
+    });
+    return emails;
+  };
+  return { toEmails: resolve(toContacts), ccEmails: resolve(ccContacts) };
 }
 
 // Subject formats, exactly as specified: "[Vessel] [Port] {Word} - Revolution
@@ -2001,10 +2023,11 @@ async function draftInOutlookGeneric(opts){
   if(btn){ btn.disabled = true; btn.textContent = 'Drafting...'; }
   try{
     const token = await getGraphToken();
-    const toEmails = await resolveSelectedContactEmails(opts.contacts);
+    const { toEmails, ccEmails: pickedCcEmails } = await resolveSelectedContactEmails(opts.page);
     if(!toEmails.length){
-      const msg = opts.contacts.length
-        ? 'None of the selected contacts have an email on file, so the draft will open with no recipient filled in — you\'ll need to add one yourself in Outlook.\n\nContinue anyway?'
+      const toContacts = contactsListForPage(opts.page, 'to');
+      const msg = toContacts.length
+        ? 'None of the selected "To" contacts have an email on file, so the draft will open with no recipient filled in — you\'ll need to add one yourself in Outlook.\n\nContinue anyway?'
         : 'No recipient has been picked, so the draft will open with no one in the To field — you\'ll need to add someone yourself in Outlook.\n\nContinue anyway?';
       const proceed = confirm(msg);
       if(!proceed){ if(btn){ btn.disabled=false; btn.textContent = originalLabel; } return; }
@@ -2035,19 +2058,39 @@ async function draftInOutlookGeneric(opts){
       if(btn) btn.textContent = 'Drafting...';
     }
 
-    // Spec sheets — opt-in, and only offered on Customer Confirmation (see
-    // opts.attachSpecsCheckboxId, only passed for that page). Previously
-    // this attached to EVERY draft type whenever a product had
+    // Spec sheets — opt-in, offered on Enquire and Customer Confirmation
+    // (see opts.attachSpecsCheckboxId, only passed for those two pages).
+    // Previously this attached to EVERY draft type whenever a product had
     // "Specifications attached" ticked, including Supplier Confirmation,
     // where the supplier obviously doesn't need their own spec sheet sent
     // back to them - and a failed fetch for one of those files could
     // surface as an opaque "Failed to fetch" error blocking an unrelated
-    // draft. Off by default even on Customer Confirmation, since most
-    // customer confirmations don't need it attached.
+    // draft. Off by default on both pages it's offered on, since most
+    // drafts don't need it attached.
     const attachSpecsCb = opts.attachSpecsCheckboxId ? document.getElementById(opts.attachSpecsCheckboxId) : null;
     const specProducts = (attachSpecsCb && attachSpecsCb.checked) ? (productBlocks||[]).filter(b => b.specsAttached && b.specSheets && b.specSheets.length) : [];
     if(specProducts.length && window.TS && window.TS.getSpecSheetUrl){
       if(btn) btn.textContent = 'Attaching spec sheets...';
+      // Each product's own spec sheets are already disambiguated against
+      // each other at upload time (see uploadProductSpecSheet), but that
+      // numbering is scoped to a single product block — it doesn't know
+      // about sibling blocks. Two separate line items sharing the same
+      // Port + Grade (e.g. a split delivery with two MGO entries) would
+      // otherwise both produce "[Port] MGO Specs.pdf" and collide once
+      // attached to the same email. Tracked here, across every sheet being
+      // attached to this specific draft, so a repeat gets " (2)", " (3)"
+      // etc. appended regardless of which product block it came from.
+      const usedAttachmentNames = new Set();
+      const uniqueAttachmentName = (name) => {
+        if(!usedAttachmentNames.has(name)){ usedAttachmentNames.add(name); return name; }
+        const dotIdx = name.lastIndexOf('.');
+        const stem = dotIdx > -1 ? name.slice(0, dotIdx) : name;
+        const ext = dotIdx > -1 ? name.slice(dotIdx) : '';
+        let n = 2, candidate;
+        do { candidate = `${stem} (${n})${ext}`; n++; } while(usedAttachmentNames.has(candidate));
+        usedAttachmentNames.add(candidate);
+        return candidate;
+      };
       for(const b of specProducts){
         for(const sheet of b.specSheets){
           try{
@@ -2057,7 +2100,7 @@ async function draftInOutlookGeneric(opts){
             const base64 = await blobToBase64(blob);
             attachments.push({
               '@odata.type': '#microsoft.graph.fileAttachment',
-              name: sheet.displayName || 'Spec sheet.pdf',
+              name: uniqueAttachmentName(sheet.displayName || 'Spec sheet.pdf'),
               contentType: blob.type || 'application/octet-stream',
               contentBytes: base64
             });
@@ -2081,8 +2124,17 @@ async function draftInOutlookGeneric(opts){
     // Invoices CC accounts@ instead of the other broker - everything else
     // CCs whichever of the two brokers isn't the one currently sending, so
     // both people stay in the loop on deals either of them is running.
-    const ccAddress = draftCcAddressFor(opts.pdfDocType);
-    if(ccAddress) message.ccRecipients = [{ emailAddress: { address: ccAddress } }];
+    // Merged with whichever contacts were explicitly ticked "Cc" in the
+    // picker — a contact can't be on both lists (toggleContactSelection
+    // enforces that), but a picked cc contact could in principle share an
+    // email with the broker cc address or a "to" recipient, so both are
+    // deduped out here rather than sent as a redundant duplicate entry.
+    const brokerCcAddress = draftCcAddressFor(opts.pdfDocType);
+    const ccEmailMap = new Map(); // lowercase -> original-case email, so dedup is case-insensitive but the sent address keeps its original casing
+    if(brokerCcAddress) ccEmailMap.set(brokerCcAddress.toLowerCase(), brokerCcAddress);
+    pickedCcEmails.forEach(e => ccEmailMap.set(e.toLowerCase(), e));
+    toEmails.forEach(e => ccEmailMap.delete(e.toLowerCase()));
+    if(ccEmailMap.size) message.ccRecipients = Array.from(ccEmailMap.values()).map(address=>({ emailAddress: { address } }));
     if(attachments.length) message.attachments = attachments;
     let res;
     try{
@@ -2127,15 +2179,16 @@ function draftEnquireInOutlook(){
   if(confirmProgressStatus('enquire')) markStatus('awaitingPrices');
   return draftInOutlookGeneric({
     btnId: 'draftEnquireOutlookBtn', openCheckboxId: 'openDraftToSendEnquire',
-    contacts: enqSelectedContacts, buildHtml: buildEnquiryEmailHtml,
-    subject: buildDraftSubject('Enquiry', false)
+    page: 'enquire', buildHtml: buildEnquiryEmailHtml,
+    subject: buildDraftSubject('Enquiry', false),
+    attachSpecsCheckboxId: 'attachSpecsEnquire'
   });
 }
 function draftQuoteInOutlook(){
   if(confirmProgressStatus('quote')) markStatus('quoted');
   return draftInOutlookGeneric({
     btnId: 'draftQuoteOutlookBtn', openCheckboxId: 'openDraftToSendQuote',
-    contacts: quoteSelectedContacts, buildHtml: buildEmailHtml,
+    page: 'quote', buildHtml: buildEmailHtml,
     subject: buildDraftSubject('Quotation', false),
     pdfDocType: 'quotation', attachCheckboxId: 'attachPdfQuote'
   });
@@ -2144,7 +2197,7 @@ function draftSupplyInOutlook(){
   markSupplierConfirmedForCurrentView();
   return draftInOutlookGeneric({
     btnId: 'draftSupplyOutlookBtn', openCheckboxId: 'openDraftToSendSupply',
-    contacts: supSelectedContacts, buildHtml: buildSupplyEmailHtml,
+    page: 'supply', buildHtml: buildSupplyEmailHtml,
     subject: buildDraftSubject('Nomination', false),
     pdfDocType: 'supplier', attachCheckboxId: 'attachPdfSupply'
   });
@@ -2153,7 +2206,7 @@ function draftCustomerInOutlook(){
   confirmCustomerAndAssignOrderNumber();
   return draftInOutlookGeneric({
     btnId: 'draftCustomerOutlookBtn', openCheckboxId: 'openDraftToSendCustomer',
-    contacts: custSelectedContacts, buildHtml: buildCustomerEmailHtml,
+    page: 'customer', buildHtml: buildCustomerEmailHtml,
     subject: buildDraftSubject('Fuel Confirmation', true),
     pdfDocType: 'customer', attachCheckboxId: 'attachPdfCustomer', attachSpecsCheckboxId: 'attachSpecsCustomer'
   });
@@ -2162,7 +2215,7 @@ function draftInvoiceInOutlook(){
   if(getInvoiceType()==='invoice' && confirmProgressStatus('invoice')) markStatus('invoiced');
   return draftInOutlookGeneric({
     btnId: 'draftInvoiceOutlookBtn', openCheckboxId: 'openDraftToSendInvoice',
-    contacts: custSelectedContacts, buildHtml: buildInvoiceEmailHtml,
+    page: 'customer', buildHtml: buildInvoiceEmailHtml,
     subject: buildDraftSubject('Fuel Invoice', true),
     pdfDocType: 'invoice', alwaysAttachPdf: true
   });
@@ -3599,6 +3652,14 @@ let quoteSelectedContacts = [];
 let custSelectedContacts = [];
 let enqSelectedContacts = [];
 let supSelectedContacts = [];
+// CC lists — same shape and per-page independence as the "to" lists above,
+// but these contacts are copied on the email without being addressed in
+// the salutation. A contact can be on the "to" list or the "cc" list, never
+// both at once (see toggleContactSelection/toggleContactCcSelection).
+let quoteCcContacts = [];
+let custCcContacts = [];
+let enqCcContacts = [];
+let supCcContacts = [];
 // "Default, then diverge" for Supply's contacts, same pattern as its
 // payment terms/signature/formatting — Supply starts out following
 // whatever's picked on Enquire (the same supplier, so the same contact is
@@ -3617,10 +3678,18 @@ const CONTACT_PICKER_PAGES = {
   enquire:  { containerId:'contactPickerEnquire',  greetingId:'enqGreeting',  renderFn:'renderEnquiry',  source:'supplier' },
   supply:   { containerId:'contactPickerSupply',   greetingId:'supGreeting',  renderFn:'renderSupply',   source:'supplier' }
 };
-function contactsListForPage(page){
+function contactsListForPage(page, listKind){
+  if(listKind === 'cc') return { quote:quoteCcContacts, customer:custCcContacts, enquire:enqCcContacts, supply:supCcContacts }[page];
   return { quote:quoteSelectedContacts, customer:custSelectedContacts, enquire:enqSelectedContacts, supply:supSelectedContacts }[page];
 }
-function setContactsListForPage(page, list){
+function setContactsListForPage(page, list, listKind){
+  if(listKind === 'cc'){
+    if(page==='quote') quoteCcContacts = list;
+    else if(page==='customer') custCcContacts = list;
+    else if(page==='enquire') enqCcContacts = list;
+    else if(page==='supply') supCcContacts = list;
+    return;
+  }
   if(page==='quote') quoteSelectedContacts = list;
   else if(page==='customer') custSelectedContacts = list;
   else if(page==='enquire') enqSelectedContacts = list;
@@ -3717,16 +3786,27 @@ function renderContactPicker(page, result){
   const { containerId, source } = CONTACT_PICKER_PAGES[page];
   const container = document.getElementById(containerId);
   if(!container) return;
-  const selected = contactsListForPage(page);
-  const isChecked = c => selected.some(s => s.name === c.name && s.jobTitle === c.jobTitle);
+  const selectedTo = contactsListForPage(page, 'to');
+  const selectedCc = contactsListForPage(page, 'cc');
+  const isChecked = (list, c) => list.some(s => s.name === c.name && s.jobTitle === c.jobTitle);
   const group = (title, contacts, targetKind) => {
     const noDefaultYet = contacts.length > 1 && !contacts.some(c=>c.isPrimary);
-    const rows = contacts.length ? contacts.map(c=>`
-        <label class="opt-inline" style="display:block; margin-bottom:2px;">
-          <input type="checkbox" ${isChecked(c)?'checked':''} onchange="toggleContactSelection('${page}', ${escAttr(JSON.stringify({id:c.id, name:c.name, jobTitle:c.jobTitle, alias:c.alias||''}))}, this.checked, '${targetKind}')">
-          ${escHtml(contactDisplayName(c))}${c.alias ? ` <span style="color:var(--ink-soft); font-size:11px;">(as "${escHtml(c.alias)}")</span>` : ''}${c.isPrimary ? ' <span style="color:var(--ink-soft); font-size:11px;">(default)</span>' : ''}
-        </label>
-      `).join('') : `<div class="hint" style="margin:2px 0 6px;">None yet.</div>`;
+    const rows = contacts.length ? contacts.map(c=>{
+        const contactJson = escAttr(JSON.stringify({id:c.id, name:c.name, jobTitle:c.jobTitle, alias:c.alias||''}));
+        return `
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:2px;">
+          <label class="opt-inline" style="margin:0;">
+            <input type="checkbox" ${isChecked(selectedTo, c)?'checked':''} onchange="toggleContactSelection('${page}', ${contactJson}, this.checked, '${targetKind}', 'to')">
+            To
+          </label>
+          <label class="opt-inline" style="margin:0;">
+            <input type="checkbox" ${isChecked(selectedCc, c)?'checked':''} onchange="toggleContactSelection('${page}', ${contactJson}, this.checked, '${targetKind}', 'cc')">
+            Cc
+          </label>
+          <span>${escHtml(contactDisplayName(c))}${c.alias ? ` <span style="color:var(--ink-soft); font-size:11px;">(as "${escHtml(c.alias)}")</span>` : ''}${c.isPrimary ? ' <span style="color:var(--ink-soft); font-size:11px;">(default)</span>' : ''}</span>
+        </div>
+      `;
+      }).join('') : `<div class="hint" style="margin:2px 0 6px;">None yet.</div>`;
     const noDefaultHint = noDefaultYet ? `<div class="hint" style="margin:2px 0 6px;">No default set yet — tick whoever you address most often to make them the standing default.</div>` : '';
     return `<div style="margin-bottom:10px;">
       <div style="font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; color:var(--ink-soft); margin-bottom:4px;">${escHtml(title)}</div>
@@ -3787,10 +3867,20 @@ async function submitNewContact(page, targetKind){
   toggleContactSelection(page, {name, jobTitle, alias}, true);
   await loadContactPicker(page);
 }
-function toggleContactSelection(page, contact, checked, targetKind){
-  let list = contactsListForPage(page);
+// listKind is 'to' (default) or 'cc'. A contact can only be on one of the
+// two lists at once — ticking them into one automatically drops them from
+// the other, so "to" and "cc" behave like a single choice per contact even
+// though they're two separate checkboxes in the UI. Only the "to" list
+// feeds the salutation; cc'd contacts are copied on the email without
+// being addressed directly.
+function toggleContactSelection(page, contact, checked, targetKind, listKind){
+  listKind = listKind === 'cc' ? 'cc' : 'to';
+  const otherKind = listKind === 'to' ? 'cc' : 'to';
+  let list = contactsListForPage(page, listKind);
   if(checked){
     if(!list.some(s => s.name === contact.name && s.jobTitle === contact.jobTitle)) list.push(contact);
+    const otherList = contactsListForPage(page, otherKind).filter(s => !(s.name === contact.name && s.jobTitle === contact.jobTitle));
+    setContactsListForPage(page, otherList, otherKind);
     // Picking someone for correspondence is also the natural moment to make
     // them the standing default for next time — no separate "set as
     // default" step needed for the common case. contact.id/targetKind are
@@ -3803,9 +3893,9 @@ function toggleContactSelection(page, contact, checked, targetKind){
   } else {
     list = list.filter(s => !(s.name === contact.name && s.jobTitle === contact.jobTitle));
   }
-  setContactsListForPage(page, list);
+  setContactsListForPage(page, list, listKind);
   const { greetingId, renderFn } = CONTACT_PICKER_PAGES[page];
-  const greetingText = buildGreetingFromContacts(list);
+  const greetingText = buildGreetingFromContacts(contactsListForPage(page, 'to'));
   if(greetingText) document.getElementById(greetingId).value = greetingText;
   window[renderFn]();
   // Enquire -> Supply "default, then diverge": a contact picked on Enquire
@@ -3818,6 +3908,7 @@ function toggleContactSelection(page, contact, checked, targetKind){
 function syncSupContactsFromEnquiry(){
   if(supContactsManuallySet) return;
   supSelectedContacts = enqSelectedContacts.slice();
+  supCcContacts = enqCcContacts.slice();
   const greetingEl = document.getElementById('supGreeting');
   if(greetingEl) greetingEl.value = buildGreetingFromContacts(supSelectedContacts) || 'Dear Sir/Madam,';
   renderSupply();
@@ -3842,6 +3933,8 @@ function pickVessel(v){
   document.getElementById('custGreeting').value = 'Dear Captain,';
   quoteSelectedContacts = [];
   custSelectedContacts = [];
+  quoteCcContacts = [];
+  custCcContacts = [];
   selectedVessel = v;
   hideVesselList();
   loadContactPicker('quote');
@@ -4656,6 +4749,8 @@ function pickSupplier(s){
   if(enqGreetingEl) enqGreetingEl.value = 'Dear Sir,';
   enqSelectedContacts = [];
   supSelectedContacts = [];
+  enqCcContacts = [];
+  supCcContacts = [];
   supContactsManuallySet = false;
   hideSupplierList();
   loadContactPicker('enquire');
@@ -4748,6 +4843,7 @@ function onSupplierViewChange(value){
   const greetingEl = document.getElementById('supGreeting');
   if(greetingEl) greetingEl.value = 'Dear Sir/Madam,';
   supSelectedContacts = [];
+  supCcContacts = [];
   supContactsManuallySet = false;
   loadContactPicker('supply');
   renderSupply();
@@ -9631,6 +9727,21 @@ async function startNewOrderFromBar(){
 }
 async function clearOrder(){
   try{ localStorage.removeItem('ts-order-draft'); }catch(e){ /* private browsing or similar - fine to skip */ }
+  // Contact selections (both "to" and "cc") — previously missing from this
+  // reset entirely, same bug pattern as the reminder fields further below:
+  // picking contacts on one enquiry, then starting a new one, would
+  // silently carry the previous selection straight over until a new
+  // vessel/supplier was explicitly picked (which does clear these, but
+  // only at that point).
+  quoteSelectedContacts = [];
+  custSelectedContacts = [];
+  enqSelectedContacts = [];
+  supSelectedContacts = [];
+  quoteCcContacts = [];
+  custCcContacts = [];
+  enqCcContacts = [];
+  supCcContacts = [];
+  supContactsManuallySet = false;
   currentOrderDbId = null;
   currentOrderAmountReceived = null;
   currentOrderReceivedDate = null;
@@ -9744,6 +9855,22 @@ async function clearOrder(){
   renderCustNotesGroup();
   renderCustConditionsGroup();
   renderProductBlocks();
+  // Re-render any picker that was already showing, so it reflects the
+  // now-empty selections (and, since vessel/supplier are blank again,
+  // correctly falls back to its "pick a vessel/supplier first" prompt)
+  // rather than continuing to display the previous enquiry's stale ticks.
+  if(document.getElementById('contactPickerQuote') && document.getElementById('contactPickerQuote').innerHTML.trim()){
+    loadContactPicker('quote');
+  }
+  if(document.getElementById('contactPickerCustomer') && document.getElementById('contactPickerCustomer').innerHTML.trim()){
+    loadContactPicker('customer');
+  }
+  if(document.getElementById('contactPickerEnquire') && document.getElementById('contactPickerEnquire').innerHTML.trim()){
+    loadContactPicker('enquire');
+  }
+  if(document.getElementById('contactPickerSupply') && document.getElementById('contactPickerSupply').innerHTML.trim()){
+    loadContactPicker('supply');
+  }
   render();
   renderSupply();
   renderCustomer();
@@ -11941,6 +12068,10 @@ function collectQuoteState(){
     custSelectedContacts: custSelectedContacts.slice(),
     enqSelectedContacts: enqSelectedContacts.slice(),
     supSelectedContacts: supSelectedContacts.slice(),
+    quoteCcContacts: quoteCcContacts.slice(),
+    custCcContacts: custCcContacts.slice(),
+    enqCcContacts: enqCcContacts.slice(),
+    supCcContacts: supCcContacts.slice(),
     checkedNoteTexts: getCheckedNotes(),
     customNotes: customNotes.slice(),
     signoffLineText: getSignoffLine(),
@@ -12056,11 +12187,17 @@ async function applyQuoteState(data){
   custSelectedContacts = Array.isArray(data.custSelectedContacts) ? data.custSelectedContacts : [];
   enqSelectedContacts = Array.isArray(data.enqSelectedContacts) ? data.enqSelectedContacts : [];
   supSelectedContacts = Array.isArray(data.supSelectedContacts) ? data.supSelectedContacts : [];
+  quoteCcContacts = Array.isArray(data.quoteCcContacts) ? data.quoteCcContacts : [];
+  custCcContacts = Array.isArray(data.custCcContacts) ? data.custCcContacts : [];
+  enqCcContacts = Array.isArray(data.enqCcContacts) ? data.enqCcContacts : [];
+  supCcContacts = Array.isArray(data.supCcContacts) ? data.supCcContacts : [];
   // A loaded order's own supply contacts are treated as already-established
   // (equivalent to having been manually diverged) — otherwise touching
   // Enquire's contacts afterward in this same session would silently
-  // overwrite what was just loaded via the cascade.
-  supContactsManuallySet = supSelectedContacts.length > 0;
+  // overwrite what was just loaded via the cascade. Checked across both
+  // "to" and "cc", since a supply contact set only as a cc still counts as
+  // Supply's own contacts having been touched directly.
+  supContactsManuallySet = supSelectedContacts.length > 0 || supCcContacts.length > 0;
   // Re-render the picker only if it was already showing (i.e. someone had
   // fetched it before saving) — otherwise leave it collapsed as normal,
   // matching the "Show available contacts" button's own on-demand loading.
