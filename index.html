@@ -9688,6 +9688,18 @@ async function clearOrder(){
   });
   document.getElementById('costAdjustmentDescription').value = '';
   document.getElementById('supplierInvoiceNumber').value = '';
+  // Reminder fields - previously missing from this reset entirely, which
+  // was a real bug: setting a reminder on one enquiry, then starting a new
+  // one, silently carried the checkbox, date/time, and message straight
+  // over into the new enquiry (and from there into whatever else was
+  // started after it, since none of them ever got a chance to clear it).
+  reminderResolvedUtcIso = null;
+  document.getElementById('reminderEnabled').checked = false;
+  document.getElementById('reminderDatetime').value = '';
+  document.getElementById('reminderIsLocalTime').checked = true;
+  document.getElementById('reminderMessage').value = '';
+  document.getElementById('reminderDetailFields').style.display = 'none';
+  document.getElementById('reminderStatusHint').textContent = '';
   customNotes = [''];
   productBlocks = []; pbCounter = 0;
   supPaymentManuallySet = false;
