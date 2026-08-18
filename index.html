@@ -464,12 +464,15 @@
     </div>
   </header>
 
-  <!-- Global status bar: persists across every view (Manage, Build, Manage
-       Lists, Save/Load) so the currently-loaded order and its save state
-       are always visible, not just while on the Build Order screens. The
-       save-state pill lives inside this same bar (see renderTradeSummaryBar)
-       rather than as a separate element next to it. -->
-  <div class="trade-summary-bar-row" id="globalStatusBar">
+  <!-- Global status bar: only shown on the Deal (build) view — hidden on
+       Manage and Data. Hidden by default here since the page's default
+       active view is Manage (dashboard) and switchView() is deliberately
+       skipped on startup when restoring to that same default view (see the
+       startup restore logic), so this default has to be correct on its own
+       rather than relying on switchView() to set it. The order state
+       itself (and this bar's rendered content) persists in memory
+       regardless of which view is showing — only visibility toggles. -->
+  <div class="trade-summary-bar-row" id="globalStatusBar" style="display:none;">
     <div id="tradeSummaryBar" class="trade-summary-bar"></div>
   </div>
 
@@ -10111,6 +10114,13 @@ function switchView(v){
   document.getElementById('tabDashboard').classList.toggle('active', v==='dashboard');
   document.getElementById('tabBuild').classList.toggle('active', v==='build');
   document.getElementById('tabManage').classList.toggle('active', v==='manage');
+  // The current deal's status bar is only relevant while actually working
+  // on a deal — hidden entirely on Manage and Data, shown only on Deal.
+  // This only toggles CSS display; the underlying order state (and the
+  // bar's own DOM content, kept in sync elsewhere via renderTradeSummaryBar)
+  // is untouched, so switching back to Deal shows the same information,
+  // not a blank or reset bar.
+  document.getElementById('globalStatusBar').style.display = (v==='build') ? '' : 'none';
   if(v==='manage'){ renderVesselTable(); renderPortTable(); renderProductTable(); renderNoteTable(); }
   if(v==='dashboard'){ loadDashboardData(); }
   try{ localStorage.setItem('ts-last-view', v); }catch(e){ /* private browsing or similar - fine to just skip persistence */ }
