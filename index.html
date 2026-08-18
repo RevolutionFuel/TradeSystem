@@ -92,6 +92,7 @@
   .trade-summary-bar-row{display:flex; align-items:flex-start; gap:14px; margin:2px 0 6px; flex-wrap:wrap;
     position:sticky; top:0; z-index:50;}
   .trade-summary-bar-row .trade-summary-bar{flex:1; min-width:260px;}
+  .trade-summary-title{flex-basis:100%; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-soft); margin:0 0 2px 4px;}
   #orderSaveBtn.save-state-gray{background:#B0B0B0; color:#fff; cursor:not-allowed;}
   #orderSaveBtn.save-state-red{background:var(--bad); color:#fff;}
   #orderSaveBtn.save-state-green{background:var(--good); color:#fff;}
@@ -134,7 +135,7 @@
   .missing-data-warning ul{margin:0; padding-left:20px; color:#8a2e22; font-size:12.5px; line-height:1.6;}
   .missing-data-link{color:#8a2e22; text-decoration:underline; cursor:pointer;}
   .missing-data-link:hover{color:#5c1e15;}
-  .status-picker-menu{position:absolute; top:calc(100% + 6px); right:0; z-index:20; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,0.18); padding:6px; min-width:190px; max-height:320px; overflow-y:auto;}
+  .status-picker-menu{position:absolute; top:calc(100% + 6px); right:0; z-index:20; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,0.18); padding:6px; min-width:190px; max-height:calc(100vh - 120px); overflow-y:auto;}
   .status-picker-item{display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:6px; font-size:13px; color:var(--ink); cursor:pointer; white-space:nowrap;}
   .status-picker-item:hover{background:var(--brand-purple-soft);}
   .status-picker-item.current{font-weight:700; background:var(--amber-soft);}
@@ -473,6 +474,7 @@
        itself (and this bar's rendered content) persists in memory
        regardless of which view is showing — only visibility toggles. -->
   <div class="trade-summary-bar-row" id="globalStatusBar" style="display:none;">
+    <div class="trade-summary-title">Current loaded order summary:</div>
     <div id="tradeSummaryBar" class="trade-summary-bar"></div>
   </div>
 
