@@ -85,14 +85,15 @@
   .tabs button{background:transparent; border:none; padding:8px 14px; font-family:var(--disp); font-size:12.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:rgba(255,255,255,0.75); border-radius:6px; cursor:pointer;}
   .tabs button.active{background:#F7BF4A; color:#0A1A3A; box-shadow:0 1px 3px rgba(0,0,0,0.25);}
   .order-submenu{display:flex; gap:4px; margin:0 0 12px; border-bottom:2px solid rgba(255,255,255,0.25); flex-wrap:wrap;
-    position:sticky; z-index:45; background:rgba(10,26,58,0.94); padding:6px 8px 0; border-radius:9px 9px 0 0;}
-  .mgmt-tabs{position:sticky; z-index:45; background:var(--paper); padding:6px 0 6px 18px;}
+    position:sticky; top:0; z-index:51; background:rgba(10,26,58,0.94); padding:6px 8px 0; border-radius:9px 9px 0 0;}
+  .mgmt-tabs{position:sticky; top:0; z-index:45; background:var(--paper); padding:6px 0 6px 18px;}
   .mgmt-tabs-select{display:none;}
-  .trade-summary-bar{display:none; position:relative; z-index:2; flex-wrap:wrap; align-items:center; gap:0; margin:0; padding:13px 22px; background-color:#FFFFFF; opacity:1; box-shadow:0 4px 14px rgba(0,0,0,0.3); border-radius:8px;}
+  .trade-summary-bar{display:none; position:relative; z-index:2; flex-wrap:wrap; align-items:center; gap:0; margin:0; padding:0; background-color:transparent; opacity:1;}
   .trade-summary-bar-row{display:flex; align-items:flex-start; gap:14px; margin:2px 0 6px; flex-wrap:wrap;
-    position:sticky; top:0; z-index:50;}
+    padding:13px 22px; background-color:#FFFFFF; box-shadow:0 4px 14px rgba(0,0,0,0.3); border-radius:8px;
+    position:sticky; z-index:50;}
   .trade-summary-bar-row .trade-summary-bar{flex:1; min-width:260px;}
-  .trade-summary-title{flex-basis:100%; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-soft); margin:0 0 2px 4px;}
+  .trade-summary-title{flex-basis:100%; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-soft); margin:0 0 2px;}
   #orderSaveBtn.save-state-gray{background:#B0B0B0; color:#fff; cursor:not-allowed;}
   #orderSaveBtn.save-state-red{background:var(--bad); color:#fff;}
   #orderSaveBtn.save-state-green{background:var(--good); color:#fff;}
@@ -465,19 +466,6 @@
     </div>
   </header>
 
-  <!-- Global status bar: only shown on the Deal (build) view — hidden on
-       Manage and Data. Hidden by default here since the page's default
-       active view is Manage (dashboard) and switchView() is deliberately
-       skipped on startup when restoring to that same default view (see the
-       startup restore logic), so this default has to be correct on its own
-       rather than relying on switchView() to set it. The order state
-       itself (and this bar's rendered content) persists in memory
-       regardless of which view is showing — only visibility toggles. -->
-  <div class="trade-summary-bar-row" id="globalStatusBar" style="display:none;">
-    <div class="trade-summary-title">Current loaded order summary:</div>
-    <div id="tradeSummaryBar" class="trade-summary-bar"></div>
-  </div>
-
   <!-- ============ MANAGE VIEW ============ -->
   <div class="view active" id="viewDashboard">
     <div class="panel-head">
@@ -498,6 +486,19 @@
       <button id="pageTabSupply" onclick="switchOrderPage('supply')">NOMINATE</button>
       <button id="pageTabCustomer" onclick="switchOrderPage('customer')">CONFIRM</button>
       <button id="pageTabInvoice" onclick="switchOrderPage('invoice')">INVOICE</button>
+    </div>
+
+    <!-- Sits below the Summary/Details/Enquire/etc. sub-menu above, and only
+         inside the Build view itself, so it naturally shows only while on
+         the Deal tab and only below that sub-menu - via the same
+         .view/.view.active mechanism controlling this whole view, not a
+         separate JS-managed toggle. Both this bar and the sub-menu above it
+         are sticky (see the CSS and updateStickyOffsets()), stacking
+         together at the top of the viewport while scrolling - sub-menu
+         first, this bar directly below it. -->
+    <div class="trade-summary-bar-row" id="globalStatusBar">
+      <div class="trade-summary-title">Current loaded order summary:</div>
+      <div id="tradeSummaryBar" class="trade-summary-bar"></div>
     </div>
 
     <div class="order-page" id="orderPageOrder">
@@ -10074,11 +10075,14 @@ function scheduleUpdatePanelHeightLock(){
 // content differing per order). Measured fresh each time rather than
 // assumed, same reasoning as updatePanelHeightLock() above.
 function updateStickyOffsets(){
+  // Sub-menu sticks first (static top:0 in CSS) - this measures its actual
+  // rendered height (which varies, e.g. wrapping to two lines on a narrow
+  // screen) and applies that as the status bar's own sticky top offset, so
+  // it sits directly below the sub-menu rather than overlapping it,
+  // however tall the sub-menu currently is.
+  const submenu = document.querySelector('#viewBuild .order-submenu');
   const bar = document.getElementById('globalStatusBar');
-  const offset = bar ? bar.getBoundingClientRect().height : 0;
-  document.querySelectorAll('.order-submenu, .mgmt-tabs').forEach(el=>{
-    el.style.top = offset + 'px';
-  });
+  if(submenu && bar) bar.style.top = submenu.getBoundingClientRect().height + 'px';
 }
 let stickyOffsetScheduled = false;
 function scheduleStickyOffsetUpdate(){
@@ -10116,13 +10120,6 @@ function switchView(v){
   document.getElementById('tabDashboard').classList.toggle('active', v==='dashboard');
   document.getElementById('tabBuild').classList.toggle('active', v==='build');
   document.getElementById('tabManage').classList.toggle('active', v==='manage');
-  // The current deal's status bar is only relevant while actually working
-  // on a deal — hidden entirely on Manage and Data, shown only on Deal.
-  // This only toggles CSS display; the underlying order state (and the
-  // bar's own DOM content, kept in sync elsewhere via renderTradeSummaryBar)
-  // is untouched, so switching back to Deal shows the same information,
-  // not a blank or reset bar.
-  document.getElementById('globalStatusBar').style.display = (v==='build') ? '' : 'none';
   if(v==='manage'){ renderVesselTable(); renderPortTable(); renderProductTable(); renderNoteTable(); }
   if(v==='dashboard'){ loadDashboardData(); }
   try{ localStorage.setItem('ts-last-view', v); }catch(e){ /* private browsing or similar - fine to just skip persistence */ }
