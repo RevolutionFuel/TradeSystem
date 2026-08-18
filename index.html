@@ -89,11 +89,11 @@
   .mgmt-tabs{position:sticky; top:0; z-index:45; background:var(--paper); padding:6px 0 6px 18px;}
   .mgmt-tabs-select{display:none;}
   .trade-summary-bar{display:none; position:relative; z-index:2; flex-wrap:wrap; align-items:center; gap:0; margin:0; padding:0; background-color:transparent; opacity:1;}
-  .trade-summary-bar-row{display:flex; align-items:flex-start; gap:14px; margin:2px 0 6px; flex-wrap:wrap;
-    padding:13px 22px; background-color:#FFFFFF; box-shadow:0 4px 14px rgba(0,0,0,0.3); border-radius:8px;
+  .trade-summary-bar-row{display:flex; align-items:flex-start; row-gap:2px; column-gap:14px; margin:2px 0 6px; flex-wrap:wrap;
+    padding:8px 18px; background-color:#FFFFFF; box-shadow:0 4px 14px rgba(0,0,0,0.3); border-radius:8px;
     position:sticky; z-index:50;}
   .trade-summary-bar-row .trade-summary-bar{flex:1; min-width:260px;}
-  .trade-summary-title{flex-basis:100%; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-soft); margin:0 0 2px;}
+  .trade-summary-title{flex-basis:100%; font-size:10px; line-height:1.2; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-soft); margin:0;}
   #orderSaveBtn.save-state-gray{background:#B0B0B0; color:#fff; cursor:not-allowed;}
   #orderSaveBtn.save-state-red{background:var(--bad); color:#fff;}
   #orderSaveBtn.save-state-green{background:var(--good); color:#fff;}
@@ -177,7 +177,7 @@
     .ts-user-badge .ts-user-signout{padding:5px 9px !important; font-size:9px !important;}
     .order-submenu{flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; gap:0;}
     .order-submenu button{padding:7px 6px 6px; font-size:9px; letter-spacing:0.02em; white-space:nowrap; flex-shrink:0;}
-    .trade-summary-bar{padding:7px 10px;}
+    .trade-summary-bar-row{padding:6px 10px;}
     .tsb-item{font-size:9.5px; padding:0 8px;}
     .tsb-item .tsb-label{font-size:7.5px;}
     .tsb-status-badge{font-size:7.5px; padding:2px 6px;}
