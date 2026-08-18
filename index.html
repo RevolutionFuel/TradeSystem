@@ -615,7 +615,7 @@
                 <input type="checkbox" id="enqTimingQuestion" onchange="renderEnquiry()"> When would a firm price be available for the vessel's given ETA?
               </label>
               <label class="opt-inline" style="margin-bottom:6px;">
-                <input type="checkbox" id="enqFlashPoint" onchange="renderEnquiry()"> Please can you confirm that the Flash Point of the product is guaranteed 60 Deg C min in line with IMO SOLAS requirements?
+                <input type="checkbox" id="enqFlashPoint" onchange="renderEnquiry()"> Please can you confirm that the Flash Point of the product is guaranteed 60 DegC min in line with IMO SOLAS requirements?
               </label>
               <label class="opt-inline" style="margin-bottom:6px;">
                 <input type="checkbox" id="enqFame" onchange="renderEnquiry()"> Please can you advise if the product contains any FAME/Bio fuel?
@@ -1633,7 +1633,7 @@ const ENQUIRY_SIGNOFF_OPTIONS = [
 // this group ticked) and a short form (used when two or more are ticked
 // together, folded into one "please advise on the following" bullet list).
 const ENQUIRY_EXTRA_QUESTIONS = [
-  { id: 'enqFlashPoint', full: 'Please can you confirm that the Flash Point of the product is guaranteed 60 Deg C min in line with IMO SOLAS requirements?', short: 'Is the Flash Point guaranteed 60 Deg C minimum guaranteed' },
+  { id: 'enqFlashPoint', full: 'Please can you confirm that the Flash Point of the product is guaranteed 60 DegC min in line with IMO SOLAS requirements?', short: 'Is the Flash Point guaranteed 60 DegC minimum guaranteed' },
   { id: 'enqFame', full: 'Please can you advise if the product contains any FAME/Bio fuel?', short: 'Does the product contain any FAME/Bio fuel' },
   { id: 'enqPaymentTerms', full: 'Please can you confirm terms for payment?', short: 'Payment terms' },
   { id: 'enqDeliveryMethod', full: 'Please can you confirm the method of delivery?', short: 'Method of the Delivery' },
@@ -5520,10 +5520,10 @@ function fuelBlockOrderHTML(b, idx){
         <div class="preset-wrap">
           <button class="btn-ghost btn-sm" onclick="togglePresetMenu('${b.id}')">Presets \u25be</button>
           <div class="preset-menu" id="presetMenu-${b.id}">
-            <button onclick="applyPreset('${b.id}','ago60free')">AGO&gt;60 0%FAME<span class="preset-desc">Auto Gas Oil \u2013 EN590 \u00b7 60 Deg C minimum guaranteed \u00b7 FAME Free (de minimus)</span></button>
-            <button onclick="applyPreset('${b.id}','ago60')">AGO&gt;60<span class="preset-desc">Auto Gas Oil \u2013 EN590 \u00b7 60 Deg C minimum guaranteed</span></button>
-            <button onclick="applyPreset('${b.id}','ulsd60free')">ULSD&gt;60 0% FAME<span class="preset-desc">Ultra Low Sulphur Diesel \u00b7 Flash Point 140 Deg F/60 Deg C minimum guaranteed \u00b7 FAME Free (de minimus)</span></button>
-            <button onclick="applyPreset('${b.id}','mgo01')">MGO 0.1%<span class="preset-desc">Marine Gas Oil \u2013 DMA \u00b7 60 Deg C minimum guaranteed</span></button>
+            <button onclick="applyPreset('${b.id}','ago60free')">AGO&gt;60 0%FAME<span class="preset-desc">Auto Gas Oil \u2013 EN590 \u00b7 60 DegC minimum guaranteed \u00b7 FAME Free (de minimus)</span></button>
+            <button onclick="applyPreset('${b.id}','ago60')">AGO&gt;60<span class="preset-desc">Auto Gas Oil \u2013 EN590 \u00b7 60 DegC minimum guaranteed</span></button>
+            <button onclick="applyPreset('${b.id}','ulsd60free')">ULSD&gt;60 0% FAME<span class="preset-desc">Ultra Low Sulphur Diesel \u00b7 Flash Point 140 DegF/60 DegC minimum guaranteed \u00b7 FAME Free (de minimus)</span></button>
+            <button onclick="applyPreset('${b.id}','mgo01')">MGO 0.1%<span class="preset-desc">Marine Gas Oil \u2013 DMA \u00b7 60 DegC minimum guaranteed</span></button>
           </div>
         </div>
       </div>
@@ -5564,14 +5564,14 @@ function fuelBlockOrderHTML(b, idx){
     <div class="field">
       <label>Flash point</label>
       <div class="opt-group">
-        ${radioOpt(b.id,'flash','60','60 Deg C minimum guaranteed', b.flash)}
-        ${radioOpt(b.id,'flash','55','55 Deg C minimum guaranteed', b.flash)}
-        ${radioOpt(b.id,'flash','140f60c','Flash Point 140 Deg F/60 Deg C minimum guaranteed', b.flash)}
+        ${radioOpt(b.id,'flash','60','60 DegC minimum guaranteed', b.flash)}
+        ${radioOpt(b.id,'flash','55','55 DegC minimum guaranteed', b.flash)}
+        ${radioOpt(b.id,'flash','140f60c','Flash Point 140 DegF/60 DegC minimum guaranteed', b.flash)}
         ${radioOpt(b.id,'flash','blank','(leave blank)', b.flash)}
         <label class="opt ${b.flash==='custom'?'checked':''}">
           <input type="radio" name="flash-${b.id}" value="custom" ${b.flash==='custom'?'checked':''} onchange="updateBlock('${b.id}','flash',this.value); renderProductBlocks(); render();">
           <span style="flex:1;">Custom:
-            <input type="text" class="opt-sub" value="${escAttr(b.flashCustom)}" placeholder="e.g. 65 Deg C minimum guaranteed" oninput="updateBlock('${b.id}','flashCustom',this.value)" onclick="event.stopPropagation()">
+            <input type="text" class="opt-sub" value="${escAttr(b.flashCustom)}" placeholder="e.g. 65 DegC minimum guaranteed" oninput="updateBlock('${b.id}','flashCustom',this.value)" onclick="event.stopPropagation()">
           </span>
         </label>
       </div>
@@ -8340,9 +8340,9 @@ function productBlockText(b, htmlMode, compact){
         else if(b.flash==='140f60c') specs.push(['Flash Point','FP>140F/60C']);
         else if(b.flash==='custom' && b.flashCustom) specs.push(['Flash Point', b.flashCustom]);
       } else {
-        if(b.flash==='60') specs.push(['Flash Point','60 Deg C minimum guaranteed']);
-        else if(b.flash==='55') specs.push(['Flash Point','55 Deg C minimum guaranteed']);
-        else if(b.flash==='140f60c') specs.push(['Flash Point','Flash Point 140 Deg F/60 Deg C minimum guaranteed']);
+        if(b.flash==='60') specs.push(['Flash Point','60 DegC minimum guaranteed']);
+        else if(b.flash==='55') specs.push(['Flash Point','55 DegC minimum guaranteed']);
+        else if(b.flash==='140f60c') specs.push(['Flash Point','Flash Point 140 DegF/60 DegC minimum guaranteed']);
         else if(b.flash==='custom' && b.flashCustom) specs.push(['Flash Point', b.flashCustom]);
       }
       if(b.fame==='free') specs.push(['FAME/Bio Content','FAME Free (de minimis)']);
@@ -12404,9 +12404,9 @@ function pbGradeDisplay(b){
   return b.grade || '';
 }
 function pbFlashDisplay(b){
-  if(b.flash==='60') return '60 Deg C min';
-  if(b.flash==='55') return '55 Deg C min';
-  if(b.flash==='140f60c') return 'Flash Point 140 Deg F/60 Deg C min';
+  if(b.flash==='60') return '60 DegC min';
+  if(b.flash==='55') return '55 DegC min';
+  if(b.flash==='140f60c') return 'Flash Point 140 DegF/60 DegC min';
   if(b.flash==='custom') return b.flashCustom || '';
   return '';
 }
