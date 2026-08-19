@@ -4979,9 +4979,31 @@ function onAgentInput(inputId, listId){
     item.onclick = ()=> pickAgent(a);
     list.appendChild(item);
   });
+  const exact = AGENTS.some(a=>a.name.toLowerCase() === q);
+  if(!exact && q){
+    const item = document.createElement('div');
+    item.className = 'ac-item ac-new';
+    item.innerHTML = `+ Add "${escHtml(inputEl.value.trim())}" as a new agent`;
+    item.onclick = ()=> addNewAgentFromForm(inputId);
+    list.appendChild(item);
+  }
   list.classList.toggle('show', list.children.length>0);
   autoHighlightFirstAutocompleteItem(list);
   render(); renderSupply(); renderCustomer();
+}
+// Same pattern as addNewSupplierFromForm/addNewVesselFromForm - agents are
+// organizations too, so this goes through the same saveReferenceItemRemote
+// path (window.TS.saveOrganization(item, 'agent')), which is the real,
+// working save unlike the old broken "Save to agent list" button that was
+// removed last session.
+async function addNewAgentFromForm(inputId){
+  const name = document.getElementById(inputId).value.trim();
+  if(!name) return;
+  const na = {id:'', name, contactName:'', telephone:'', email:'', notes:''};
+  AGENTS.push(na);
+  await saveList('ql-agents', AGENTS);
+  await saveReferenceItemRemote('agent', na);
+  pickAgent(na);
 }
 function hideAgentList(){
   const l1 = document.getElementById('agentListSupply');
