@@ -113,19 +113,25 @@
   .dashboard-table td{padding:6px 8px; border-bottom:1px solid var(--line); font-size:11px; color:var(--teal-dark); word-break:break-word; overflow-wrap:break-word; white-space:normal;}
   .dashboard-table tr:last-child td{border-bottom:none;}
   .dashboard-table tr:hover td{background:#FAF8F3;}
-  .dashboard-table td .tsb-status-badge{word-break:normal; overflow-wrap:normal; white-space:normal;}
+  .dashboard-table td .tsb-status-badge{word-break:normal; overflow-wrap:normal; white-space:normal; max-width:100%; box-sizing:border-box;}
   .dashboard-ref-link{color:var(--amber); font-weight:700; text-decoration:none;}
   .dashboard-ref-link:hover{text-decoration:underline;}
   @media (max-width:640px){
     .dashboard-table{table-layout:fixed;}
     .dashboard-table th, .dashboard-table td{padding:4px 3px; word-break:break-word; overflow-wrap:break-word;}
     .dashboard-table th, .dashboard-table td{font-size:9px; letter-spacing:0.01em;}
-    .dashboard-table td .tsb-status-badge{word-break:normal; overflow-wrap:normal; white-space:normal;}
+    .dashboard-table td .tsb-status-badge{word-break:normal; overflow-wrap:normal; white-space:normal; max-width:100%; box-sizing:border-box;}
+    /* Smaller than the generic .tsb-status-badge mobile size (used by the
+       top status bar elsewhere) - the dashboard table's Status column has
+       far less room than that bar does, and this is scoped specifically to
+       cells inside this table so the top bar's own badge is untouched. */
+    .dashboard-table td .tsb-status-badge{font-size:6.5px; padding:1.5px 4px; letter-spacing:0.01em;}
     .dashboard-filter-bar select{width:100%; min-width:0;}
   }
   @media (max-width:420px){
-    .dashboard-table th, .dashboard-table td{padding:3px 2px;}
+    .dashboard-table th, .dashboard-table td{padding:2px 1.5px;}
     .dashboard-table th, .dashboard-table td{font-size:8px;}
+    .dashboard-table td .tsb-status-badge{font-size:6px; padding:1px 3px;}
   }
   .tsb-item{font-size:13.5px; color:var(--teal-dark); padding:0 18px;}
   .tsb-item .tsb-label{font-weight:700; text-transform:uppercase; font-size:10px; letter-spacing:0.04em; color:var(--amber); margin-right:7px;}
@@ -4577,6 +4583,7 @@ function fmtDashboardDate(iso){
 // for Manage Lists' own sortable columns.
 const DASHBOARD_SORT_GETTERS = {
   reference: r => r.orderNumber || r.quoteRef || '',
+  broker: r => brokerInitials(r.broker || ''),
   vessel: r => (r.vesselName || '').toLowerCase(),
   port: r => (r.portName || '').toLowerCase(),
   eta: r => r.deliveryDate || r.eta || '',
@@ -4697,13 +4704,22 @@ function dashboardTableHtml(rows, availableWidth){
   // stacked, often-long content, so without explicit widths here the
   // compact layout left a lot of visibly wasted space on the right rather
   // than actually using it for the columns that need it.
+  //
+  // Broker is stacked into the Reference cell on compact layouts (rather
+  // than getting its own column) - there simply isn't room for a whole
+  // extra column on a narrow screen without making every other column
+  // even tighter than it already is. On the wide layout it gets its own
+  // dedicated column, second, right after Reference.
   const headHtml = compact
-    ? th('reference','Reference','15%') + thStacked('27%','vessel','Vessel','port','Port','eta','ETA') + thStacked('30%','customer','Customer','supplier','Supplier') + thStacked('16%','purchase','Purchase','sale','Sale') + th('status','Status','12%')
-    : th('reference','Reference') + th('vessel','Vessel') + th('port','Port') + th('customer','Customer') + th('supplier','Supplier') + th('eta','ETA / Delivery') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status');
+    ? thStacked('17%','reference','Reference','broker','Broker') + thStacked('25%','vessel','Vessel','port','Port','eta','ETA') + thStacked('29%','customer','Customer','supplier','Supplier') + thStacked('15%','purchase','Purchase','sale','Sale') + th('status','Status','14%')
+    : th('reference','Reference') + th('broker','Broker') + th('vessel','Vessel') + th('port','Port') + th('customer','Customer') + th('supplier','Supplier') + th('eta','ETA / Delivery') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status');
   const bodyHtml = rows.map(r=>{
     const dateText = fmtDashboardDate(r.deliveryDate || r.eta);
     const refText = r.orderNumber || r.quoteRef || '\u2014';
-    const refCell = `<td><a href="#" class="dashboard-ref-link" onclick="openOrderFromDashboard('${r.id}'); return false;">${escHtml(refText)}</a></td>`;
+    const initials = brokerInitials(r.broker || '');
+    const refCell = compact
+      ? `<td><a href="#" class="dashboard-ref-link" onclick="openOrderFromDashboard('${r.id}'); return false;">${escHtml(refText)}</a>${initials ? `<br><span style="color:var(--ink-soft); font-size:0.9em;">${escHtml(initials)}</span>` : ''}</td>`
+      : `<td><a href="#" class="dashboard-ref-link" onclick="openOrderFromDashboard('${r.id}'); return false;">${escHtml(refText)}</a></td>`;
     const statusCell = `<td><span class="tsb-status-badge" style="background:${getOrderStatusColor(statusEnumToLabel(r.status))};">${escHtml(statusEnumToLabel(r.status))}</span></td>`;
     const purchaseText = fmtDashboardMoney(r.purchaseTotal, r.purchaseCurrency);
     const saleText = fmtDashboardMoney(r.salesTotal, r.salesCurrency);
@@ -4715,6 +4731,7 @@ function dashboardTableHtml(rows, availableWidth){
         ${statusCell}</tr>`;
     }
     return `<tr>${refCell}
+      <td>${escHtml(initials || '\u2014')}</td>
       <td>${escHtml(r.vesselName || '\u2014')}</td>
       <td>${escHtml(r.portName || '\u2014')}</td>
       <td>${escHtml(r.customerName || '\u2014')}</td>
