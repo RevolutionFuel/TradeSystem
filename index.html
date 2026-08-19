@@ -7293,22 +7293,26 @@ const SPREADSHEET_COLUMN_META = [
   {align:'right',  bg:'#DCE6F1'}, // E - Del Date
   {align:'center', bg:'#DCE6F1'}, // F - Vessel
   {align:'center', bg:'#DCE6F1'}, // G - Port
-  {align:'right',  bg:'#DCE6F1', number:true}, // H - Total Volume
-  {align:'center', bg:'#DCE6F1'}, // I - Broker
-  {align:'center', bg:'#FCE4D6'}, // J - Status (left blank, see buildSpreadsheetRow)
+  {align:'center', bg:'#DCE6F1', number:true}, // H - Total Volume
+  {align:'center', bg:'#DCE6F1', doubleRightBorder:true}, // I - Broker
+  {align:'center', bg:'#FCE4D6', doubleRightBorder:true}, // J - Status (left blank, see buildSpreadsheetRow)
   {align:'right',  bg:'#FFF3FF'}, // K - Inv Date
-  {align:'center', bg:'#FFF3FF'}, // L - Customer
+  {align:'left',   bg:'#FFF3FF'}, // L - Customer
   {align:'center', bg:'#FFF3FF'}, // M - CUR (sales)
   {align:'right',  bg:'#FFF3FF', number:true}, // N - Sales Total
   {align:'right',  bg:'#FFF3FF'}, // O - Due Date (customer)
   {align:'right',  bg:'#FFF3FF', number:true}, // P - Amount Received
-  {align:'right',  bg:null},      // Q - Rcvd Date (deliberately uncoloured, matching the sheet)
-  {align:'center', bg:'#FCE4D6'}, // R - Supplier
+  // Deliberately uncoloured, matching the sheet - given an explicit white
+  // background rather than none at all, since leaving bg unset let some
+  // clients (Excel included) fall back to a stray pale-blue shade on paste
+  // instead of genuinely blank/white.
+  {align:'right',  bg:'#FFFFFF', doubleRightBorder:true}, // Q - Rcvd Date
+  {align:'left',   bg:'#FCE4D6'}, // R - Supplier
   {align:'center', bg:'#FCE4D6'}, // S - Invoice No
   {align:'center', bg:'#FCE4D6'}, // T - CUR (purchase)
   {align:'right',  bg:'#FCE4D6', number:true}, // U - Purchase Total
   {align:'right',  bg:'#FCE4D6'}, // V - Due Date (supplier)
-  {align:'right',  bg:null}       // W - Paid Date (deliberately uncoloured, matching the sheet)
+  {align:'right',  bg:'#FFFFFF', doubleRightBorder:true}  // W - Paid Date
 ];
 // 2 decimal places, comma thousands separator - applied to every numeric
 // column regardless of what it represents (volume, totals, amount
@@ -7326,13 +7330,22 @@ function formatSpreadsheetNumber(v){
 async function copyOrderRowForSpreadsheet(includeInvoiceFields, color, btnEl){
   const row = buildSpreadsheetRow(includeInvoiceFields);
   const plainText = row.join('\t');
+  // Fine dashed border on every cell's left and right by default; the four
+  // columns that mark section boundaries (I/J - broker/status, Q/W - the
+  // uncoloured received/paid date columns) get a heavier double line on
+  // their right edge instead, so those divisions read more strongly than
+  // the routine column-to-column gridlines.
+  const LEFT_BORDER = '1px dashed #999999';
+  const RIGHT_BORDER_DEFAULT = '1px dashed #999999';
+  const RIGHT_BORDER_DOUBLE = '3px double #000000';
   const cellsHtml = row.map((v, i) => {
     const meta = SPREADSHEET_COLUMN_META[i] || {align:'center', bg:null};
     const displayValue = meta.number ? formatSpreadsheetNumber(v) : v;
     const bgStyle = meta.bg ? `background-color:${meta.bg};` : '';
-    return `<td style="font-family:Calibri, sans-serif; font-size:12pt; text-align:${meta.align}; ${bgStyle}">${escHtml(String(displayValue))}</td>`;
+    const rightBorder = meta.doubleRightBorder ? RIGHT_BORDER_DOUBLE : RIGHT_BORDER_DEFAULT;
+    return `<td style="font-family:Calibri, sans-serif; font-size:12pt; text-align:${meta.align}; ${bgStyle} border-left:${LEFT_BORDER}; border-right:${rightBorder};">${escHtml(String(displayValue))}</td>`;
   }).join('');
-  const html = `<table><tr style="color:${color}; font-family:Calibri, sans-serif; font-size:12pt;">${cellsHtml}</tr></table>`;
+  const html = `<table style="border-collapse:collapse;"><tr style="color:${color}; font-family:Calibri, sans-serif; font-size:12pt;">${cellsHtml}</tr></table>`;
   try{
     if(navigator.clipboard && window.ClipboardItem){
       await navigator.clipboard.write([
