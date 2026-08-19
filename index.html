@@ -2870,7 +2870,7 @@ async function init(){
 }
 
 /* ===================== GENERIC RADIO GROUP BUILDER ===================== */
-// A genuine sequential reference number (RFM-2026-0001, going up by one each
+// A genuine sequential reference number (RFQ26-001, going up by one each
 // quote) rather than a random suffix. This is stored as *shared* data — the
 // first piece of shared state in the tool — so the count is the same for
 // everyone using it, not a separate sequence per person's browser. Note: this
@@ -2885,6 +2885,19 @@ async function init(){
 // same reference, which the database then rejected as a duplicate. Falls
 // back to the old local counter only if the database isn't reachable, with
 // the same small collision caveat that was always true in that case.
+// Formats a plain sequence number into the RFQ reference's number portion:
+// 001-999 with no letter, then A001-A999, B001-B999, and so on. Letters
+// sort after digits in plain string comparison, so this keeps references
+// in the same order alphabetically as they were created in, even once a
+// year passes 999 quotes (extremely unlikely, but the scheme still holds
+// up to roughly 27,000 quotes/year - 26 letters x 999 - before running out
+// of letters entirely). Mirrors next_quote_ref() in the database exactly.
+function formatQuoteRefSequence(n){
+  const blockIdx = Math.floor((n - 1) / 999); // 0 = no letter, 1 = 'A', 2 = 'B', ...
+  const inBlock = n - blockIdx * 999; // 1..999 within this block
+  const letter = blockIdx > 0 ? String.fromCharCode(64 + blockIdx) : '';
+  return letter + String(inBlock).padStart(3, '0');
+}
 async function generateQuoteReference(){
   if(window.TS && window.TS.nextQuoteRef){
     try{
@@ -2907,7 +2920,7 @@ async function generateQuoteReference(){
   try{
     if(window.storage) await window.storage.set('ql-quote-counter', JSON.stringify(counter), false);
   }catch(e){ console.error(e); }
-  return `RFM-${year}-${String(counter.count).padStart(4,'0')}`;
+  return `RFQ${String(year).slice(-2)}-${formatQuoteRefSequence(counter.count)}`;
 }
 // Order numbers are a separate sequence from the quote reference — assigned
 // only when a quote actually progresses to a real order, not automatically
@@ -6927,7 +6940,7 @@ function buildPdfQuotationHtml(docType){
   // Falls back to a plain placeholder (not the shared sequence) if this is ever
   // reached with the field blank — the reference field is always auto-filled by
   // init()/resetForm() in normal use, so this is just a defensive edge case.
-  const quoteRefVal = fv('quoteRef') || `RFM-${new Date().getFullYear()}-DRAFT`;
+  const quoteRefVal = fv('quoteRef') || `RFQ${String(new Date().getFullYear()).slice(-2)}-DRAFT`;
   // Once a quote has progressed to a real order, the order number is the more
   // relevant identifier on confirmation/invoice paperwork — falls back to the
   // quote reference when no order number has been assigned yet.
@@ -7562,7 +7575,7 @@ function computeInvoiceData(){
   const dueDateObj = computeDueDate(deliveryDateIso, getPaymentLine(), today);
   const orderRef = fv('orderNumberInvoice') || fv('quoteRef') || '';
   const vesselRef = vesselPaymentReference(resolveVesselId());
-  const invoiceNumber = orderRef ? `${orderRef}-${vesselRef}`.replace(/-$/,'') : `RFM-${today.getFullYear()}-DRAFT`;
+  const invoiceNumber = orderRef ? `${orderRef}-${vesselRef}`.replace(/-$/,'') : `RFQ${String(today.getFullYear()).slice(-2)}-DRAFT`;
 
   return {invType, isCommission, title, vesselName, billLines, rows, productRows, anyExcluded, currency, total, today, deliveryDateIso, dueDateObj, invoiceNumber};
 }
@@ -8089,7 +8102,7 @@ function buildPdfContentModel(docType){
   const cfg = PDF_DOC_CONFIG[docType] || PDF_DOC_CONFIG.quotation;
   const isConfirmation = (docType === 'supplier' || docType === 'customer');
   const vesselName = fv('vessel') || fv('vesselOrder') || '';
-  const quoteRefVal = fv('quoteRef') || `RFM-${new Date().getFullYear()}-DRAFT`;
+  const quoteRefVal = fv('quoteRef') || `RFQ${String(new Date().getFullYear()).slice(-2)}-DRAFT`;
   const orderNum = docType === 'supplier' ? getSupplyOrderNumberForView() : (fv('orderNumberSupply') || fv('orderNumberCustomer'));
   const ref = (docType !== 'quotation' && orderNum) ? orderNum : quoteRefVal;
   const dateIssued = formatDateForQuote(fv('quoteDate')) || formatDateForQuote(new Date().toISOString().slice(0,10));
