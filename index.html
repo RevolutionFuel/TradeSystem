@@ -118,20 +118,25 @@
   .dashboard-ref-link:hover{text-decoration:underline;}
   @media (max-width:640px){
     .dashboard-table{table-layout:fixed;}
-    .dashboard-table th, .dashboard-table td{padding:4px 3px; word-break:break-word; overflow-wrap:break-word;}
+    .dashboard-table th, .dashboard-table td{padding:4px 2.5px; word-break:break-word; overflow-wrap:break-word;}
     .dashboard-table th, .dashboard-table td{font-size:9px; letter-spacing:0.01em;}
-    .dashboard-table td .tsb-status-badge{word-break:normal; overflow-wrap:normal; white-space:normal; max-width:100%; box-sizing:border-box;}
+    /* word-break:normal previously meant a single long status word (e.g.
+       "Unconfirmed", "Cancelled") had no way to wrap at all and could push
+       past the column's right edge - break-word lets it wrap mid-word as a
+       last resort, same as every other cell in this table already does,
+       while multi-word statuses still wrap at the natural space first. */
+    .dashboard-table td .tsb-status-badge{word-break:break-word; overflow-wrap:break-word; white-space:normal; max-width:100%; box-sizing:border-box;}
     /* Smaller than the generic .tsb-status-badge mobile size (used by the
        top status bar elsewhere) - the dashboard table's Status column has
        far less room than that bar does, and this is scoped specifically to
        cells inside this table so the top bar's own badge is untouched. */
-    .dashboard-table td .tsb-status-badge{font-size:6.5px; padding:1.5px 4px; letter-spacing:0.01em;}
+    .dashboard-table td .tsb-status-badge{font-size:6.5px; padding:1.5px 3px; letter-spacing:0.01em; border-radius:8px;}
     .dashboard-filter-bar select{width:100%; min-width:0;}
   }
   @media (max-width:420px){
-    .dashboard-table th, .dashboard-table td{padding:2px 1.5px;}
+    .dashboard-table th, .dashboard-table td{padding:2px 1px;}
     .dashboard-table th, .dashboard-table td{font-size:8px;}
-    .dashboard-table td .tsb-status-badge{font-size:6px; padding:1px 3px;}
+    .dashboard-table td .tsb-status-badge{font-size:5.5px; padding:1px 2px; border-radius:6px;}
   }
   .tsb-item{font-size:13.5px; color:var(--teal-dark); padding:0 18px;}
   .tsb-item .tsb-label{font-weight:700; text-transform:uppercase; font-size:10px; letter-spacing:0.04em; color:var(--amber); margin-right:7px;}
@@ -4711,7 +4716,7 @@ function dashboardTableHtml(rows, availableWidth){
   // even tighter than it already is. On the wide layout it gets its own
   // dedicated column, second, right after Reference.
   const headHtml = compact
-    ? thStacked('17%','reference','Reference','broker','Broker') + thStacked('25%','vessel','Vessel','port','Port','eta','ETA') + thStacked('29%','customer','Customer','supplier','Supplier') + thStacked('15%','purchase','Purchase','sale','Sale') + th('status','Status','14%')
+    ? thStacked('17%','reference','Reference','broker','Broker') + thStacked('25%','vessel','Vessel','port','Port','eta','ETA') + thStacked('27%','customer','Customer','supplier','Supplier') + thStacked('15%','purchase','Purchase','sale','Sale') + th('status','Status','16%')
     : th('reference','Reference') + th('broker','Broker') + th('vessel','Vessel') + th('port','Port') + th('customer','Customer') + th('supplier','Supplier') + th('eta','ETA / Delivery') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status');
   const bodyHtml = rows.map(r=>{
     const dateText = fmtDashboardDate(r.deliveryDate || r.eta);
