@@ -7330,13 +7330,18 @@ function formatSpreadsheetNumber(v){
 async function copyOrderRowForSpreadsheet(includeInvoiceFields, color, btnEl){
   const row = buildSpreadsheetRow(includeInvoiceFields);
   const plainText = row.join('\t');
-  // Fine dashed border on every cell's left and right by default; the four
+  // Fine dotted border on every cell's left and right by default; the four
   // columns that mark section boundaries (I/J - broker/status, Q/W - the
   // uncoloured received/paid date columns) get a heavier double line on
   // their right edge instead, so those divisions read more strongly than
   // the routine column-to-column gridlines.
-  const LEFT_BORDER = '1px dashed #999999';
-  const RIGHT_BORDER_DEFAULT = '1px dashed #999999';
+  // "Dotted" (small tight dots), not "dashed" - dashed renders noticeably
+  // thicker/more prominent once pasted into Excel than the genuinely fine
+  // line wanted here (confirmed against a reference screenshot: existing
+  // sheet rows already using a fine dotted line looked right, a freshly
+  // pasted row using dashed looked visibly heavier by comparison).
+  const LEFT_BORDER = '1px dotted #999999';
+  const RIGHT_BORDER_DEFAULT = '1px dotted #999999';
   const RIGHT_BORDER_DOUBLE = '3px double #000000';
   const cellsHtml = row.map((v, i) => {
     const meta = SPREADSHEET_COLUMN_META[i] || {align:'center', bg:null};
