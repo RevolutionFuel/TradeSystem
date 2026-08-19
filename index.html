@@ -9207,18 +9207,30 @@ function buildEnquiryEmailHtml(){
   if(fv('port')) detailItems.push(`<b>Port:</b> ${escHtml(fv('port'))}`);
   if(fv('eta')) detailItems.push(`<b>ETA:</b> ${escHtml(getEtaDisplayText())}`);
   if(fv('deliveryTime')) detailItems.push(`<b>Time:</b> ${escHtml(fv('deliveryTime'))}`);
-  parts.push(ul(detailItems));
+  // Deliberately plain lines, not a <ul> — vessel/port/ETA/time should never
+  // show bullet points on this page, even when "remove bullet points" is
+  // left unchecked (unlike every other bulleted list here, which that
+  // checkbox does affect). Using p() rather than ul() means these simply
+  // aren't <li> elements in the first place, so applyFormattingOptions()'s
+  // bullet-removal logic (which only touches <ul> elements) never needs to
+  // touch them either way.
+  detailItems.forEach(item => parts.push(p(item)));
   parts.push(blank());
 
-  const productItems = [];
   productBlocks.forEach(b=>{
     const d = productBlockText(b);
     const label = d.isOther ? (d.name || 'Other Product') : (d.grade || 'Product');
-    if(d.quantity) productItems.push(`<b>${escHtml(label)}:</b> ${escHtml(formatNumberDisplay(d.quantity))} ${escHtml(d.unit)}`);
-    else productItems.push(`<b>${escHtml(label)}</b>`);
+    // Name and quantity are each their own plain (non-bulleted) line, same
+    // reasoning as the vessel/port/ETA lines above. Specs (sulphur content,
+    // flash point, FAME content etc — whichever apply to this product,
+    // already worked out by productBlockText()) become actual bullet points
+    // underneath, since those genuinely read better as a list of distinct
+    // properties rather than run together in prose.
+    parts.push(p(`<b>${escHtml(label)}</b>`));
+    if(d.quantity) parts.push(p(`<b>Quantity:</b> ${escHtml(formatNumberDisplay(d.quantity))} ${escHtml(d.unit)}`));
+    if(d.specs.length) parts.push(ul(d.specs.map(([k,v])=>`<b>${escHtml(k)}:</b> ${escHtml(v)}`)));
+    parts.push(blank());
   });
-  parts.push(ul(productItems));
-  parts.push(blank());
 
   const askItems = [];
   if(document.getElementById('enqSpecsRequest') && document.getElementById('enqSpecsRequest').checked){
@@ -9278,7 +9290,9 @@ function buildEnquiryPlainText(){
   productBlocks.forEach(b=>{
     const d = productBlockText(b);
     const label = d.isOther ? (d.name || 'Other Product') : (d.grade || 'Product');
-    lines.push(d.quantity ? `${label}: ${formatNumberDisplay(d.quantity)} ${d.unit}` : label);
+    lines.push(label);
+    if(d.quantity) lines.push(`Quantity: ${formatNumberDisplay(d.quantity)} ${d.unit}`);
+    d.specs.forEach(([k,v]) => lines.push(`- ${k}: ${v}`));
   });
   lines.push('');
   if(document.getElementById('enqSpecsRequest') && document.getElementById('enqSpecsRequest').checked){
