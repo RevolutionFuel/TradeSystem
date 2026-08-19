@@ -942,6 +942,7 @@
                   oninput="onAgentInput('agentNameSupply','agentListSupply')" onfocus="onAgentInput('agentNameSupply','agentListSupply')" onkeydown="handleAutocompleteKeydown(event,'agentListSupply')" onblur="setTimeout(hideAgentList,150)">
                 <div class="ac-list" id="agentListSupply"></div>
               </div>
+              <div id="agentContactPickerSupply"></div>
               <button type="button" class="btn-ghost btn-sm" id="agentToggleSupply" onclick="toggleAgentDetails('Supply')" style="margin-bottom:8px;">+ Add contact details</button>
               <div id="agentDetailsSupply" style="display:none;">
                 <div class="field"><label for="agentContactNameSupply">Contact name</label><input type="text" id="agentContactNameSupply" oninput="onAgentDetailInput('Supply')"></div>
@@ -950,7 +951,7 @@
                   <div class="field"><label for="agentEmailSupply">Email</label><input type="text" id="agentEmailSupply" oninput="onAgentDetailInput('Supply')"></div>
                 </div>
                 <div class="field"><label for="agentNotesSupply">Notes</label><textarea id="agentNotesSupply" rows="2" style="width:100%; font-family:inherit; font-size:13px; padding:8px; border:1px solid var(--line); border-radius:6px;" oninput="onAgentDetailInput('Supply')"></textarea></div>
-                <button type="button" class="btn-ghost btn-sm" onclick="saveAgentToMasterList('Supply')">Save to agent list</button> <span class="status-msg" id="agentSaveStatusSupply">✓ Saved</span>
+                <div class="hint">This is this order's own copy of the agent's details, used on the documents/emails — pick from or edit the agent's saved contacts above, or type a one-off override here just for this order.</div>
               </div>
               <div class="hint">Shared with Customer Confirmation. Appears on the Supply and Customer Confirmation emails/PDFs only — never on the Invoice.</div>
             </fieldset>
@@ -1092,6 +1093,7 @@
                   oninput="onAgentInput('agentNameCustomer','agentListCustomer')" onfocus="onAgentInput('agentNameCustomer','agentListCustomer')" onkeydown="handleAutocompleteKeydown(event,'agentListCustomer')" onblur="setTimeout(hideAgentList,150)">
                 <div class="ac-list" id="agentListCustomer"></div>
               </div>
+              <div id="agentContactPickerCustomer"></div>
               <button type="button" class="btn-ghost btn-sm" id="agentToggleCustomer" onclick="toggleAgentDetails('Customer')" style="margin-bottom:8px;">+ Add contact details</button>
               <div id="agentDetailsCustomer" style="display:none;">
                 <div class="field"><label for="agentContactNameCustomer">Contact name</label><input type="text" id="agentContactNameCustomer" oninput="onAgentDetailInput('Customer')"></div>
@@ -1100,7 +1102,7 @@
                   <div class="field"><label for="agentEmailCustomer">Email</label><input type="text" id="agentEmailCustomer" oninput="onAgentDetailInput('Customer')"></div>
                 </div>
                 <div class="field"><label for="agentNotesCustomer">Notes</label><textarea id="agentNotesCustomer" rows="2" style="width:100%; font-family:inherit; font-size:13px; padding:8px; border:1px solid var(--line); border-radius:6px;" oninput="onAgentDetailInput('Customer')"></textarea></div>
-                <button type="button" class="btn-ghost btn-sm" onclick="saveAgentToMasterList('Customer')">Save to agent list</button> <span class="status-msg" id="agentSaveStatusCustomer">✓ Saved</span>
+                <div class="hint">This is this order's own copy of the agent's details, used on the documents/emails — pick from or edit the agent's saved contacts above, or type a one-off override here just for this order.</div>
               </div>
               <div class="hint">Shared with Supply Confirmation. Appears on the Supply and Customer Confirmation emails/PDFs only — never on the Invoice.</div>
             </fieldset>
@@ -2394,12 +2396,12 @@ function updateReminderStatusHint(){
 // status, not a status of its own (see deliveryDateHasPassed()). Cancelled
 // is a parked state, reachable only manually.
 const STATUS_LIST = [
-  'Enquiry', 'Awaiting Prices', 'Quoted', 'Unconfirmed', 'Supplier Confirmed', 'Customer Confirmed', 'Fully Confirmed',
+  'Enquiry', 'Enquiry Received', 'Awaiting Prices', 'Quoted', 'Unconfirmed', 'Supplier Confirmed', 'Customer Confirmed', 'Fully Confirmed',
   'Invoiced', 'Customer Paid', 'Supplier Paid', 'Fully Settled', 'Cancelled'
 ];
 const STATUS_RANK = {
-  'Enquiry':0, 'Awaiting Prices':1, 'Quoted':2, 'Unconfirmed':3, 'Supplier Confirmed':4, 'Customer Confirmed':4,
-  'Fully Confirmed':5, 'Invoiced':6, 'Customer Paid':7, 'Supplier Paid':7, 'Fully Settled':8,
+  'Enquiry':0, 'Enquiry Received':1, 'Awaiting Prices':2, 'Quoted':3, 'Unconfirmed':4, 'Supplier Confirmed':5, 'Customer Confirmed':5,
+  'Fully Confirmed':6, 'Invoiced':7, 'Customer Paid':8, 'Supplier Paid':8, 'Fully Settled':9,
   'Cancelled':-1
 };
 // Customer Paid: both Amount Received and Paid Date are set (see the
@@ -2489,7 +2491,7 @@ function getOrderStatus(){
 // Dead/Cancelled in a distinct muted red-brown so they read as "parked".
 function getOrderStatusColor(status){
   const colors = {
-    'Enquiry': '#8a8f98', 'Awaiting Prices': '#D98A2C', 'Quoted': '#D98A2C', 'Unconfirmed': '#8a6a2c',
+    'Enquiry': '#8a8f98', 'Enquiry Received': '#6B7280', 'Awaiting Prices': '#D98A2C', 'Quoted': '#D98A2C', 'Unconfirmed': '#8a6a2c',
     'Supplier Confirmed': '#0F5C6E', 'Customer Confirmed': '#0F5C6E', 'Fully Confirmed': '#1F064F',
     'Invoiced': '#2E7D53', 'Customer Paid': '#2E7D53', 'Supplier Paid': '#2E7D53',
     'Fully Settled': '#1F5C3A',
@@ -3789,6 +3791,11 @@ async function loadContactPicker(page){
   }
   renderContactPicker(page, result);
 }
+// Tracks which single contact (by "page-targetKind-id") is currently showing
+// an inline edit form in a contact picker — 'new' for the add-contact form,
+// null for none. Only one open at a time across all pickers, simplest state
+// to reason about.
+let contactPickerEditingKey = null;
 function renderContactPicker(page, result){
   const { containerId, source } = CONTACT_PICKER_PAGES[page];
   const container = document.getElementById(containerId);
@@ -3799,7 +3806,10 @@ function renderContactPicker(page, result){
   const group = (title, contacts, targetKind) => {
     const noDefaultYet = contacts.length > 1 && !contacts.some(c=>c.isPrimary);
     const rows = contacts.length ? contacts.map(c=>{
+        const editKey = `${page}-${targetKind}-${c.id}`;
+        if(contactPickerEditingKey === editKey) return contactPickerEditFormHtml(page, targetKind, c);
         const contactJson = escAttr(JSON.stringify({id:c.id, name:c.name, jobTitle:c.jobTitle, alias:c.alias||''}));
+        const missing = !c.phone && !c.email;
         return `
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:2px;">
           <label class="opt-inline" style="margin:0;">
@@ -3810,46 +3820,62 @@ function renderContactPicker(page, result){
             <input type="checkbox" ${isChecked(selectedCc, c)?'checked':''} onchange="toggleContactSelection('${page}', ${contactJson}, this.checked, '${targetKind}', 'cc')">
             Cc
           </label>
-          <span>${escHtml(contactDisplayName(c))}${c.alias ? ` <span style="color:var(--ink-soft); font-size:11px;">(as "${escHtml(c.alias)}")</span>` : ''}${c.isPrimary ? ' <span style="color:var(--ink-soft); font-size:11px;">(default)</span>' : ''}</span>
+          <span>${escHtml(contactDisplayName(c))}${c.alias ? ` <span style="color:var(--ink-soft); font-size:11px;">(as "${escHtml(c.alias)}")</span>` : ''}${c.isPrimary ? ' <span style="color:var(--ink-soft); font-size:11px;">(default)</span>' : ''}${missing ? ' <span style="color:var(--bad, #B3492E); font-size:11px;">(no phone/email on file)</span>' : ''}</span>
+          <button type="button" class="btn-ghost btn-sm" style="padding:2px 8px; margin-left:auto;" onclick="startEditContactInPicker('${page}','${targetKind}','${escAttr(c.id)}')">Edit</button>
         </div>
       `;
       }).join('') : `<div class="hint" style="margin:2px 0 6px;">None yet.</div>`;
     const noDefaultHint = noDefaultYet ? `<div class="hint" style="margin:2px 0 6px;">No default set yet — tick whoever you address most often to make them the standing default.</div>` : '';
+    const addKey = `${page}-${targetKind}-new`;
+    const addFormOrBtn = contactPickerEditingKey === addKey
+      ? contactPickerEditFormHtml(page, targetKind, null)
+      : `<button class="btn-ghost btn-sm" type="button" style="margin-top:4px;" onclick="contactPickerEditingKey='${addKey}'; loadContactPicker('${page}');">+ Add a new contact here</button>`;
     return `<div style="margin-bottom:10px;">
       <div style="font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; color:var(--ink-soft); margin-bottom:4px;">${escHtml(title)}</div>
       ${rows}
       ${noDefaultHint}
-      <button class="btn-ghost btn-sm" type="button" style="margin-top:4px;" onclick="showAddContactForm('${page}','${targetKind}')">+ Add a new contact here</button>
-      <div id="addContactForm-${page}-${targetKind}"></div>
+      ${addFormOrBtn}
     </div>`;
   };
   container.innerHTML = source === 'supplier'
     ? group('Supplier contacts', result.orgContacts, 'supplier')
     : group('Vessel contacts', result.vesselContacts, 'vessel') + group('Registered owner / buyer contacts', result.orgContacts, 'owner');
 }
-function showAddContactForm(page, targetKind){
-  const el = document.getElementById(`addContactForm-${page}-${targetKind}`);
-  if(!el) return;
-  el.innerHTML = `
-    <div style="border:1px solid var(--line); border-radius:6px; padding:8px; margin-top:6px;">
-      <input type="text" placeholder="Name" id="newContactName-${page}-${targetKind}" style="width:100%; margin-bottom:4px;">
-      <input type="text" placeholder="Alias for emails (optional, e.g. first name only)" id="newContactAlias-${page}-${targetKind}" style="width:100%; margin-bottom:4px;">
-      <input type="text" placeholder="Job title (optional)" id="newContactTitle-${page}-${targetKind}" style="width:100%; margin-bottom:4px;">
-      <input type="text" placeholder="Phone (optional)" id="newContactPhone-${page}-${targetKind}" style="width:100%; margin-bottom:4px;">
-      <input type="text" placeholder="Email (optional)" id="newContactEmail-${page}-${targetKind}" style="width:100%; margin-bottom:6px;">
-      <button class="btn-primary btn-sm" type="button" onclick="submitNewContact('${page}','${targetKind}')">Save contact</button>
-      <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('addContactForm-${page}-${targetKind}').innerHTML=''">Cancel</button>
-    </div>
-  `;
+function startEditContactInPicker(page, targetKind, contactId){
+  contactPickerEditingKey = `${page}-${targetKind}-${contactId}`;
+  loadContactPicker(page);
 }
-async function submitNewContact(page, targetKind){
-  const name = document.getElementById(`newContactName-${page}-${targetKind}`).value.trim();
+function cancelContactPickerEdit(page){
+  contactPickerEditingKey = null;
+  loadContactPicker(page);
+}
+// Shared inline edit/add form used by every contact picker in the app
+// (vessel/owner/supplier here, and the Agent picker below) - same fields,
+// same save mechanism (window.TS.saveContact with the real id for an edit,
+// no id for a new one), so a contact missing its phone/email can be fixed
+// right where it's found rather than needing a trip to the Data tab.
+function contactPickerEditFormHtml(page, targetKind, contact){
+  const c = contact || {id:'', name:'', alias:'', jobTitle:'', phone:'', email:''};
+  const formId = `cpEdit-${page}-${targetKind}`;
+  return `<div style="border:1px solid var(--line); border-radius:6px; padding:8px; margin:4px 0;">
+    <input type="text" placeholder="Name" id="${formId}-name" value="${escAttr(c.name)}" style="width:100%; margin-bottom:4px;">
+    <input type="text" placeholder="Alias for emails (optional, e.g. first name only)" id="${formId}-alias" value="${escAttr(c.alias||'')}" style="width:100%; margin-bottom:4px;">
+    <input type="text" placeholder="Job title (optional)" id="${formId}-title" value="${escAttr(c.jobTitle)}" style="width:100%; margin-bottom:4px;">
+    <input type="text" placeholder="Phone" id="${formId}-phone" value="${escAttr(c.phone)}" style="width:100%; margin-bottom:4px;">
+    <input type="text" placeholder="Email" id="${formId}-email" value="${escAttr(c.email)}" style="width:100%; margin-bottom:6px;">
+    <button class="btn-primary btn-sm" type="button" onclick="saveContactPickerEdit('${page}','${targetKind}','${escAttr(c.id)}')">Save</button>
+    <button class="btn-ghost btn-sm" type="button" onclick="cancelContactPickerEdit('${page}')">Cancel</button>
+  </div>`;
+}
+async function saveContactPickerEdit(page, targetKind, contactId){
+  const formId = `cpEdit-${page}-${targetKind}`;
+  const name = document.getElementById(`${formId}-name`).value.trim();
   if(!name){ alert('Enter a name first.'); return; }
-  const alias = document.getElementById(`newContactAlias-${page}-${targetKind}`).value.trim();
-  const jobTitle = document.getElementById(`newContactTitle-${page}-${targetKind}`).value.trim();
-  const phone = document.getElementById(`newContactPhone-${page}-${targetKind}`).value.trim();
-  const email = document.getElementById(`newContactEmail-${page}-${targetKind}`).value.trim();
-  if(!window.TS || !window.TS.saveContact){ alert('Adding a contact needs the database connection \u2014 not available right now.'); return; }
+  const alias = document.getElementById(`${formId}-alias`).value.trim();
+  const jobTitle = document.getElementById(`${formId}-title`).value.trim();
+  const phone = document.getElementById(`${formId}-phone`).value.trim();
+  const email = document.getElementById(`${formId}-email`).value.trim();
+  if(!window.TS || !window.TS.saveContact){ alert('Saving a contact needs the database connection \u2014 not available right now.'); return; }
   let target;
   if(targetKind === 'supplier'){
     const supplierId = currentSupplierIdForPage(page);
@@ -3858,22 +3884,26 @@ async function submitNewContact(page, targetKind){
   } else {
     const { vesselId, ownerId } = currentVesselAndOwnerIds();
     target = targetKind === 'vessel' ? {vesselId} : {organizationId: ownerId};
-    if(targetKind === 'vessel' && !vesselId){ alert('Pick a vessel on the Order page first.'); return; }
-    if(targetKind === 'owner' && !ownerId){ alert('This vessel has no linked registered owner yet \u2014 pick or add one on the Order page first.'); return; }
+    if(!contactId){
+      if(targetKind === 'vessel' && !vesselId){ alert('Pick a vessel on the Order page first.'); return; }
+      if(targetKind === 'owner' && !ownerId){ alert('This vessel has no linked registered owner yet \u2014 pick or add one on the Order page first.'); return; }
+    }
   }
   try{
-    await window.TS.saveContact({name, alias, jobTitle, phone, email}, target);
+    await window.TS.saveContact({name, alias, jobTitle, phone, email}, target, contactId || null);
   }catch(e){
-    console.error('TS: saveContact failed', e);
+    console.error('TS: saveContact (picker edit) failed', e);
     flashSaveError();
     return;
   }
-  // Auto-select the newly added contact (it belongs on this correspondence,
-  // since that's why it was just added) and refresh the picker to show it
-  // alongside everyone else already on file.
-  toggleContactSelection(page, {name, jobTitle, alias}, true);
+  contactPickerEditingKey = null;
+  // A brand-new contact (no id) belongs on this correspondence — that's why
+  // it was just added — so it's auto-selected into the "to" list. Editing
+  // an existing contact leaves their current to/cc selection untouched.
+  if(!contactId) toggleContactSelection(page, {name, jobTitle, alias}, true);
   await loadContactPicker(page);
 }
+
 // listKind is 'to' (default) or 'cc'. A contact can only be on one of the
 // two lists at once — ticking them into one automatically drops them from
 // the other, so "to" and "cc" behave like a single choice per contact even
@@ -4977,6 +5007,116 @@ function pickAgent(a){
   });
   hideAgentList();
   render(); renderSupply(); renderCustomer();
+  loadAgentContactPicker('Supply');
+  loadAgentContactPicker('Customer');
+}
+// Finds the currently-picked agent's real database id by matching the
+// typed agent name against the AGENTS reference list (case-insensitive,
+// same matching pattern the old saveAgentToMasterList used) - not tracked
+// as separate state, since Supply and Customer always mirror the same name.
+function currentAgentId(page){
+  const nameEl = document.getElementById('agentName'+page);
+  const trimmed = (nameEl ? nameEl.value : '').trim().toLowerCase();
+  if(!trimmed) return null;
+  const match = AGENTS.find(a => a.name.trim().toLowerCase() === trimmed);
+  return match ? match.id : null;
+}
+// Shows every real contact this agent has on file (not just one flattened
+// "primary" contact, which is all the old agent autocomplete ever
+// surfaced) - lets the person pick which one this order should use, edit
+// any of them inline (fixing a missing phone/email right here), or add a
+// genuinely new one. All saves go through the real window.TS.saveContact
+// path, unlike the old "Save to agent list" button which only wrote to a
+// defunct local-only storage mechanism and never touched the database.
+async function loadAgentContactPicker(page){
+  const container = document.getElementById('agentContactPicker'+page);
+  if(!container) return;
+  const agentId = currentAgentId(page);
+  if(!agentId || !isRealUuid(agentId)){ container.innerHTML = ''; return; }
+  if(!window.TS || !window.TS.fetchContacts){ container.innerHTML = ''; return; }
+  let result;
+  try{ result = await window.TS.fetchContacts(null, agentId); }
+  catch(e){ console.error('TS: fetchContacts (agent) failed', e); container.innerHTML = ''; return; }
+  renderAgentContactPicker(page, agentId, result.orgContacts || []);
+}
+function renderAgentContactPicker(page, agentId, contacts){
+  const container = document.getElementById('agentContactPicker'+page);
+  if(!container) return;
+  const currentNameEl = document.getElementById('agentContactName'+page);
+  const currentName = currentNameEl ? currentNameEl.value : '';
+  const rows = contacts.length ? contacts.map(c=>{
+      const editKey = `agent-${page}-${c.id}`;
+      if(contactPickerEditingKey === editKey) return agentContactEditFormHtml(page, agentId, c);
+      const meta = [c.jobTitle, c.phone, c.email].filter(Boolean).join(' \u00b7 ');
+      const isCurrent = currentName && c.name === currentName;
+      const contactJson = escAttr(JSON.stringify({name: c.name, phone: c.phone, email: c.email}));
+      return `<div style="display:flex; align-items:center; gap:10px; margin-bottom:2px;">
+        <label class="opt-inline" style="margin:0;">
+          <input type="radio" name="agentContactPick${page}" ${isCurrent?'checked':''} onchange="selectAgentContact('${page}', ${contactJson})">
+          ${escHtml(contactDisplayName(c))}${c.isPrimary ? ' <span style="color:var(--ink-soft); font-size:11px;">(default)</span>' : ''}
+        </label>
+        ${meta ? `<span style="color:var(--ink-soft); font-size:11px;">${escHtml(meta)}</span>` : `<span style="color:var(--bad, #B3492E); font-size:11px;">no phone/email on file</span>`}
+        <button type="button" class="btn-ghost btn-sm" style="padding:2px 8px; margin-left:auto;" onclick="contactPickerEditingKey='${editKey}'; loadAgentContactPicker('${page}');">Edit</button>
+      </div>`;
+    }).join('') : `<div class="hint" style="margin:2px 0 6px;">No saved contacts for this agent yet.</div>`;
+  const addKey = `agent-${page}-new`;
+  const addFormOrBtn = contactPickerEditingKey === addKey
+    ? agentContactEditFormHtml(page, agentId, null)
+    : `<button class="btn-ghost btn-sm" type="button" style="margin-top:4px;" onclick="contactPickerEditingKey='${addKey}'; loadAgentContactPicker('${page}');">+ Add a new contact here</button>`;
+  container.innerHTML = `<div style="margin-bottom:10px;">
+    <div style="font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; color:var(--ink-soft); margin-bottom:4px;">Agent contacts</div>
+    ${rows}
+    ${addFormOrBtn}
+  </div>`;
+}
+// Populates this order's own agent-details snapshot (what actually prints
+// on the documents/emails) from the chosen saved contact, mirrored across
+// Supply and Customer same as the rest of the agent fields.
+function selectAgentContact(page, contact){
+  ['Supply','Customer'].forEach(p=>{
+    const contactEl = document.getElementById('agentContactName'+p);
+    if(contactEl) contactEl.value = contact.name || '';
+    const phoneEl = document.getElementById('agentTelephone'+p);
+    if(phoneEl) phoneEl.value = contact.phone || '';
+    const emailEl = document.getElementById('agentEmail'+p);
+    if(emailEl) emailEl.value = contact.email || '';
+    setAgentDetailsExpanded(p, true);
+  });
+  render(); renderSupply(); renderCustomer();
+  loadAgentContactPicker('Supply');
+  loadAgentContactPicker('Customer');
+}
+function agentContactEditFormHtml(page, agentId, contact){
+  const c = contact || {id:'', name:'', jobTitle:'', phone:'', email:''};
+  const formId = `agentCPEdit-${page}`;
+  return `<div style="border:1px solid var(--line); border-radius:6px; padding:8px; margin:4px 0;">
+    <input type="text" placeholder="Name" id="${formId}-name" value="${escAttr(c.name)}" style="width:100%; margin-bottom:4px;">
+    <input type="text" placeholder="Job title (optional)" id="${formId}-title" value="${escAttr(c.jobTitle)}" style="width:100%; margin-bottom:4px;">
+    <input type="text" placeholder="Phone" id="${formId}-phone" value="${escAttr(c.phone)}" style="width:100%; margin-bottom:4px;">
+    <input type="text" placeholder="Email" id="${formId}-email" value="${escAttr(c.email)}" style="width:100%; margin-bottom:6px;">
+    <button class="btn-primary btn-sm" type="button" onclick="saveAgentContactEdit('${page}','${agentId}','${escAttr(c.id)}')">Save</button>
+    <button class="btn-ghost btn-sm" type="button" onclick="contactPickerEditingKey=null; loadAgentContactPicker('${page}');">Cancel</button>
+  </div>`;
+}
+async function saveAgentContactEdit(page, agentId, contactId){
+  const formId = `agentCPEdit-${page}`;
+  const name = document.getElementById(`${formId}-name`).value.trim();
+  if(!name){ alert('Enter a name first.'); return; }
+  const jobTitle = document.getElementById(`${formId}-title`).value.trim();
+  const phone = document.getElementById(`${formId}-phone`).value.trim();
+  const email = document.getElementById(`${formId}-email`).value.trim();
+  if(!window.TS || !window.TS.saveContact){ alert('Saving a contact needs the database connection \u2014 not available right now.'); return; }
+  try{
+    await window.TS.saveContact({name, jobTitle, phone, email}, {organizationId: agentId}, contactId || null);
+  }catch(e){
+    console.error('TS: saveContact (agent) failed', e);
+    flashSaveError();
+    return;
+  }
+  contactPickerEditingKey = null;
+  // The contact just added/edited becomes this order's current agent
+  // contact - the natural expectation after saving it right here.
+  selectAgentContact(page, {name, phone, email});
 }
 // Resets the shared agent info on both Supply and Customer Confirmation.
 function clearAgentInfo(){
@@ -4986,7 +5126,10 @@ function clearAgentInfo(){
       if(el) el.value = '';
     });
     setAgentDetailsExpanded(page, false);
+    const pickerEl = document.getElementById('agentContactPicker'+page);
+    if(pickerEl) pickerEl.innerHTML = '';
   });
+  contactPickerEditingKey = null;
 }
 function setAgentDetailsExpanded(page, expanded){
   const el = document.getElementById('agentDetails'+page);
@@ -5009,27 +5152,6 @@ function onAgentDetailInput(page){
     if(el && otherEl) otherEl.value = el.value;
   });
   render(); renderSupply(); renderCustomer();
-}
-// Adds a new agent to the master list, or updates the existing one if the
-// typed name matches an agent already in it (case-insensitive).
-async function saveAgentToMasterList(page){
-  const name = document.getElementById('agentName'+page).value.trim();
-  if(!name){ alert('Enter an agent name first.'); return; }
-  const record = {
-    name,
-    contactName: document.getElementById('agentContactName'+page).value.trim(),
-    telephone: document.getElementById('agentTelephone'+page).value.trim(),
-    email: document.getElementById('agentEmail'+page).value.trim(),
-    notes: document.getElementById('agentNotes'+page).value.trim()
-  };
-  const existingIdx = AGENTS.findIndex(a=>a.name.trim().toLowerCase() === name.toLowerCase());
-  if(existingIdx > -1){
-    AGENTS[existingIdx] = Object.assign({}, AGENTS[existingIdx], record);
-  } else {
-    AGENTS.push(Object.assign({id: 'agent_' + Date.now().toString(36) + Math.floor(Math.random()*1000)}, record));
-  }
-  await saveList('ql-agents', AGENTS);
-  flash('agentSaveStatus'+page);
 }
 
 function clearVesselMeta(){
@@ -12357,6 +12479,10 @@ async function applyQuoteState(data){
       setAgentDetailsExpanded(page, true);
     }
   });
+  if(data.agentName){
+    loadAgentContactPicker('Supply');
+    loadAgentContactPicker('Customer');
+  }
 
   orderStatusFlags = Object.assign({awaitingPrices:false, quoted:false, supplierConfirmed:false, customerConfirmed:false, invoiced:false}, data.orderStatusFlags || {});
   manualStatusOverride = (data.manualStatusOverride && STATUS_LIST.includes(data.manualStatusOverride)) ? data.manualStatusOverride : null;
