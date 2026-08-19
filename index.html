@@ -3980,6 +3980,32 @@ function pickVessel(v){
   renderCustomer();
   renderEnquiry();
 }
+// Closes a specific gap: if the vessel had no owner linked yet at the
+// moment it was picked (pickVessel() above), vOwner is correctly left
+// blank at that point - there was genuinely nothing to snapshot. But
+// nothing re-checks it afterward, so if an owner gets linked to the
+// vessel later (from Manage Lists, in a separate session), an
+// already-started order never picks that up - not on the form, not on
+// the invoice/summary/spreadsheet copy, which all read straight from
+// this same field.
+//
+// This only ever fills vOwner when it's CURRENTLY EMPTY - it never
+// overwrites an existing value, whether that value was auto-filled at
+// vessel-selection time or typed by hand. That's deliberate: once a name
+// is actually recorded, it stays a frozen point-in-time snapshot exactly
+// as intended (so a customer being renamed later doesn't retroactively
+// change a historic invoice) - this only fixes the case where nothing
+// was ever captured in the first place.
+function syncOwnerFromVesselIfBlank(){
+  const ownerEl = document.getElementById('vOwner');
+  if(!ownerEl || ownerEl.value.trim()) return;
+  const vesselName = (fv('vessel') || fv('vesselOrder') || '').trim().toLowerCase();
+  if(!vesselName) return;
+  const v = VESSELS.find(x=>x.name.trim().toLowerCase()===vesselName);
+  if(!v) return;
+  const name = (v.ownerId && ownerName(v.ownerId)) || v.owner || '';
+  if(name) ownerEl.value = name;
+}
 
 /* ===================== SUPPLIER AUTOCOMPLETE (Supply Confirmation page) ===================== */
 let selectedSupplier = null;
@@ -4361,6 +4387,12 @@ async function saveOrderToDatabase(){
   orderSaveInProgress = true;
   if(btn){ btn.disabled = true; btn.textContent = 'Saving...'; }
   try{
+    // Safety net: closes the same gap as the one on order load (see
+    // syncOwnerFromVesselIfBlank's own comment) - guarantees the database
+    // never receives a stale-blank owner snapshot on this save, even if
+    // the vessel's owner was linked after this order was started and the
+    // order was never reopened in between.
+    syncOwnerFromVesselIfBlank();
     const state = buildOrderSaveState();
     const newId = await window.TS.saveOrder(state, currentOrderDbId);
     currentOrderDbId = newId;
@@ -12348,6 +12380,13 @@ async function applyQuoteState(data){
   document.getElementById('vOwner').value = v.owner || '';
   document.getElementById('vFitting').value = v.fitting || '';
   document.getElementById('showVesselSpecifics').checked = !!v.showSpecifics;
+  // Fixes a specific historic gap: an order started before its vessel had
+  // an owner linked would have saved an empty owner snapshot - if that
+  // owner has since been added, this fills the form in immediately on
+  // load rather than leaving it blank until the next save. Never
+  // overwrites a real saved value (see syncOwnerFromVesselIfBlank's own
+  // comment for the full reasoning).
+  syncOwnerFromVesselIfBlank();
 
   document.getElementById('port').value = data.port || '';
   document.getElementById('portLocation').value = data.portLocation || '';
