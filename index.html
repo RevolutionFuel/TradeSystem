@@ -7340,9 +7340,17 @@ async function copyOrderRowForSpreadsheet(includeInvoiceFields, color, btnEl){
   // line wanted here (confirmed against a reference screenshot: existing
   // sheet rows already using a fine dotted line looked right, a freshly
   // pasted row using dashed looked visibly heavier by comparison).
-  const LEFT_BORDER = '1px dotted #999999';
-  const RIGHT_BORDER_DEFAULT = '1px dotted #999999';
-  const RIGHT_BORDER_DOUBLE = '3px double #000000';
+  // Point-based widths (not pixels) - Microsoft's own Office HTML export
+  // uses pt for border widths, and specifically 0.5pt for what Excel calls
+  // a "Hairline" border internally (confirmed: an actual Excel Hairline
+  // border, when exported to HTML by Excel itself, comes out as
+  // "border-style: dotted" at a sub-1px point width - not "1px dotted").
+  // A plain "1px dotted" was being bucketed into Excel's coarser "Thin"
+  // weight on paste rather than true Hairline, which is why it still read
+  // heavier than the reference rows despite the style itself being right.
+  const LEFT_BORDER = '0.5pt dotted #999999';
+  const RIGHT_BORDER_DEFAULT = '0.5pt dotted #999999';
+  const RIGHT_BORDER_DOUBLE = '2.25pt double #000000';
   const cellsHtml = row.map((v, i) => {
     const meta = SPREADSHEET_COLUMN_META[i] || {align:'center', bg:null};
     const displayValue = meta.number ? formatSpreadsheetNumber(v) : v;
