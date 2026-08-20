@@ -4855,7 +4855,7 @@ function dashboardTableHtml(rows, availableWidth){
   // dedicated column, second, right after Reference.
   const headHtml = compact
     ? thStacked('13%','reference','Reference','broker','Broker') + thStacked('28%','vessel','Vessel','port','Port','eta','ETA') + thStacked('30%','customer','Customer','supplier','Supplier') + thStacked('15%','purchase','Purchase','sale','Sale') + th('status','Status','14%')
-    : th('reference','Reference') + th('broker','Broker') + th('vessel','Vessel') + th('port','Port') + th('customer','Customer') + th('supplier','Supplier') + th('eta','ETA / Delivery') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status','140px');
+    : th('reference','Reference') + th('broker','Broker') + th('vessel','Vessel') + th('port','Port') + th('eta','ETA / Delivery') + th('customer','Customer') + th('supplier','Supplier') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status','140px');
   const bodyHtml = rows.map(r=>{
     const dateText = fmtDashboardDate(r.deliveryDate || r.eta);
     const refText = r.orderNumber || r.quoteRef || '\u2014';
@@ -4877,9 +4877,9 @@ function dashboardTableHtml(rows, availableWidth){
       <td>${escHtml(initials || '\u2014')}</td>
       <td>${escHtml(r.vesselName || '\u2014')}</td>
       <td>${escHtml(r.portName || '\u2014')}</td>
+      <td>${escHtml(dateText)}</td>
       <td>${escHtml(r.customerName || '\u2014')}</td>
       <td>${escHtml(r.supplierName || '\u2014')}</td>
-      <td>${escHtml(dateText)}</td>
       <td>${escHtml(purchaseText)}</td>
       <td>${escHtml(saleText)}</td>
       ${statusCell}</tr>`;
