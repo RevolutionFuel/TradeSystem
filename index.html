@@ -113,29 +113,24 @@
   .dashboard-table td{padding:6px 8px; border-bottom:1px solid var(--line); font-size:11px; color:var(--teal-dark); word-break:break-word; overflow-wrap:break-word; white-space:normal;}
   .dashboard-table tr:last-child td{border-bottom:none;}
   .dashboard-table tr:hover td{background:#FAF8F3;}
-  .dashboard-table td .tsb-status-badge{word-break:normal; overflow-wrap:normal; white-space:normal; max-width:100%; box-sizing:border-box;}
+  /* Applies at every viewport width, not just narrow ones - the wide/
+     desktop table layout (separate Purchase Total/Sale Total/Status
+     columns, no compact stacking) still uses this base rule rather than
+     the ≤640px override below, so it needs the same two fixes: break-word
+     lets a single long status word (e.g. "Unconfirmed") wrap if it must,
+     rather than having no way to wrap at all; width:fit-content makes the
+     badge hug its actual (possibly wrapped) text instead of stretching to
+     fill the whole available column width the moment it wraps, which is
+     what was leaving visible dead space around "Awaiting"/"Prices" etc.
+     even at wide viewports where the Status column has plenty of room.
+     max-width:100% remains as a safety cap either way. */
+  .dashboard-table td .tsb-status-badge{word-break:break-word; overflow-wrap:break-word; white-space:normal; width:fit-content; max-width:100%; box-sizing:border-box;}
   .dashboard-ref-link{color:var(--amber); font-weight:700; text-decoration:none;}
   .dashboard-ref-link:hover{text-decoration:underline;}
   @media (max-width:640px){
     .dashboard-table{table-layout:fixed;}
     .dashboard-table th, .dashboard-table td{padding:4px 2.5px; word-break:break-word; overflow-wrap:break-word;}
     .dashboard-table th, .dashboard-table td{font-size:9px; letter-spacing:0.01em;}
-    /* word-break:normal previously meant a single long status word (e.g.
-       "Unconfirmed", "Cancelled") had no way to wrap at all and could push
-       past the column's right edge - break-word lets it wrap mid-word as a
-       last resort, same as every other cell in this table already does,
-       while multi-word statuses still wrap at the natural space first.
-       width:fit-content is the other half of that fix: an inline-block's
-       shrink-to-fit sizing takes the FULL available width once its content
-       needs to wrap at all (it doesn't re-measure to find the narrowest box
-       that still fits the wrapped lines) - so a wrapped "Awaiting Prices"
-       was stretching to the column's whole max-width, leaving visible dead
-       space around "Awaiting" and "Prices" individually, even though
-       neither line needed that much room. fit-content makes it hug its
-       actual (wrapped) content instead, matching how the short, single-line
-       statuses (Enquiry, Quoted) already look. max-width:100% remains as a
-       safety cap so it still can't overflow the column either way. */
-    .dashboard-table td .tsb-status-badge{word-break:break-word; overflow-wrap:break-word; white-space:normal; width:fit-content; max-width:100%; box-sizing:border-box;}
     /* Smaller than the generic .tsb-status-badge mobile size (used by the
        top status bar elsewhere) - the dashboard table's Status column has
        far less room than that bar does, and this is scoped specifically to
