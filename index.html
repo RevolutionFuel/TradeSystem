@@ -7117,6 +7117,9 @@ function buildPdfQuotationHtml(docType){
           addrLines.slice(1).forEach(line => forLines.push(escHtml(line)));
         }
       }
+      if(owner && owner.vatNumber && owner.vatNumber.trim()){
+        forLines.push(`<strong>VAT Number:</strong> ${escHtml(owner.vatNumber.trim())}`);
+      }
       // Vessel name/IMO and the delivery details below are only repeated
       // here for the Quotation PDF, which has no separate Delivery
       // Details/Vessel Specifics row of its own — Customer Confirmation
@@ -7614,6 +7617,9 @@ function computeInvoiceData(){
       if(ownerDisplayName) billLines.push(escHtml(ownerDisplayName));
       if(owner && owner.address){
         formatAddressLines(owner.address).forEach(line => billLines.push(escHtml(line)));
+      }
+      if(owner && owner.vatNumber && owner.vatNumber.trim()){
+        billLines.push(`<strong>VAT Number:</strong> ${escHtml(owner.vatNumber.trim())}`);
       }
     } else {
       billLines.push(`<i>(No vessel selected \u2014 choose one on the Quote page)</i>`);
