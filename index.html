@@ -64,7 +64,12 @@
      then - because animation-iteration-count is infinite - jumps back
      to the start position instantly and repeats, which reads as
      "disappears off the left edge, reappears at the right edge" from
-     the viewer's side. z-index:-1 and pointer-events:none keep it
+     the viewer's side. A 10s delay before the first pass, with
+     fill-mode:backwards so it correctly sits at its off-screen starting
+     position for that delay rather than at its un-animated default
+     (which would otherwise show it sitting visible at the left edge for
+     those 10 seconds before jumping to the start of the animation).
+     z-index:-1 and pointer-events:none keep it
      purely decorative, behind the app's real content and never
      intercepting clicks, matching body::before's own backdrop layer. */
   body::after{
@@ -79,7 +84,7 @@
     background-repeat: no-repeat;
     z-index: -1;
     pointer-events: none;
-    animation: yachtDrift 50s linear infinite;
+    animation: yachtDrift 50s linear 10s infinite backwards;
   }
   @keyframes yachtDrift {
     from { transform: translateX(100vw); }
