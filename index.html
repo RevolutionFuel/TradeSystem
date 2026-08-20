@@ -817,6 +817,20 @@
             <legend>Products &amp; pricing</legend>
             <div id="productBlocksQuote"></div>
             <div class="hint" style="margin-top:8px;">To add, remove, or change products, quantities, or specs, go to the <b>Order</b> page — this page is for pricing only.</div>
+            <div class="field" style="margin-top:14px;">
+              <label for="taxStatus">Tax status <span style="font-weight:400; color:var(--ink-soft);">(optional)</span></label>
+              <select id="taxStatus" onchange="onTaxStatusChange()">
+                <option value="">— None —</option>
+                <option value="Duty and VAT Free">Duty and VAT Free</option>
+                <option value="Duty and VAT Paid">Duty and VAT Paid</option>
+                <option value="Duty Free">Duty Free</option>
+                <option value="Duty Free and VAT Paid">Duty Free and VAT Paid</option>
+                <option value="Duty Paid and VAT Free">Duty Paid and VAT Free</option>
+                <option value="VAT Free">VAT Free</option>
+                <option value="VAT Included">VAT Included</option>
+              </select>
+              <div class="hint">If set, shown as a note under the pricing on the Quote, Supply Confirmation, and Customer Confirmation — emails and PDFs alike. Leave as "— None —" to omit, or to instead choose it directly on the Invoice page.</div>
+            </div>
           </fieldset>
 
           <fieldset>
@@ -1279,6 +1293,30 @@
               <legend>Final quantities</legend>
               <div id="productBlocksInvoice"></div>
               <div class="hint" style="margin-top:8px;">Final quantities are saved separately from the ordered quantity on the Order page, so the invoice can reflect the actual delivered amount (e.g. temperature-corrected vs ambient). Leave blank to invoice at the originally ordered quantity.</div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Tax status</legend>
+              <label class="opt-inline" style="margin-bottom:6px;">
+                <input type="checkbox" id="includeTaxStatusInvoice" checked onchange="render()"> Include tax status
+              </label>
+              <div id="taxStatusInvoiceFallback" style="display:none;">
+                <div class="field">
+                  <label for="taxStatusInvoice">Tax status</label>
+                  <select id="taxStatusInvoice" onchange="onTaxStatusInvoiceChange()">
+                    <option value="">— None —</option>
+                    <option value="Duty and VAT Free">Duty and VAT Free</option>
+                    <option value="Duty and VAT Paid">Duty and VAT Paid</option>
+                    <option value="Duty Free">Duty Free</option>
+                    <option value="Duty Free and VAT Paid">Duty Free and VAT Paid</option>
+                    <option value="Duty Paid and VAT Free">Duty Paid and VAT Free</option>
+                    <option value="VAT Free">VAT Free</option>
+                    <option value="VAT Included">VAT Included</option>
+                  </select>
+                  <div class="hint">Nothing's been set on the Quote page yet, so it can be chosen here instead — same value either way, and setting it here also fills it in back on the Quote page.</div>
+                </div>
+              </div>
+              <div class="hint">Shown as a note under the pricing on the invoice when a tax status has been set (from here or from the Quote page) and this box is ticked.</div>
             </fieldset>
 
             <fieldset>
@@ -2419,6 +2457,51 @@ function updateReminderStatusHint(){
 // delivery date passed" is now just a computed fact shown alongside the
 // status, not a status of its own (see deliveryDateHasPassed()). Cancelled
 // is a parked state, reachable only manually.
+// Shared between the Quote page's own dropdown and the Invoice page's
+// fallback dropdown (shown only when nothing's been set yet) - both write
+// to the same underlying taxStatus value, just from two different places
+// in the flow.
+const TAX_STATUS_OPTIONS = [
+  'Duty and VAT Free',
+  'Duty and VAT Paid',
+  'Duty Free',
+  'Duty Free and VAT Paid',
+  'Duty Paid and VAT Free',
+  'VAT Free',
+  'VAT Included'
+];
+function onTaxStatusChange(){
+  syncTaxStatusInvoiceVisibility();
+  render(); renderSupply(); renderCustomer(); renderInvoicePreviewOnly();
+}
+function onTaxStatusInvoiceChange(){
+  const mainEl = document.getElementById('taxStatus');
+  const fallbackEl = document.getElementById('taxStatusInvoice');
+  if(mainEl && fallbackEl) mainEl.value = fallbackEl.value;
+  render(); renderSupply(); renderCustomer(); renderInvoicePreviewOnly();
+}
+// The Invoice page's fallback dropdown is only relevant when nothing's
+// been set on the Quote page yet - shown/hidden here based on that, and
+// kept in sync with the main field's value either way (even while
+// hidden), so it never shows something stale if it reappears later after
+// the main value is cleared.
+function syncTaxStatusInvoiceVisibility(){
+  const mainEl = document.getElementById('taxStatus');
+  const container = document.getElementById('taxStatusInvoiceFallback');
+  const fallbackEl = document.getElementById('taxStatusInvoice');
+  if(!mainEl || !container || !fallbackEl) return;
+  const isBlank = !mainEl.value;
+  container.style.display = isBlank ? 'block' : 'none';
+  fallbackEl.value = mainEl.value;
+}
+// Quote/Supply/Customer show the tax status unconditionally whenever it's
+// set - only the Invoice page has its own "include tax status" checkbox
+// gating whether it actually appears there.
+function getTaxStatusForInvoice(){
+  const includeEl = document.getElementById('includeTaxStatusInvoice');
+  if(includeEl && !includeEl.checked) return '';
+  return fv('taxStatus');
+}
 const STATUS_LIST = [
   'Enquiry', 'Enquiry Received', 'Awaiting Prices', 'Quoted', 'Unconfirmed', 'Supplier Confirmed', 'Customer Confirmed', 'Fully Confirmed',
   'Invoiced', 'Customer Paid', 'Supplier Paid', 'Fully Settled', 'Cancelled'
@@ -7236,6 +7319,7 @@ function buildPdfQuotationHtml(docType){
     <div class="terms-heading">${docType === 'quotation' ? 'Summary' : 'Order Summary'}</div>
     ${summaryHtml}
     ${summaryHasExcluded ? `<div style="font-size:9pt; color:#B3492E; margin-top:-4px;">* Excludes item(s) where the price and quantity units could not be converted against each other.</div>` : ''}
+    ${fv('taxStatus') ? `<div style="font-size:${tightLayout?'9pt':'11pt'}; margin-top:4pt;"><b>Tax Status:</b> ${escHtml(fv('taxStatus'))}</div>` : ''}
 
     ${productSections}
 
@@ -7674,6 +7758,7 @@ function buildInvoicePdfHtml(){
       </tbody>
     </table>
     ${anyExcluded ? `<div style="font-size:9pt; color:#B3492E; margin-top:6px;">* Excluded \u2014 purchase and selling currencies differ and no exchange rate has been entered on the Supply Confirmation page.</div>` : ''}
+    ${getTaxStatusForInvoice() ? `<div style="font-size:10.5pt; margin-top:6px;"><b>Tax Status:</b> ${escHtml(getTaxStatusForInvoice())}</div>` : ''}
 
     <div class="due-line">Please make payment on or before: <b>${escHtml(formatDateForQuote(isoDate(dueDateObj)))}</b></div>
 
@@ -7746,6 +7831,12 @@ function buildInvoiceEmailHtml(){
   parts.push(blank());
   if(inv.anyExcluded) parts.push(p(`<i style="color:#B3492E;">* One or more products couldn't be fully priced \u2014 see the PDF for details.</i>`, 10));
 
+  const invTaxStatus = getTaxStatusForInvoice();
+  if(invTaxStatus){
+    parts.push(p(`<b>Tax Status:</b> ${escHtml(invTaxStatus)}`));
+    parts.push(blank());
+  }
+
   parts.push(p('Thank you again and we look forward to being of assistance with your future requirements.'));
   parts.push(blank());
 
@@ -7788,6 +7879,13 @@ function buildInvoiceEmailPlainText(){
   lines.push('- Invoice Total: ' + inv.currency + ' ' + formatNumberDisplay(inv.total.toFixed(2)));
   if(inv.anyExcluded) lines.push('', "* One or more products couldn't be fully priced — see the PDF for details.");
   lines.push('');
+
+  const invTaxStatusPlain = getTaxStatusForInvoice();
+  if(invTaxStatusPlain){
+    lines.push('Tax Status: ' + invTaxStatusPlain);
+    lines.push('');
+  }
+
   lines.push('Thank you again and we look forward to being of assistance with your future requirements.');
   lines.push('');
 
@@ -7949,6 +8047,7 @@ async function removeSupplierInvoiceFileHandler(){
   }
 }
 function renderInvoicePreviewOnly(){
+  syncTaxStatusInvoiceVisibility();
   scheduleUpdatePanelHeightLock();
   renderInvoiceEmailPreview();
   renderMissingDataWarning('invoice');
@@ -7997,6 +8096,7 @@ async function clearInvoiceFields(){
   document.getElementById('costAdjustmentAmount').value = '';
   document.getElementById('costAdjustmentDescription').value = '';
   document.getElementById('supplierInvoiceNumber').value = '';
+  document.getElementById('includeTaxStatusInvoice').checked = true;
   buildRadioGroup('invoiceTypeGroup', 'invoiceType', [
     {value:'invoice', label:'Invoice — addressed to customer, full selling price'},
     {value:'proforma', label:'Proforma Invoice — same as Invoice, marked as proforma'},
@@ -8846,6 +8946,11 @@ function buildPlainText(){
     }
   }
 
+  if(fv('taxStatus')){
+    lines.push('Tax Status: ' + fv('taxStatus'));
+    lines.push('');
+  }
+
   const paymentLine = getPaymentLine();
   const validity = fv('validityMins');
   if(paymentLine || validity){
@@ -8993,6 +9098,12 @@ function buildEmailHtml(){
       }
       parts.push(blank());
     }
+  }
+
+  // Tax status - a note under the pricing, shown whenever it's set
+  if(fv('taxStatus')){
+    parts.push(p(`<b>Tax Status:</b> ${escHtml(fv('taxStatus'))}`));
+    parts.push(blank());
   }
 
   // Terms
@@ -9149,6 +9260,11 @@ function buildSupplyEmailHtml(){
     }
   }
 
+  if(fv('taxStatus')){
+    parts.push(p(`<b>Tax Status:</b> ${escHtml(fv('taxStatus'))}`));
+    parts.push(blank());
+  }
+
   const supPaymentLine = getSupPaymentLine();
   if(supPaymentLine){
     parts.push(heading('Terms'));
@@ -9260,6 +9376,11 @@ function buildSupplyPlainText(){
       lines.push('Estimated Total: ' + totalParts.join(' + '));
       lines.push('');
     }
+  }
+
+  if(fv('taxStatus')){
+    lines.push('Tax Status: ' + fv('taxStatus'));
+    lines.push('');
   }
 
   const supPaymentLine = getSupPaymentLine();
@@ -9611,6 +9732,11 @@ function buildCustomerEmailHtml(){
     }
   }
 
+  if(fv('taxStatus')){
+    parts.push(p(`<b>Tax Status:</b> ${escHtml(fv('taxStatus'))}`));
+    parts.push(blank());
+  }
+
   const custPaymentLine = getCustPaymentLine();
   if(custPaymentLine){
     parts.push(heading('Terms'));
@@ -9736,6 +9862,11 @@ function buildCustomerPlainText(){
       lines.push('Estimated Total: ' + totalParts.join(' + '));
       lines.push('');
     }
+  }
+
+  if(fv('taxStatus')){
+    lines.push('Tax Status: ' + fv('taxStatus'));
+    lines.push('');
   }
 
   const custPaymentLine = getCustPaymentLine();
@@ -10043,6 +10174,9 @@ async function clearOrder(){
   document.getElementById('deliveryTime').value='';
   document.getElementById('validityMins').value='';
   document.getElementById('showOrderTotal').checked = false;
+  document.getElementById('taxStatus').value = '';
+  document.getElementById('includeTaxStatusInvoice').checked = true;
+  syncTaxStatusInvoiceVisibility();
   document.getElementById('orderNumberSupply').value = '';
   document.getElementById('orderNumberCustomer').value = '';
   clearAgentInfo();
@@ -10162,6 +10296,8 @@ async function clearQuoteFields(){
   clearVesselMeta();
   document.getElementById('validityMins').value='';
   document.getElementById('showOrderTotal').checked = false;
+  document.getElementById('taxStatus').value = '';
+  syncTaxStatusInvoiceVisibility();
   renderQuoteProductBlocks();
   buildRadioGroup('openingGroup', 'opening', OPENING_OPTIONS.map((t,i)=>({value:'o'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'openingCustom'}]), 'o0');
   buildRadioGroup('paymentGroup', 'payment', PAYMENT_OPTIONS.map((t,i)=>({value:'p'+i, label:t})).concat([{value:'blank', label:'(leave blank \u2014 omit from quote)'}]), 'p4');
@@ -12338,6 +12474,8 @@ function collectQuoteState(){
     paymentLineText: getPaymentLine(),
     validityMins: fv('validityMins'),
     showOrderTotal: document.getElementById('showOrderTotal').checked,
+    taxStatus: fv('taxStatus'),
+    includeTaxStatusInvoice: document.getElementById('includeTaxStatusInvoice').checked,
     quoteSelectedContacts: quoteSelectedContacts.slice(),
     custSelectedContacts: custSelectedContacts.slice(),
     enqSelectedContacts: enqSelectedContacts.slice(),
@@ -12464,6 +12602,9 @@ async function applyQuoteState(data){
   applyTextToPaymentGroup(data.paymentLineText);
   document.getElementById('validityMins').value = data.validityMins || '';
   document.getElementById('showOrderTotal').checked = !!data.showOrderTotal;
+  document.getElementById('taxStatus').value = data.taxStatus || '';
+  document.getElementById('includeTaxStatusInvoice').checked = data.includeTaxStatusInvoice !== false;
+  syncTaxStatusInvoiceVisibility();
   quoteSelectedContacts = Array.isArray(data.quoteSelectedContacts) ? data.quoteSelectedContacts : [];
   custSelectedContacts = Array.isArray(data.custSelectedContacts) ? data.custSelectedContacts : [];
   enqSelectedContacts = Array.isArray(data.enqSelectedContacts) ? data.enqSelectedContacts : [];
