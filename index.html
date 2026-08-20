@@ -3849,6 +3849,18 @@ function buildGreetingFromContacts(contacts){
   if(names.length === 1) return `Dear ${names[0]},`;
   return `Dear ${names.slice(0,-1).join(', ')} and ${names[names.length-1]},`;
 }
+// For the PDF's "Contact:" line specifically - always the full, formal
+// name and job title (e.g. "Captain Lawrence Cockx"), never the casual
+// alias the greeting itself prefers ("Lawrence") and never dependent on
+// parsing whatever text happens to be in the (freely editable) greeting
+// field. Same "X, Y and Z" joining pattern as the greeting for multiple
+// contacts.
+function buildContactLineFromContacts(contacts){
+  if(!contacts.length) return '';
+  const names = contacts.map(contactDisplayName);
+  if(names.length === 1) return names[0];
+  return `${names.slice(0,-1).join(', ')} and ${names[names.length-1]}`;
+}
 function currentVesselAndOwnerIds(){
   const vesselName = (fv('vessel') || fv('vesselOrder') || '').trim().toLowerCase();
   const vesselRecord = VESSELS.find(v => v.name.trim().toLowerCase() === vesselName);
@@ -7078,14 +7090,14 @@ function buildPdfQuotationHtml(docType){
   // as usual.
   const vesselName = fv('vessel');
   const forLines = [];
-  // "Dear Captain Lawrence Cockx & Richard Callaghan," -> "Lawrence Cockx & Richard Callaghan"
-  // — used as a plain "Contact:" line instead of a full greeting/intro on the
-  // confirmations, which addressed the same person twice.
-  const contactNameFromGreeting = (greeting) => (greeting || '').replace(/^\s*Dear\s+/i, '').replace(/,\s*$/, '').trim();
+  // Always the full, formal name and job title from the actual selected
+  // contact(s) - not parsed from the (freely editable, deliberately
+  // casual) greeting text, which prefers a short alias like "Lawrence"
+  // over the formal "Captain Lawrence Cockx" this line needs instead.
   if(docType === 'supplier'){
     const supplierNameText = getCurrentSupplierName();
     if(supplierNameText){
-      const supContact = contactNameFromGreeting(fv('supGreeting'));
+      const supContact = buildContactLineFromContacts(supSelectedContacts);
       if(isConfirmation && supContact) forLines.push(`<strong>Contact:</strong> ${escHtml(supContact)}`);
       forLines.push(`<strong>${escHtml(supplierNameText)}</strong>`);
       // Looked up by name text rather than the selectedSupplier variable, same
@@ -7110,7 +7122,7 @@ function buildPdfQuotationHtml(docType){
     const ownerDisplayName = fv('vOwner');
 
     if(docType === 'customer'){
-      const custContact = contactNameFromGreeting(fv('custGreeting'));
+      const custContact = buildContactLineFromContacts(custSelectedContacts);
       if(custContact) forLines.push(`<strong>Contact:</strong> ${escHtml(custContact)}`);
     }
 
