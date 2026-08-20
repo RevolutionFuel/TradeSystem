@@ -4514,8 +4514,17 @@ async function saveOrderToDatabase(){
     // order was never reopened in between.
     syncOwnerFromVesselIfBlank();
     const state = buildOrderSaveState();
-    const newId = await window.TS.saveOrder(state, currentOrderDbId);
-    currentOrderDbId = newId;
+    const result = await window.TS.saveOrder(state, currentOrderDbId);
+    currentOrderDbId = result.id;
+    // A self-healing retry inside saveOrder() can occasionally assign a
+    // genuinely different quote reference than the one on screen (see its
+    // own comment) - reflect that here so the form never silently
+    // disagrees with what was actually saved.
+    if (result.quoteRef && result.quoteRef !== fv('quoteRef')) {
+      const quoteRefEl = document.getElementById('quoteRef');
+      if (quoteRefEl) quoteRefEl.value = result.quoteRef;
+      alert('Your quote reference was updated to ' + result.quoteRef + ' to avoid a clash with another order \u2014 everything else was saved as normal.');
+    }
     lastSavedStateJson = stateForComparison(collectQuoteState());
     orderIsDirty = false;
     updateSaveBar();
