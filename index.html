@@ -4863,7 +4863,7 @@ function dashboardTableHtml(rows, availableWidth){
     const refCell = compact
       ? `<td><a href="#" class="dashboard-ref-link" onclick="openOrderFromDashboard('${r.id}'); return false;">${escHtml(refText)}</a>${initials ? `<br><span style="color:var(--ink-soft); font-size:0.9em;">${escHtml(initials)}</span>` : ''}</td>`
       : `<td><a href="#" class="dashboard-ref-link" onclick="openOrderFromDashboard('${r.id}'); return false;">${escHtml(refText)}</a></td>`;
-    const statusCell = `<td><span class="tsb-status-badge" style="background:${getOrderStatusColor(statusEnumToLabel(r.status))};">${escHtml(statusEnumToLabel(r.status))}</span></td>`;
+    const statusCell = `<td style="text-align:center;"><span class="tsb-status-badge" style="background:${getOrderStatusColor(statusEnumToLabel(r.status))};">${escHtml(statusEnumToLabel(r.status))}</span></td>`;
     const purchaseText = fmtDashboardMoney(r.purchaseTotal, r.purchaseCurrency);
     const saleText = fmtDashboardMoney(r.salesTotal, r.salesCurrency);
     if(compact){
