@@ -1547,7 +1547,7 @@
         <div class="mgmt-count" id="noteCount"></div>
         <div class="table-wrap">
           <table class="mgmt-table">
-            <thead><tr><th>Note text</th><th>Default</th></tr></thead>
+            <thead><tr><th>Note text</th><th>Default</th><th>Actions</th></tr></thead>
             <tbody id="noteTableBody"></tbody>
           </table>
         </div>
@@ -2684,11 +2684,12 @@ function confirmProgressStatus(context){
 
 /* ===================== STORAGE HELPERS ===================== */
 async function loadList(key, seed){
-  // Vessels, owners, suppliers, products, ports, and agents now live in
-  // Supabase. TS.loadReferenceData tries Supabase first, caches the result
-  // in IndexedDB for offline use, and falls back to that cache (then this
-  // seed) if there's no connection. Everything else not yet migrated
-  // (operational notes, counters, ...) keeps using window.storage as before.
+  // Vessels, owners, suppliers, products, ports, agents, and Operational
+  // Notes now live in Supabase. TS.loadReferenceData tries Supabase
+  // first, caches the result in IndexedDB for offline use, and falls
+  // back to that cache (then this seed) if there's no connection.
+  // Everything else not yet migrated (Supply Notes, counters, ...) keeps
+  // using window.storage as before.
   if(window.TS){
     const fromSupabase = await window.TS.loadReferenceData(key, seed);
     if(fromSupabase !== null) return fromSupabase;
@@ -12406,17 +12407,39 @@ function renderNoteTable(){
         <option value="false" ${!n.def?'selected':''}>No</option>
         <option value="true" ${n.def?'selected':''}>Yes</option>
       </select></td>
-      
+      <td><button type="button" class="btn-ghost btn-sm" onclick="deleteNote(${i})">Delete</button></td>
     `;
     tbody.appendChild(tr);
   });
 }
-async function editNote(i, field, value){ NOTES[i][field] = value; await saveList('ql-notes', NOTES); renderNotesGroup(); }
-async function deleteNote(i){ if(!confirm('Delete this note?')) return; NOTES.splice(i,1); await saveList('ql-notes', NOTES); renderNoteTable(); renderNotesGroup(); render(); }
+async function editNote(i, field, value){
+  NOTES[i][field] = value;
+  await saveList('ql-notes', NOTES);
+  if(window.TS && window.TS.saveOperationalNote){
+    try{ await window.TS.saveOperationalNote(NOTES[i], 'quote', NOTES[i].id); }
+    catch(e){ console.error('TS: saveOperationalNote failed', e); }
+  }
+  renderNotesGroup();
+}
+async function deleteNote(i){
+  if(!confirm('Delete this note?')) return;
+  const [removed] = NOTES.splice(i,1);
+  await saveList('ql-notes', NOTES);
+  if(window.TS && window.TS.deleteOperationalNote && removed && removed.id){
+    try{ await window.TS.deleteOperationalNote(removed.id); }
+    catch(e){ console.error('TS: deleteOperationalNote failed', e); }
+  }
+  renderNoteTable(); renderNotesGroup(); render();
+}
 async function addNoteRow(){
   const text = document.getElementById('newNoteText').value.trim();
   if(!text) return;
-  NOTES.push({text, def: document.getElementById('newNoteDefault').value === 'true'});
+  const newNote = {text, def: document.getElementById('newNoteDefault').value === 'true'};
+  if(window.TS && window.TS.saveOperationalNote){
+    try{ newNote.id = await window.TS.saveOperationalNote(newNote, 'quote'); }
+    catch(e){ console.error('TS: saveOperationalNote failed', e); }
+  }
+  NOTES.push(newNote);
   await saveList('ql-notes', NOTES);
   document.getElementById('newNoteText').value='';
   renderNoteTable();
