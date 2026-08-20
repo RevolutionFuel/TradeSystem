@@ -123,18 +123,20 @@
      text's tightest width - it resolves to whichever is smaller between
      the text's full UNWRAPPED width and the available space (here, the
      column's width). On the wide table, Status has no narrow width of
-     its own, so "available space" was still generous, and fit-content
-     just took that whole width rather than actually tightening around
-     the wrapped lines - reproducing the same dead-space bug even after
-     the earlier fix. max-width:min(100%,11em) is what actually forces a
-     tight wrap: 100% still caps it at the column's own width (needed so
-     the already-correct, genuinely narrow mobile columns are never
-     exceeded), while 11em caps it independently at roughly enough room
-     for the single widest status word (e.g. "Unconfirmed") plus its own
-     padding, regardless of how much wider the surrounding column
-     actually is - forcing real multi-word statuses ("Awaiting Prices",
-     "Fully Confirmed") to wrap at a genuinely narrow point every time. */
-  .dashboard-table td .tsb-status-badge{word-break:break-word; overflow-wrap:break-word; white-space:normal; width:fit-content; max-width:min(100%,11em); box-sizing:border-box;}
+     its own, so fit-content was taking that whole generous width rather
+     than actually tightening around the wrapped lines. A genuinely fixed,
+     absolute max-width (not a relative unit, to remove any doubt about
+     what it's actually resolving to) is what forces a tight wrap
+     regardless of the column's own width - min(100%, 100px): 100% still
+     caps it at the column's own width so the already-correct, genuinely
+     narrow mobile columns are never exceeded; 100px caps it independently
+     at roughly enough room for the single widest status word
+     ("Unconfirmed") plus its own (now tighter) padding, forcing real
+     multi-word statuses ("Awaiting Prices", "Fully Confirmed") to wrap at
+     a genuinely narrow point on any table width. text-align:center keeps
+     the two wrapped lines looking symmetrical rather than left-aligned
+     with the shorter line appearing to trail dead space on its right. */
+  .dashboard-table td .tsb-status-badge{word-break:break-word; overflow-wrap:break-word; white-space:normal; width:fit-content; max-width:min(100%,100px); box-sizing:border-box; padding:3px 6px; text-align:center;}
   .dashboard-ref-link{color:var(--amber); font-weight:700; text-decoration:none;}
   .dashboard-ref-link:hover{text-decoration:underline;}
   @media (max-width:640px){
