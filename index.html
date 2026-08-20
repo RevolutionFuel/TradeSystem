@@ -116,15 +116,25 @@
   /* Applies at every viewport width, not just narrow ones - the wide/
      desktop table layout (separate Purchase Total/Sale Total/Status
      columns, no compact stacking) still uses this base rule rather than
-     the ≤640px override below, so it needs the same two fixes: break-word
-     lets a single long status word (e.g. "Unconfirmed") wrap if it must,
-     rather than having no way to wrap at all; width:fit-content makes the
-     badge hug its actual (possibly wrapped) text instead of stretching to
-     fill the whole available column width the moment it wraps, which is
-     what was leaving visible dead space around "Awaiting"/"Prices" etc.
-     even at wide viewports where the Status column has plenty of room.
-     max-width:100% remains as a safety cap either way. */
-  .dashboard-table td .tsb-status-badge{word-break:break-word; overflow-wrap:break-word; white-space:normal; width:fit-content; max-width:100%; box-sizing:border-box;}
+     the ≤640px override below, so it needs the same fix: break-word lets
+     a single long status word (e.g. "Unconfirmed") wrap if it must,
+     rather than having no way to wrap at all.
+     width:fit-content alone does NOT make an element hug its wrapped
+     text's tightest width - it resolves to whichever is smaller between
+     the text's full UNWRAPPED width and the available space (here, the
+     column's width). On the wide table, Status has no narrow width of
+     its own, so "available space" was still generous, and fit-content
+     just took that whole width rather than actually tightening around
+     the wrapped lines - reproducing the same dead-space bug even after
+     the earlier fix. max-width:min(100%,11em) is what actually forces a
+     tight wrap: 100% still caps it at the column's own width (needed so
+     the already-correct, genuinely narrow mobile columns are never
+     exceeded), while 11em caps it independently at roughly enough room
+     for the single widest status word (e.g. "Unconfirmed") plus its own
+     padding, regardless of how much wider the surrounding column
+     actually is - forcing real multi-word statuses ("Awaiting Prices",
+     "Fully Confirmed") to wrap at a genuinely narrow point every time. */
+  .dashboard-table td .tsb-status-badge{word-break:break-word; overflow-wrap:break-word; white-space:normal; width:fit-content; max-width:min(100%,11em); box-sizing:border-box;}
   .dashboard-ref-link{color:var(--amber); font-weight:700; text-decoration:none;}
   .dashboard-ref-link:hover{text-decoration:underline;}
   @media (max-width:640px){
