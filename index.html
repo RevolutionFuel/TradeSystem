@@ -73,7 +73,11 @@
     font-size:10px; font-weight:600; color:#fff; background:rgba(255,255,255,0.16);
     border:1px solid rgba(255,255,255,0.3); border-radius:20px; vertical-align:middle;
   }
-  .header-right-stack{display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0;}
+  .header-right-stack{display:flex; flex-direction:row; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:8px; flex-shrink:0;}
+  /* The signed-in broker's email address isn't needed in the header - this
+     overrides the shared-js-injected badge style unconditionally (not just
+     on mobile, where it was previously hidden only for space reasons). */
+  .ts-user-badge .ts-user-email{display:none !important;}
   .outlook-connect-btn{background:rgba(255,255,255,0.14); border:1px solid rgba(255,255,255,0.3); color:#fff; padding:2px 9px; border-radius:20px; font-size:9.5px; font-weight:600; cursor:pointer; text-transform:uppercase; letter-spacing:0.02em; font-family:inherit; line-height:1.6;}
   .outlook-connect-btn:hover{background:rgba(255,255,255,0.24);}
   .outlook-connected{display:inline-flex; align-items:center; font-size:9.5px; color:#F7BF4A; cursor:pointer; font-weight:600; line-height:1.6;}
@@ -204,7 +208,6 @@
     .tabs button{padding:6px 4px; font-size:9px; letter-spacing:0.02em;}
     .tabs-row{gap:6px;}
     .ts-user-badge{gap:0 !important;}
-    .ts-user-badge .ts-user-email{display:none !important;}
     .ts-user-badge .ts-user-signout{padding:5px 9px !important; font-size:9px !important;}
     .order-submenu{flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; gap:0;}
     .order-submenu button{padding:7px 6px 6px; font-size:9px; letter-spacing:0.02em; white-space:nowrap; flex-shrink:0;}
