@@ -4732,7 +4732,7 @@ function dashboardTableHtml(rows, availableWidth){
   // even tighter than it already is. On the wide layout it gets its own
   // dedicated column, second, right after Reference.
   const headHtml = compact
-    ? thStacked('13%','reference','Reference','broker','Broker') + thStacked('25%','vessel','Vessel','port','Port','eta','ETA') + thStacked('27%','customer','Customer','supplier','Supplier') + thStacked('15%','purchase','Purchase','sale','Sale') + th('status','Status','20%')
+    ? thStacked('13%','reference','Reference','broker','Broker') + thStacked('28%','vessel','Vessel','port','Port','eta','ETA') + thStacked('30%','customer','Customer','supplier','Supplier') + thStacked('15%','purchase','Purchase','sale','Sale') + th('status','Status','14%')
     : th('reference','Reference') + th('broker','Broker') + th('vessel','Vessel') + th('port','Port') + th('customer','Customer') + th('supplier','Supplier') + th('eta','ETA / Delivery') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status');
   const bodyHtml = rows.map(r=>{
     const dateText = fmtDashboardDate(r.deliveryDate || r.eta);
