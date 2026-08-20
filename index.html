@@ -4513,21 +4513,33 @@ async function saveOrderToDatabase(){
     // the vessel's owner was linked after this order was started and the
     // order was never reopened in between.
     syncOwnerFromVesselIfBlank();
-    const state = buildOrderSaveState();
-    const result = await window.TS.saveOrder(state, currentOrderDbId);
-    currentOrderDbId = result.id;
-    // A self-healing retry inside saveOrder() can occasionally assign a
-    // genuinely different quote reference than the one on screen (see its
-    // own comment) - reflect that here so the form never silently
-    // disagrees with what was actually saved.
-    if (result.quoteRef && result.quoteRef !== fv('quoteRef')) {
-      const quoteRefEl = document.getElementById('quoteRef');
-      if (quoteRefEl) quoteRefEl.value = result.quoteRef;
-      alert('Your quote reference was updated to ' + result.quoteRef + ' to avoid a clash with another order \u2014 everything else was saved as normal.');
+    // At most 2 attempts: the first as normal, and a second only if the
+    // first hit a quote reference collision and the person chose to use
+    // the suggested replacement - a real, informed choice rather than a
+    // silent swap explained only after the fact.
+    for(let attempt = 1; attempt <= 2; attempt++){
+      const state = buildOrderSaveState();
+      try{
+        const result = await window.TS.saveOrder(state, currentOrderDbId);
+        currentOrderDbId = result.id;
+        lastSavedStateJson = stateForComparison(collectQuoteState());
+        orderIsDirty = false;
+        updateSaveBar();
+        break;
+      }catch(e){
+        if(e && e.isQuoteRefCollision && attempt === 1){
+          const current = fv('quoteRef');
+          if(e.suggestedQuoteRef && confirm('The reference "' + current + '" already exists on another order.\n\nUse "' + e.suggestedQuoteRef + '" instead and save?')){
+            const quoteRefEl = document.getElementById('quoteRef');
+            if(quoteRefEl) quoteRefEl.value = e.suggestedQuoteRef;
+            continue; // retry once with the chosen reference
+          }
+          alert('Choose a different quote reference, then try saving again.');
+          return;
+        }
+        throw e;
+      }
     }
-    lastSavedStateJson = stateForComparison(collectQuoteState());
-    orderIsDirty = false;
-    updateSaveBar();
   }catch(e){
     console.error('TS: saveOrder failed', e);
     alert('Could not save to the database right now. Your work is still safe on this device \u2014 check your connection and try again.');
