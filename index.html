@@ -7105,8 +7105,9 @@ function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView
     // Quantity and its unit shown together in one column (e.g. "100,000
     // Litres") rather than as two separate columns.
     const qtyHtml = r.quantity ? `${escHtml(formatNumberDisplay(r.quantity))}${r.unit ? ' '+escHtml(r.unit) : ''}` : '';
-    let priceHtml = priceVal ? escHtml(formatNumberDisplay(priceVal)) : '';
-    if(priceHtml && rowPriceUnit === '%'){
+    const isPercentage = rowPriceUnit === '%';
+    let priceHtml = priceVal ? (isPercentage ? escHtml(formatNumberDisplay(priceVal)) : `${escHtml(rowCurrency)} ${escHtml(formatNumberDisplay(priceVal))}`) : '';
+    if(priceHtml && isPercentage){
       priceHtml += '%';
     } else if(priceHtml && rowPriceUnit){
       // Always shown now (not just when it differs from the base unit),
