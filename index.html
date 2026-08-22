@@ -1013,6 +1013,11 @@
                   oninput="onSupplierInput()" onfocus="onSupplierInput()" onkeydown="handleAutocompleteKeydown(event,'supplierList')" onblur="setTimeout(hideSupplierList,150)">
                 <div class="ac-list" id="supplierList"></div>
               </div>
+              <label class="opt-inline" style="margin-top:8px; color:#B3492E; font-weight:600;">
+                <input type="checkbox" id="brokeredDeal" onchange="onBrokeredDealChange(this.checked)">
+                Brokered Deal
+              </label>
+              <div class="hint" style="margin:2px 0 8px;">Displays customer sale price and commission on supplier confirmation. Only applies to the primary supplier.</div>
               <label class="opt-inline" style="margin-top:8px;">
                 <input type="checkbox" id="multiSupplierMode" onchange="toggleMultiSupplierMode(this.checked)">
                 Products ordered are being supplied by more than one supplier
@@ -1138,7 +1143,7 @@
         <!-- PREVIEW -->
         <div class="panel">
           <div class="panel-head">
-            <h2>Supply confirmation preview</h2>
+            <h2 id="supplyPreviewTitle">Supply confirmation preview</h2>
           </div>
           <div class="panel-body scroll-col">
             <div id="supplyPreview"></div>
@@ -4978,6 +4983,35 @@ async function openOrderFromDashboard(id){
 let multiSupplierMode = false;
 let currentSupplyViewSupplier = null;
 let confirmedSupplierNames = [];
+
+// Brokered Deal only ever changes what the CURRENTLY-VIEWED supplier's own
+// confirmation shows - it never applies to other suppliers' confirmations
+// on a multi-supplier order, even though the checkbox itself is a single,
+// order-level toggle. In single-supplier mode there's only one supplier to
+// view, so it's always the primary one. In multi-supplier mode, "primary"
+// specifically means the supplier named in the main Supplier field above
+// (fv('supplierName')) - not whichever supplier the per-product list
+// happens to default new products to, and not any of the other suppliers
+// a multi-supplier order might have. This one function is the single
+// source of truth for that check, used identically by the preview header,
+// the email (HTML + plain text), and the PDF, so the three outputs can
+// never disagree about whether Brokered Deal treatment applies to what's
+// currently being viewed/generated.
+function isBrokeredDealActiveForCurrentView(){
+  const cb = document.getElementById('brokeredDeal');
+  if(!cb || !cb.checked) return false;
+  if(!multiSupplierMode) return true;
+  return (currentSupplyViewSupplier || '') === (fv('supplierName') || '');
+}
+function onBrokeredDealChange(){
+  updateSupplyPreviewTitle();
+  renderSupply();
+}
+function updateSupplyPreviewTitle(){
+  const el = document.getElementById('supplyPreviewTitle');
+  if(!el) return;
+  el.textContent = isBrokeredDealActiveForCurrentView() ? 'Brokered deal confirmation preview' : 'Supply confirmation preview';
+}
 // Supplier can now be picked from either the Order page (optional early entry)
 // or the Supply Confirmation page (where it's actually required).
 function onSupplierInput(inputId, listId){
@@ -5069,6 +5103,7 @@ function toggleMultiSupplierMode(checked){
   }
   confirmedSupplierNames = [];
   renderMultiSupplierSection();
+  updateSupplyPreviewTitle();
   renderSupply();
 }
 function renderMultiSupplierSection(){
@@ -5141,6 +5176,7 @@ function onSupplierViewChange(value){
   supCcContacts = [];
   supContactsManuallySet = false;
   loadContactPicker('supply');
+  updateSupplyPreviewTitle();
   renderSupply();
 }
 function getSupplierLetterMap(){
@@ -7039,7 +7075,7 @@ function buildProfitSummaryHtml(){
 }
 
 function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView, tightLayout){
-  priceMode = priceMode === 'cost' ? 'cost' : 'selling';
+  priceMode = priceMode === 'cost' ? 'cost' : priceMode === 'commission' ? 'commission' : 'selling';
   const labelColor = plainColors ? '#0F2A3F' : '#1F064F';
   const FF = "font-family:'Calibri Light','Calibri','Segoe UI Light','Segoe UI',Arial,sans-serif;";
   const rows = buildOrderSummaryRows(filterToSupplierView);
@@ -7047,20 +7083,28 @@ function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView
   const th = (text, align) => `<th style="${FF} text-align:${align||'left'}; padding:${tightLayout?'4pt 6pt':'6pt 8pt'}; border-bottom:2pt solid #DAD3C1; font-size:${tightLayout?'8pt':'9.5pt'}; text-transform:uppercase; letter-spacing:0.3pt; color:#4B6072;">${escHtml(text)}</th>`;
   const td = (html, align, extra) => `<td style="${FF} text-align:${align||'left'}; padding:${tightLayout?'3pt 6pt':'5pt 8pt'}; border-bottom:1pt solid #E8E3D6; font-size:${tightLayout?'9pt':'11pt'}; color:#0F2A3F; ${extra||''}">${html}</td>`;
 
+  const isCommission = priceMode === 'commission';
   let t = `<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:2pt 0 8pt 0; page-break-inside:${tightLayout?'auto':'avoid'};">
-    <thead><tr>${th('Product')}${th('Quantity','right')}${th('Units')}${th('Price','right')}${th('Sub Total','right')}</tr></thead><tbody>`;
+    <thead><tr>${th('Product')}${th('Quantity','right')}${th('Units')}${th(isCommission?'Customer Selling Price':'Price','right')}${th(isCommission?'Commission Amount':'Sub Total','right')}</tr></thead><tbody>`;
 
   const byCurrency = {};
   rows.forEach(r=>{
+    // No per-fee commission concept - computeMarginAndProfit() only ever
+    // computes a profit figure per product block, not per fee, so a fee
+    // row has nothing meaningful to show here and is skipped entirely.
+    if(isCommission && r.indent) return;
     // A fee row only belongs to one side — skip it entirely if it doesn't
     // match the table's current mode, so a supplier never sees sale-side
     // fees and a customer never sees cost-side ones.
     if(r.indent && r.feeSide && r.feeSide !== (priceMode === 'cost' ? 'cost' : 'sell')) return;
     // Cost mode uses the buying fields for both product rows and (now) their
     // matching cost-side fee rows; selling mode always uses the selling ones.
+    // Commission mode shares the selling price (that's the "Customer Selling
+    // Price" column) but substitutes the pre-computed commission (profit)
+    // for what would otherwise be the sale subtotal.
     const useCost = priceMode === 'cost';
     const priceVal = useCost ? r.buyingPrice : r.sellingPrice;
-    const subTotalVal = useCost ? r.buyingSubTotal : r.sellingSubTotal;
+    const subTotalVal = isCommission ? r.profit : (useCost ? r.buyingSubTotal : r.sellingSubTotal);
     const rowCurrency = useCost ? (r.buyingCurrency || r.currency) : r.currency;
     const rowPriceUnit = useCost ? r.buyingPriceUnit : r.sellingPriceUnit;
     const excluded = useCost ? false : r.excluded;
@@ -7083,7 +7127,7 @@ function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView
   });
 
   Object.keys(byCurrency).forEach(currency=>{
-    t += `<tr><td colspan="4" style="${FF} text-align:right; padding:7pt 8pt; font-size:11pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">Estimated Total (${escHtml(currency)})</td><td style="${FF} text-align:right; padding:7pt 8pt; font-size:12pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">${escHtml(currency)} ${escHtml(formatNumberDisplay(byCurrency[currency].toFixed(2)))}</td></tr>`;
+    t += `<tr><td colspan="4" style="${FF} text-align:right; padding:7pt 8pt; font-size:11pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">${isCommission?'Total Commission':'Estimated Total'} (${escHtml(currency)})</td><td style="${FF} text-align:right; padding:7pt 8pt; font-size:12pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">${escHtml(currency)} ${escHtml(formatNumberDisplay(byCurrency[currency].toFixed(2)))}</td></tr>`;
   });
 
   t += `</tbody></table>`;
@@ -7311,7 +7355,8 @@ function buildPdfQuotationHtml(docType){
   else if(docType === 'invoice') introText = 'Please find below the invoice for the following supply:';
   else introText = getOpeningLine();
 
-  const summaryHtml = buildOrderSummaryTableHtml(cfg.priceMode, false, docType === 'supplier', tightLayout);
+  const effectivePriceMode = (docType === 'supplier' && isBrokeredDealActiveForCurrentView()) ? 'commission' : cfg.priceMode;
+  const summaryHtml = buildOrderSummaryTableHtml(effectivePriceMode, false, docType === 'supplier', tightLayout);
   const summaryHasExcluded = summaryHtml.includes('— *');
 
   // Delivery Details and Vessel Specifics get their own clearly-formatted,
@@ -7391,7 +7436,7 @@ function buildPdfQuotationHtml(docType){
     <div class="letterhead">
       ${logoSrc ? `<img src="${logoSrc}" alt="Revolution Fuel">` : `<div style="font-weight:bold; font-size:18pt; color:#1F064F;">Revolution Fuel</div>`}
       <div>
-        <div class="doc-title">${escHtml(cfg.title)}</div>
+        <div class="doc-title">${escHtml((docType === 'supplier' && isBrokeredDealActiveForCurrentView()) ? 'Brokered Deal Confirmation' : cfg.title)}</div>
         <div class="doc-meta">Reference: ${escHtml(ref)}<br>Date: ${escHtml(dateIssued)}${tightLayout ? '<br><span style="font-style:italic;">If more than one page, all pages form part of this document.</span>' : ''}</div>
       </div>
     </div>
@@ -9342,7 +9387,16 @@ function buildSupplyEmailHtml(){
       if(d.quantity) items.push(`<b>Quantity:</b> ${escHtml(formatNumberDisplay(d.quantity))} ${escHtml(d.unit)}`);
       if(d.specs.length) d.specs.forEach(([k,v])=> items.push(`<b>${escHtml(k)}:</b> ${escHtml(v)}`));
     }
-    if(d.costPrice){
+    if(isBrokeredDealActiveForCurrentView()){
+      if(b.sellingPrice){
+        const saleUnitLabel = singularUnit(b.sellingPriceUnit || b.unit).toLowerCase();
+        items.push(`<b>CUSTOMER SELLING PRICE:</b> ${escHtml(b.currency)} ${escHtml(formatNumberDisplay(b.sellingPrice))} per ${escHtml(saleUnitLabel)}`);
+      }
+      const {profit} = computeMarginAndProfit(b);
+      if(profit !== null){
+        items.push(`<b>COMMISSION AMOUNT:</b> ${escHtml(b.currency)} ${escHtml(formatNumberDisplay(profit.toFixed(2)))}`);
+      }
+    } else if(d.costPrice){
       const costUnitLabel = singularUnit(d.costPriceUnit).toLowerCase();
       items.push(`<b>PRICE:</b> ${escHtml(d.costCurrency)} ${escHtml(formatNumberDisplay(d.costPrice))} per ${escHtml(costUnitLabel)}`);
     }
@@ -9353,7 +9407,7 @@ function buildSupplyEmailHtml(){
 
   const supTotalToggle = document.getElementById('showSupplyOrderTotal');
   if(supTotalToggle && supTotalToggle.checked){
-    const tableHtml = buildOrderSummaryTableHtml('cost', true);
+    const tableHtml = buildOrderSummaryTableHtml(isBrokeredDealActiveForCurrentView() ? 'commission' : 'cost', true);
     if(tableHtml){
       parts.push(heading('Order summary'));
       parts.push(tableHtml);
@@ -9452,7 +9506,15 @@ function buildSupplyPlainText(){
       if(d.quantity) lines.push('- Quantity: ' + formatNumberDisplay(d.quantity) + ' ' + d.unit);
       d.specs.forEach(([k,v])=> lines.push(`- ${k}: ${v}`));
     }
-    if(d.costPrice){
+    if(isBrokeredDealActiveForCurrentView()){
+      if(b.sellingPrice){
+        lines.push('CUSTOMER SELLING PRICE: ' + b.currency + ' ' + formatNumberDisplay(b.sellingPrice) + ' per ' + singularUnit(b.sellingPriceUnit || b.unit).toLowerCase());
+      }
+      const {profit} = computeMarginAndProfit(b);
+      if(profit !== null){
+        lines.push('COMMISSION AMOUNT: ' + b.currency + ' ' + formatNumberDisplay(profit.toFixed(2)));
+      }
+    } else if(d.costPrice){
       lines.push('PRICE: ' + d.costCurrency + ' ' + formatNumberDisplay(d.costPrice) + ' per ' + singularUnit(d.costPriceUnit).toLowerCase());
     }
     d.costFees.forEach(f=>{ const t = feeDisplayText(f, d.costCurrency); if(t) lines.push('- '+t); });
@@ -9461,20 +9523,28 @@ function buildSupplyPlainText(){
 
   const supTotalToggle = document.getElementById('showSupplyOrderTotal');
   if(supTotalToggle && supTotalToggle.checked){
-    const rows = buildOrderSummaryRows().filter(r => !r.indent && r.buyingSubTotal !== null);
+    const brokered = isBrokeredDealActiveForCurrentView();
+    const rows = buildOrderSummaryRows().filter(r => !r.indent && (brokered ? r.profit !== null : r.buyingSubTotal !== null));
     if(rows.length){
       lines.push('Order Summary:');
       const byCurrency = {};
       rows.forEach(r=>{
         let line = '- ' + r.label;
         if(r.quantity) line += ': ' + formatNumberDisplay(r.quantity) + (r.unit ? ' '+r.unit : '');
-        if(r.buyingPrice) line += ' @ ' + formatNumberDisplay(r.buyingPrice) + ' per ' + singularUnit(r.buyingPriceUnit).toLowerCase();
-        line += ' = ' + r.buyingCurrency + ' ' + formatNumberDisplay(r.buyingSubTotal.toFixed(2));
-        lines.push(line);
-        byCurrency[r.buyingCurrency] = (byCurrency[r.buyingCurrency]||0) + r.buyingSubTotal;
+        if(brokered){
+          if(r.sellingPrice) line += ' @ ' + formatNumberDisplay(r.sellingPrice) + ' per ' + singularUnit(r.sellingPriceUnit).toLowerCase() + ' (Customer Selling Price)';
+          line += ' \u2014 Commission: ' + r.currency + ' ' + formatNumberDisplay(r.profit.toFixed(2));
+          lines.push(line);
+          byCurrency[r.currency] = (byCurrency[r.currency]||0) + r.profit;
+        } else {
+          if(r.buyingPrice) line += ' @ ' + formatNumberDisplay(r.buyingPrice) + ' per ' + singularUnit(r.buyingPriceUnit).toLowerCase();
+          line += ' = ' + r.buyingCurrency + ' ' + formatNumberDisplay(r.buyingSubTotal.toFixed(2));
+          lines.push(line);
+          byCurrency[r.buyingCurrency] = (byCurrency[r.buyingCurrency]||0) + r.buyingSubTotal;
+        }
       });
       const totalParts = Object.keys(byCurrency).map(c => c + ' ' + formatNumberDisplay(byCurrency[c].toFixed(2)));
-      lines.push('Estimated Total: ' + totalParts.join(' + '));
+      lines.push((brokered ? 'Total Commission: ' : 'Estimated Total: ') + totalParts.join(' + '));
       lines.push('');
     }
   }
@@ -9720,6 +9790,7 @@ async function clearEnquiryFields(){
 
 function renderSupply(){
   scheduleUpdatePanelHeightLock();
+  updateSupplyPreviewTitle();
   document.getElementById('supplyPreview').innerHTML = buildSupplyEmailHtml();
   document.getElementById('profitSummarySupply').innerHTML = buildProfitSummaryHtml();
   renderMissingDataWarning('supply');
@@ -10286,6 +10357,8 @@ async function clearOrder(){
   selectedSupplier = null;
   document.getElementById('supGreeting').value = '';
   document.getElementById('showSupplyOrderTotal').checked = false;
+  document.getElementById('brokeredDeal').checked = false;
+  updateSupplyPreviewTitle();
   document.getElementById('enqGreeting').value = '';
   document.getElementById('enqSpecsRequest').checked = true;
   document.getElementById('enqTimingQuestion').checked = false;
@@ -10440,6 +10513,8 @@ async function clearSupplyFields(){
   currentSupplyViewSupplier = null;
   confirmedSupplierNames = [];
   document.getElementById('multiSupplierMode').checked = false;
+  document.getElementById('brokeredDeal').checked = false;
+  updateSupplyPreviewTitle();
   productBlocks.forEach(b=>{ b.supplierName = ''; });
   renderMultiSupplierSection();
   clearAgentInfo();
@@ -12619,6 +12694,7 @@ function collectQuoteState(){
     supSignatureKey: getSupSignatureKey(),
     supPaymentLineText: getSupPaymentLine(),
     showSupplyOrderTotal: document.getElementById('showSupplyOrderTotal').checked,
+    brokeredDeal: document.getElementById('brokeredDeal').checked,
     custGreeting: fv('custGreeting'),
     custOpeningLineText: getCustOpeningLine(),
     custSignoffLineText: getCustSignoffLine(),
@@ -12837,6 +12913,8 @@ async function applyQuoteState(data){
   // divergence rather than snapping back to match on the next Quote change.
   supPaymentManuallySet = !!data.supPaymentLineText && data.supPaymentLineText !== data.paymentLineText;
   document.getElementById('showSupplyOrderTotal').checked = !!data.showSupplyOrderTotal;
+  document.getElementById('brokeredDeal').checked = !!data.brokeredDeal;
+  updateSupplyPreviewTitle();
 
   document.getElementById('custGreeting').value = data.custGreeting || '';
   applyTextToCustomizableGroup('custOpeningGroup', 'custOpening', data.custOpeningLineText, 'custom', 'custOpeningCustom');
