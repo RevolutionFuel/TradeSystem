@@ -7075,7 +7075,7 @@ function buildProfitSummaryHtml(){
 }
 
 function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView, tightLayout){
-  priceMode = priceMode === 'cost' ? 'cost' : priceMode === 'commission' ? 'commission' : 'selling';
+  priceMode = priceMode === 'cost' ? 'cost' : 'selling';
   const labelColor = plainColors ? '#0F2A3F' : '#1F064F';
   const FF = "font-family:'Calibri Light','Calibri','Segoe UI Light','Segoe UI',Arial,sans-serif;";
   const rows = buildOrderSummaryRows(filterToSupplierView);
@@ -7083,28 +7083,20 @@ function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView
   const th = (text, align) => `<th style="${FF} text-align:${align||'left'}; padding:${tightLayout?'4pt 6pt':'6pt 8pt'}; border-bottom:2pt solid #DAD3C1; font-size:${tightLayout?'8pt':'9.5pt'}; text-transform:uppercase; letter-spacing:0.3pt; color:#4B6072;">${escHtml(text)}</th>`;
   const td = (html, align, extra) => `<td style="${FF} text-align:${align||'left'}; padding:${tightLayout?'3pt 6pt':'5pt 8pt'}; border-bottom:1pt solid #E8E3D6; font-size:${tightLayout?'9pt':'11pt'}; color:#0F2A3F; ${extra||''}">${html}</td>`;
 
-  const isCommission = priceMode === 'commission';
   let t = `<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:2pt 0 8pt 0; page-break-inside:${tightLayout?'auto':'avoid'};">
-    <thead><tr>${th('Product')}${th('Quantity','right')}${th('Units')}${th(isCommission?'Customer Selling Price':'Price','right')}${th(isCommission?'Commission Amount':'Sub Total','right')}</tr></thead><tbody>`;
+    <thead><tr>${th('Product')}${th('Quantity','right')}${th('Units')}${th('Price','right')}${th('Sub Total','right')}</tr></thead><tbody>`;
 
   const byCurrency = {};
   rows.forEach(r=>{
-    // No per-fee commission concept - computeMarginAndProfit() only ever
-    // computes a profit figure per product block, not per fee, so a fee
-    // row has nothing meaningful to show here and is skipped entirely.
-    if(isCommission && r.indent) return;
     // A fee row only belongs to one side — skip it entirely if it doesn't
     // match the table's current mode, so a supplier never sees sale-side
     // fees and a customer never sees cost-side ones.
     if(r.indent && r.feeSide && r.feeSide !== (priceMode === 'cost' ? 'cost' : 'sell')) return;
     // Cost mode uses the buying fields for both product rows and (now) their
     // matching cost-side fee rows; selling mode always uses the selling ones.
-    // Commission mode shares the selling price (that's the "Customer Selling
-    // Price" column) but substitutes the pre-computed commission (profit)
-    // for what would otherwise be the sale subtotal.
     const useCost = priceMode === 'cost';
     const priceVal = useCost ? r.buyingPrice : r.sellingPrice;
-    const subTotalVal = isCommission ? r.profit : (useCost ? r.buyingSubTotal : r.sellingSubTotal);
+    const subTotalVal = useCost ? r.buyingSubTotal : r.sellingSubTotal;
     const rowCurrency = useCost ? (r.buyingCurrency || r.currency) : r.currency;
     const rowPriceUnit = useCost ? r.buyingPriceUnit : r.sellingPriceUnit;
     const excluded = useCost ? false : r.excluded;
@@ -7127,7 +7119,47 @@ function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView
   });
 
   Object.keys(byCurrency).forEach(currency=>{
-    t += `<tr><td colspan="4" style="${FF} text-align:right; padding:7pt 8pt; font-size:11pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">${isCommission?'Total Commission':'Estimated Total'} (${escHtml(currency)})</td><td style="${FF} text-align:right; padding:7pt 8pt; font-size:12pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">${escHtml(currency)} ${escHtml(formatNumberDisplay(byCurrency[currency].toFixed(2)))}</td></tr>`;
+    t += `<tr><td colspan="4" style="${FF} text-align:right; padding:7pt 8pt; font-size:11pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">Estimated Total (${escHtml(currency)})</td><td style="${FF} text-align:right; padding:7pt 8pt; font-size:12pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">${escHtml(currency)} ${escHtml(formatNumberDisplay(byCurrency[currency].toFixed(2)))}</td></tr>`;
+  });
+
+  t += `</tbody></table>`;
+  return t;
+}
+
+// A separate table from buildOrderSummaryTableHtml() specifically for
+// Brokered Deal supply confirmations - alongside the normal sale-price
+// summary (Product/Quantity/Price/Sub Total), this shows, per product:
+// "[Product] Commission" as the label, quantity, the commission PER UNIT
+// (margin - a straight per-unit sale-minus-cost, already computed by
+// computeMarginAndProfit() and stored on each row via
+// buildOrderSummaryRows()), and the TOTAL commission for that line
+// (profit - the same figure multiplied out by quantity, with unit
+// conversion, the same way every other total in this app is calculated).
+// Fee rows are skipped entirely - there's no per-fee commission concept,
+// since margin/profit are only ever computed per product block.
+function buildCommissionSummaryTableHtml(filterToSupplierView, tightLayout){
+  const labelColor = '#1F064F';
+  const FF = "font-family:'Calibri Light','Calibri','Segoe UI Light','Segoe UI',Arial,sans-serif;";
+  const rows = buildOrderSummaryRows(filterToSupplierView).filter(r => !r.indent && r.profit !== null && r.margin !== null);
+  if(rows.length === 0) return '';
+  const th = (text, align) => `<th style="${FF} text-align:${align||'left'}; padding:${tightLayout?'4pt 6pt':'6pt 8pt'}; border-bottom:2pt solid #DAD3C1; font-size:${tightLayout?'8pt':'9.5pt'}; text-transform:uppercase; letter-spacing:0.3pt; color:#4B6072;">${escHtml(text)}</th>`;
+  const td = (html, align, extra) => `<td style="${FF} text-align:${align||'left'}; padding:${tightLayout?'3pt 6pt':'5pt 8pt'}; border-bottom:1pt solid #E8E3D6; font-size:${tightLayout?'9pt':'11pt'}; color:#0F2A3F; ${extra||''}">${html}</td>`;
+
+  let t = `<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:2pt 0 8pt 0; page-break-inside:${tightLayout?'auto':'avoid'};">
+    <thead><tr>${th('Product')}${th('Quantity','right')}${th('Commission Per Unit','right')}${th('Total Commission','right')}</tr></thead><tbody>`;
+
+  const byCurrency = {};
+  rows.forEach(r=>{
+    const labelHtml = `<b style="color:${labelColor};">${escHtml(r.label)} Commission</b>`;
+    const qtyHtml = r.quantity ? `${escHtml(formatNumberDisplay(r.quantity))}${r.unit ? ' '+escHtml(r.unit) : ''}` : '';
+    const perUnitHtml = `${escHtml(r.currency)} ${escHtml(r.margin.toFixed(2))} per ${escHtml(singularUnit(r.unit).toLowerCase())}`;
+    const totalHtml = `${escHtml(r.currency)} ${escHtml(formatNumberDisplay(r.profit.toFixed(2)))}`;
+    t += `<tr${tightLayout?' style="page-break-inside:avoid;"':''}>${td(labelHtml)}${td(qtyHtml,'right')}${td(perUnitHtml,'right')}${td(totalHtml,'right','font-weight:600;')}</tr>`;
+    byCurrency[r.currency] = (byCurrency[r.currency]||0) + r.profit;
+  });
+
+  Object.keys(byCurrency).forEach(currency=>{
+    t += `<tr><td colspan="3" style="${FF} text-align:right; padding:7pt 8pt; font-size:11pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">Total Commission (${escHtml(currency)})</td><td style="${FF} text-align:right; padding:7pt 8pt; font-size:12pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">${escHtml(currency)} ${escHtml(formatNumberDisplay(byCurrency[currency].toFixed(2)))}</td></tr>`;
   });
 
   t += `</tbody></table>`;
@@ -7355,9 +7387,10 @@ function buildPdfQuotationHtml(docType){
   else if(docType === 'invoice') introText = 'Please find below the invoice for the following supply:';
   else introText = getOpeningLine();
 
-  const effectivePriceMode = (docType === 'supplier' && isBrokeredDealActiveForCurrentView()) ? 'commission' : cfg.priceMode;
-  const summaryHtml = buildOrderSummaryTableHtml(effectivePriceMode, false, docType === 'supplier', tightLayout);
+  const isBrokered = docType === 'supplier' && isBrokeredDealActiveForCurrentView();
+  const summaryHtml = buildOrderSummaryTableHtml(isBrokered ? 'selling' : cfg.priceMode, false, docType === 'supplier', tightLayout);
   const summaryHasExcluded = summaryHtml.includes('— *');
+  const commissionSummaryHtml = isBrokered ? buildCommissionSummaryTableHtml(true, tightLayout) : '';
 
   // Delivery Details and Vessel Specifics get their own clearly-formatted,
   // side-by-side row on Supplier/Customer Confirmation paperwork — always
@@ -7462,6 +7495,7 @@ function buildPdfQuotationHtml(docType){
     <div class="terms-heading">${docType === 'quotation' ? 'Summary' : 'Order Summary'}</div>
     ${summaryHtml}
     ${summaryHasExcluded ? `<div style="font-size:9pt; color:#B3492E; margin-top:-4px;">* Excludes item(s) where the price and quantity units could not be converted against each other.</div>` : ''}
+    ${commissionSummaryHtml ? `<div class="terms-heading" style="margin-top:14pt;">Commission Summary</div>${commissionSummaryHtml}` : ''}
     ${fv('taxStatus') ? `<div style="font-size:${tightLayout?'9pt':'11pt'}; margin-top:4pt;"><b>Tax Status:</b> ${escHtml(fv('taxStatus'))}</div>` : ''}
 
     ${productSections}
@@ -9388,13 +9422,14 @@ function buildSupplyEmailHtml(){
       if(d.specs.length) d.specs.forEach(([k,v])=> items.push(`<b>${escHtml(k)}:</b> ${escHtml(v)}`));
     }
     if(isBrokeredDealActiveForCurrentView()){
+      let saleUnitLabel = '';
       if(b.sellingPrice){
-        const saleUnitLabel = singularUnit(b.sellingPriceUnit || b.unit).toLowerCase();
+        saleUnitLabel = singularUnit(b.sellingPriceUnit || b.unit).toLowerCase();
         items.push(`<b>CUSTOMER SELLING PRICE:</b> ${escHtml(b.currency)} ${escHtml(formatNumberDisplay(b.sellingPrice))} per ${escHtml(saleUnitLabel)}`);
       }
-      const {profit} = computeMarginAndProfit(b);
-      if(profit !== null){
-        items.push(`<b>COMMISSION AMOUNT:</b> ${escHtml(b.currency)} ${escHtml(formatNumberDisplay(profit.toFixed(2)))}`);
+      const {margin} = computeMarginAndProfit(b);
+      if(margin !== null){
+        items.push(`<b>COMMISSION AMOUNT:</b> ${escHtml(b.currency)} ${escHtml(margin.toFixed(2))} per ${escHtml(saleUnitLabel || singularUnit(b.unit).toLowerCase())}`);
       }
     } else if(d.costPrice){
       const costUnitLabel = singularUnit(d.costPriceUnit).toLowerCase();
@@ -9407,11 +9442,20 @@ function buildSupplyEmailHtml(){
 
   const supTotalToggle = document.getElementById('showSupplyOrderTotal');
   if(supTotalToggle && supTotalToggle.checked){
-    const tableHtml = buildOrderSummaryTableHtml(isBrokeredDealActiveForCurrentView() ? 'commission' : 'cost', true);
+    const brokered = isBrokeredDealActiveForCurrentView();
+    const tableHtml = buildOrderSummaryTableHtml(brokered ? 'selling' : 'cost', true);
     if(tableHtml){
       parts.push(heading('Order summary'));
       parts.push(tableHtml);
       parts.push(blank());
+    }
+    if(brokered){
+      const commissionTableHtml = buildCommissionSummaryTableHtml(true);
+      if(commissionTableHtml){
+        parts.push(heading('Commission summary'));
+        parts.push(commissionTableHtml);
+        parts.push(blank());
+      }
     }
   }
 
@@ -9507,12 +9551,14 @@ function buildSupplyPlainText(){
       d.specs.forEach(([k,v])=> lines.push(`- ${k}: ${v}`));
     }
     if(isBrokeredDealActiveForCurrentView()){
+      let saleUnitLabel = '';
       if(b.sellingPrice){
-        lines.push('CUSTOMER SELLING PRICE: ' + b.currency + ' ' + formatNumberDisplay(b.sellingPrice) + ' per ' + singularUnit(b.sellingPriceUnit || b.unit).toLowerCase());
+        saleUnitLabel = singularUnit(b.sellingPriceUnit || b.unit).toLowerCase();
+        lines.push('CUSTOMER SELLING PRICE: ' + b.currency + ' ' + formatNumberDisplay(b.sellingPrice) + ' per ' + saleUnitLabel);
       }
-      const {profit} = computeMarginAndProfit(b);
-      if(profit !== null){
-        lines.push('COMMISSION AMOUNT: ' + b.currency + ' ' + formatNumberDisplay(profit.toFixed(2)));
+      const {margin} = computeMarginAndProfit(b);
+      if(margin !== null){
+        lines.push('COMMISSION AMOUNT: ' + b.currency + ' ' + margin.toFixed(2) + ' per ' + (saleUnitLabel || singularUnit(b.unit).toLowerCase()));
       }
     } else if(d.costPrice){
       lines.push('PRICE: ' + d.costCurrency + ' ' + formatNumberDisplay(d.costPrice) + ' per ' + singularUnit(d.costPriceUnit).toLowerCase());
@@ -9524,7 +9570,7 @@ function buildSupplyPlainText(){
   const supTotalToggle = document.getElementById('showSupplyOrderTotal');
   if(supTotalToggle && supTotalToggle.checked){
     const brokered = isBrokeredDealActiveForCurrentView();
-    const rows = buildOrderSummaryRows().filter(r => !r.indent && (brokered ? r.profit !== null : r.buyingSubTotal !== null));
+    const rows = buildOrderSummaryRows().filter(r => !r.indent && (brokered ? r.sellingSubTotal !== null : r.buyingSubTotal !== null));
     if(rows.length){
       lines.push('Order Summary:');
       const byCurrency = {};
@@ -9532,10 +9578,10 @@ function buildSupplyPlainText(){
         let line = '- ' + r.label;
         if(r.quantity) line += ': ' + formatNumberDisplay(r.quantity) + (r.unit ? ' '+r.unit : '');
         if(brokered){
-          if(r.sellingPrice) line += ' @ ' + formatNumberDisplay(r.sellingPrice) + ' per ' + singularUnit(r.sellingPriceUnit).toLowerCase() + ' (Customer Selling Price)';
-          line += ' \u2014 Commission: ' + r.currency + ' ' + formatNumberDisplay(r.profit.toFixed(2));
+          if(r.sellingPrice) line += ' @ ' + formatNumberDisplay(r.sellingPrice) + ' per ' + singularUnit(r.sellingPriceUnit).toLowerCase();
+          line += ' = ' + r.currency + ' ' + formatNumberDisplay(r.sellingSubTotal.toFixed(2));
           lines.push(line);
-          byCurrency[r.currency] = (byCurrency[r.currency]||0) + r.profit;
+          byCurrency[r.currency] = (byCurrency[r.currency]||0) + r.sellingSubTotal;
         } else {
           if(r.buyingPrice) line += ' @ ' + formatNumberDisplay(r.buyingPrice) + ' per ' + singularUnit(r.buyingPriceUnit).toLowerCase();
           line += ' = ' + r.buyingCurrency + ' ' + formatNumberDisplay(r.buyingSubTotal.toFixed(2));
@@ -9544,8 +9590,26 @@ function buildSupplyPlainText(){
         }
       });
       const totalParts = Object.keys(byCurrency).map(c => c + ' ' + formatNumberDisplay(byCurrency[c].toFixed(2)));
-      lines.push((brokered ? 'Total Commission: ' : 'Estimated Total: ') + totalParts.join(' + '));
+      lines.push('Estimated Total: ' + totalParts.join(' + '));
       lines.push('');
+    }
+    if(brokered){
+      const commissionRows = buildOrderSummaryRows(true).filter(r => !r.indent && r.profit !== null && r.margin !== null);
+      if(commissionRows.length){
+        lines.push('Commission Summary:');
+        const byCurrency = {};
+        commissionRows.forEach(r=>{
+          let line = '- ' + r.label + ' Commission';
+          if(r.quantity) line += ': ' + formatNumberDisplay(r.quantity) + (r.unit ? ' '+r.unit : '');
+          line += ' @ ' + r.currency + ' ' + r.margin.toFixed(2) + ' per ' + singularUnit(r.unit).toLowerCase();
+          line += ' = ' + r.currency + ' ' + formatNumberDisplay(r.profit.toFixed(2));
+          lines.push(line);
+          byCurrency[r.currency] = (byCurrency[r.currency]||0) + r.profit;
+        });
+        const totalParts = Object.keys(byCurrency).map(c => c + ' ' + formatNumberDisplay(byCurrency[c].toFixed(2)));
+        lines.push('Total Commission: ' + totalParts.join(' + '));
+        lines.push('');
+      }
     }
   }
 
