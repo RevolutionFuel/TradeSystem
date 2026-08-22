@@ -7074,7 +7074,7 @@ function buildProfitSummaryHtml(){
   </div>`;
 }
 
-function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView, tightLayout){
+function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView, tightLayout, priceLabel){
   priceMode = priceMode === 'cost' ? 'cost' : 'selling';
   const labelColor = plainColors ? '#0F2A3F' : '#1F064F';
   const FF = "font-family:'Calibri Light','Calibri','Segoe UI Light','Segoe UI',Arial,sans-serif;";
@@ -7084,7 +7084,7 @@ function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView
   const td = (html, align, extra) => `<td style="${FF} text-align:${align||'left'}; padding:${tightLayout?'3pt 6pt':'5pt 8pt'}; border-bottom:1pt solid #E8E3D6; font-size:${tightLayout?'9pt':'11pt'}; color:#0F2A3F; ${extra||''}">${html}</td>`;
 
   let t = `<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:2pt 0 8pt 0; page-break-inside:${tightLayout?'auto':'avoid'};">
-    <thead><tr>${th('Product')}${th('Quantity','right')}${th('Units')}${th('Price','right')}${th('Sub Total','right')}</tr></thead><tbody>`;
+    <thead><tr>${th('Product')}${th('Quantity','right')}${th(priceLabel||'Price','right')}${th('Sub Total','right')}</tr></thead><tbody>`;
 
   const byCurrency = {};
   rows.forEach(r=>{
@@ -7102,24 +7102,27 @@ function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView
     const excluded = useCost ? false : r.excluded;
 
     const labelHtml = r.indent ? `<span style="color:#4B6072;">\u21b3 ${escHtml(r.label)}</span>` : `<b style="color:${labelColor};">${escHtml(r.label)}</b>`;
-    const qtyHtml = r.quantity ? escHtml(formatNumberDisplay(r.quantity)) : '';
-    const unitHtml = r.unit ? escHtml(r.unit) : '';
+    // Quantity and its unit shown together in one column (e.g. "100,000
+    // Litres") rather than as two separate columns.
+    const qtyHtml = r.quantity ? `${escHtml(formatNumberDisplay(r.quantity))}${r.unit ? ' '+escHtml(r.unit) : ''}` : '';
     let priceHtml = priceVal ? escHtml(formatNumberDisplay(priceVal)) : '';
     if(priceHtml && rowPriceUnit === '%'){
       priceHtml += '%';
-    } else if(priceHtml && rowPriceUnit && rowPriceUnit !== r.unit){
+    } else if(priceHtml && rowPriceUnit){
+      // Always shown now (not just when it differs from the base unit),
+      // since there's no separate Units column any more to convey this.
       priceHtml += ` <span style="color:#4B6072; font-size:9.5pt;">per ${escHtml(singularUnit(rowPriceUnit).toLowerCase())}</span>`;
     }
     const subTotalHtml = excluded ? '<span style="color:#B3492E;">\u2014 *</span>'
       : (subTotalVal !== null && subTotalVal !== undefined ? `${escHtml(rowCurrency)} ${escHtml(formatNumberDisplay(subTotalVal.toFixed(2)))}` : '');
-    t += `<tr${tightLayout?' style="page-break-inside:avoid;"':''}>${td(labelHtml, 'left', r.indent?'padding-left:20pt;':'')}${td(qtyHtml,'right')}${td(unitHtml)}${td(priceHtml,'right')}${td(subTotalHtml,'right','font-weight:'+(r.indent?'400':'600')+';')}</tr>`;
+    t += `<tr${tightLayout?' style="page-break-inside:avoid;"':''}>${td(labelHtml, 'left', r.indent?'padding-left:20pt;':'')}${td(qtyHtml,'right')}${td(priceHtml,'right')}${td(subTotalHtml,'right','font-weight:'+(r.indent?'400':'600')+';')}</tr>`;
     if(subTotalVal !== null && subTotalVal !== undefined){
       byCurrency[rowCurrency] = (byCurrency[rowCurrency]||0) + subTotalVal;
     }
   });
 
   Object.keys(byCurrency).forEach(currency=>{
-    t += `<tr><td colspan="4" style="${FF} text-align:right; padding:7pt 8pt; font-size:11pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">Estimated Total (${escHtml(currency)})</td><td style="${FF} text-align:right; padding:7pt 8pt; font-size:12pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">${escHtml(currency)} ${escHtml(formatNumberDisplay(byCurrency[currency].toFixed(2)))}</td></tr>`;
+    t += `<tr><td colspan="3" style="${FF} text-align:right; padding:7pt 8pt; font-size:11pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">Estimated Total (${escHtml(currency)})</td><td style="${FF} text-align:right; padding:7pt 8pt; font-size:12pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">${escHtml(currency)} ${escHtml(formatNumberDisplay(byCurrency[currency].toFixed(2)))}</td></tr>`;
   });
 
   t += `</tbody></table>`;
@@ -7388,7 +7391,7 @@ function buildPdfQuotationHtml(docType){
   else introText = getOpeningLine();
 
   const isBrokered = docType === 'supplier' && isBrokeredDealActiveForCurrentView();
-  const summaryHtml = buildOrderSummaryTableHtml(isBrokered ? 'selling' : cfg.priceMode, false, docType === 'supplier', tightLayout);
+  const summaryHtml = buildOrderSummaryTableHtml(isBrokered ? 'selling' : cfg.priceMode, false, docType === 'supplier', tightLayout, isBrokered ? 'Customer Selling Price' : undefined);
   const summaryHasExcluded = summaryHtml.includes('— *');
   const commissionSummaryHtml = isBrokered ? buildCommissionSummaryTableHtml(true, tightLayout) : '';
 
@@ -7492,7 +7495,7 @@ function buildPdfQuotationHtml(docType){
     <div class="intro">${escHtml((docType === 'supplier' ? fv('supGreeting') : fv('greeting')) || 'Dear Captain,')}</div>
     <div class="intro">${escHtml(introText)}</div>`}
 
-    <div class="terms-heading">${docType === 'quotation' ? 'Summary' : 'Order Summary'}</div>
+    <div class="terms-heading">${isBrokered ? 'Customer Order Summary' : (docType === 'quotation' ? 'Summary' : 'Order Summary')}</div>
     ${summaryHtml}
     ${summaryHasExcluded ? `<div style="font-size:9pt; color:#B3492E; margin-top:-4px;">* Excludes item(s) where the price and quantity units could not be converted against each other.</div>` : ''}
     ${commissionSummaryHtml ? `<div class="terms-heading" style="margin-top:14pt;">Commission Summary</div>${commissionSummaryHtml}` : ''}
