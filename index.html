@@ -2349,6 +2349,7 @@ function draftCustomerInOutlook(){
   });
 }
 function draftInvoiceInOutlook(){
+  if(!validateFinalQuantitiesForInvoice()) return;
   if(getInvoiceType()==='invoice' && confirmProgressStatus('invoice')) markStatus('invoiced');
   return draftInOutlookGeneric({
     btnId: 'draftInvoiceOutlookBtn', openCheckboxId: 'openDraftToSendInvoice',
@@ -5646,6 +5647,13 @@ function addProductBlock(kind){
     specsAttached: false,
     otherProductName: '', otherProductCustom: '',
     quantity: '', unit: kind==='fuel' ? 'Litres' : 'Litres', tolerance: '',
+    // Range quantity: when on, the order is for a range (e.g. "95,000 -
+    // 105,000 Litres") rather than one fixed figure — quantity itself is
+    // the minimum, maxQuantity the maximum. Only affects display; every
+    // calculation (totals, profit) keeps using quantity (the minimum)
+    // alone, same as before, until a final quantity is actually entered
+    // on the Invoice page.
+    quantityRange: false, maxQuantity: '',
     delivery: '', deliveryCustom: '', mastersReq: false,
     currency: prevCurrency, sellingPrice: '', sellingPriceUnit: 'Litres', sellingPriceDelivered: false, sellingConversionFactor: '',
     costPrice: '', costCurrency: prevCurrency, costPriceUnit: 'Litres', costConversionFactor: '', exchangeRate: '',
@@ -5676,6 +5684,7 @@ function removeProductBlock(id){
 // editable from both their original page and Customer Confirmation.
 const FIELD_HOME = {
   quantity:['order','customer'], tolerance:['order'], sulphur:['order'], flashCustom:['order'], fameCustom:['order'], deliveryCustom:['order'],
+  quantityRange:['order'], maxQuantity:['order'],
   grade:['order'], unit:['order'], mastersReq:['order'], delivery:['order'], flash:['order'], fame:['order'],
   octaneRating:['order'], ethanolContent:['order'], customSpecNotes:['order'],
   otherFuel:['order'], otherProductName:['order'], otherProductCustom:['order'], specsAttached:['quote'],
@@ -5684,7 +5693,7 @@ const FIELD_HOME = {
   costCurrency:['supply','quote'], costPrice:['supply','quote'], costPriceUnit:['supply','quote'], costConversionFactor:['supply','quote'], exchangeRate:['supply','quote'],
   finalQuantity:['invoice'], finalBuyQuantity:['invoice']
 };
-const TYPED_FIELDS = new Set(['quantity','tolerance','sulphur','flashCustom','fameCustom','deliveryCustom',
+const TYPED_FIELDS = new Set(['quantity','maxQuantity','tolerance','sulphur','flashCustom','fameCustom','deliveryCustom',
   'octaneRating','ethanolContent','customSpecNotes','otherFuel','otherProductCustom',
   'sellingPrice','costPrice','sellingConversionFactor','costConversionFactor','exchangeRate','finalQuantity','finalBuyQuantity']);
 const PRICING_ROW_FIELDS = new Set(['sellingPrice','costPrice','sellingConversionFactor','costConversionFactor','exchangeRate','quantity']);
@@ -6054,13 +6063,18 @@ function fuelBlockOrderHTML(b, idx){
 
     <div class="pb-section-heading">Quantity</div>
     <div class="row">
-      <div class="field"><label>Quantity</label><input type="text" inputmode="decimal" data-field="quantity" data-block-id="${b.id}" value="${escAttr(b.quantity)}" oninput="sanitizeQuantity(this); updateBlock('${b.id}','quantity',this.value)"></div>
+      <div class="field"><label>Quantity${b.quantityRange ? ' (Minimum)' : ''}</label><input type="text" inputmode="decimal" data-field="quantity" data-block-id="${b.id}" value="${escAttr(b.quantity)}" oninput="sanitizeQuantity(this); updateBlock('${b.id}','quantity',this.value)"></div>
       <div class="field"><label>Unit</label>
         <select onchange="updateBlock('${b.id}','unit',this.value)">
           ${UNITS.map(u=>`<option value="${escAttr(u.name)}" ${b.unit===u.name?'selected':''}>${escHtml(u.name)}</option>`).join('')}
         </select>
       </div>
     </div>
+    <label class="opt-inline" style="margin-bottom:8px;">
+      <input type="checkbox" ${b.quantityRange?'checked':''} onchange="updateBlock('${b.id}','quantityRange',this.checked)"> Range
+    </label>
+    ${b.quantityRange ? `
+    <div class="field" style="margin-bottom:14px;"><label>Quantity (Maximum)</label><input type="text" inputmode="decimal" data-field="maxQuantity" data-block-id="${b.id}" value="${escAttr(b.maxQuantity)}" oninput="sanitizeQuantity(this); updateBlock('${b.id}','maxQuantity',this.value)"></div>` : ''}
     <div class="field"><label>Tolerance (\u00b1%)</label><input type="text" value="${escAttr(b.tolerance)}" placeholder="blank = omit" oninput="updateBlock('${b.id}','tolerance',this.value)"></div>
     <label class="opt-inline" style="margin-bottom:14px;">
       <input type="checkbox" ${b.mastersReq?'checked':''} onchange="updateBlock('${b.id}','mastersReq',this.checked)"> To master's requirements
@@ -6413,7 +6427,7 @@ function productBlockCustomerHTML(b, idx){
 function productBlockInvoiceHTML(b, idx){
   const d = productBlockText(b);
   const label = d.isOther ? (d.name || 'Other Product') : (d.grade || 'Product');
-  const orderedQty = b.quantity ? `${formatNumberDisplay(b.quantity)} ${b.unit}` : '(not set on Order page)';
+  const orderedQty = b.quantity ? `${formatNumberDisplay(quantityDisplayValue(b))} ${b.unit}` : '(not set on Order page)';
   return `
     <div class="pb-head">
       <span class="pb-title">Product ${idx+1}: ${escHtml(label)}</span>
@@ -6692,12 +6706,27 @@ function sanitizeQuantity(el){
 
 function formatNumberDisplay(str){
   if(!str) return str;
+  // A "min - max" range string (produced by quantityDisplayValue() below) -
+  // format each side independently and rejoin, rather than trying to parse
+  // the whole thing as one number.
+  if(typeof str === 'string' && str.includes(' - ')){
+    return str.split(' - ').map(part => formatNumberDisplay(part)).join(' - ');
+  }
   const cleaned = String(str).replace(/,/g,'').trim();
   if(!/^\d*\.?\d*$/.test(cleaned) || cleaned === '' || cleaned === '.') return str; // not a plain number — leave as typed
   let [intPart, decPart] = cleaned.split('.');
   if(intPart === '') intPart = '0';
   intPart = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return decPart !== undefined ? intPart + '.' + decPart : intPart;
+}
+// Range-aware quantity string for DISPLAY purposes only - never used for the
+// underlying b.quantity field itself (which stays a plain number, the
+// minimum, and keeps being the only figure used by every calculation -
+// totals, profit, etc. - until a final quantity is entered on the Invoice
+// page). Used by productBlockText() and buildOrderSummaryRows() so every
+// existing display location across the whole app picks this up automatically.
+function quantityDisplayValue(b){
+  return (b.quantityRange && b.maxQuantity) ? `${b.quantity} - ${b.maxQuantity}` : b.quantity;
 }
 
 /* ===================== ORDER TOTAL CALCULATION ===================== */
@@ -6865,7 +6894,7 @@ function buildOrderSummaryRows(filterToSupplierView){
     const {margin, profit, needsExchangeRate} = computeMarginAndProfit(b);
     rows.push({
       indent: 0, label,
-      quantity: b.quantity, unit: b.unit,
+      quantity: quantityDisplayValue(b), unit: b.unit,
       sellingPrice: b.sellingPrice, sellingPriceUnit: b.sellingPriceUnit || b.unit,
       currency: b.currency, sellingSubTotal: subtotal, excluded,
       buyingPrice: b.costPrice || null, buyingPriceUnit: b.costPriceUnit || b.unit, buyingCurrency: b.costCurrency || b.currency,
@@ -8112,7 +8141,22 @@ function renderInvoiceEmailPreview(){
   const el = document.getElementById('invoiceEmailPreview');
   if(el) el.innerHTML = buildInvoiceEmailHtml();
 }
+// An invoice bills a single, definite quantity - a range ("95,000 -
+// 105,000 Litres") from the Order page isn't billable on its own. Returns
+// true if every range-quantity product has a final quantity actually
+// entered; otherwise alerts naming the product(s) still missing one and
+// returns false, so the caller can bail out before generating anything.
+function validateFinalQuantitiesForInvoice(){
+  const missing = productBlocks.filter(b => b.quantityRange && parseNum(b.finalQuantity) === null);
+  if(missing.length){
+    const names = missing.map(b => { const d = productBlockText(b); return d.isOther ? (d.name || 'Other Product') : (d.grade || 'Product'); });
+    alert('Enter the actual final quantity before generating an invoice for: ' + names.join(', ') + ' (quantity was entered as a range on the Order page).');
+    return false;
+  }
+  return true;
+}
 async function copyInvoiceEmailRich(){
+  if(!validateFinalQuantitiesForInvoice()) return;
   if(getInvoiceType()==='invoice' && confirmProgressStatus('invoice')) markStatus('invoiced');
   const fragment = buildInvoiceEmailHtml();
   const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${fragment}</body></html>`;
@@ -8134,6 +8178,7 @@ async function copyInvoiceEmailRich(){
   }
 }
 async function copyInvoiceEmailPlain(){
+  if(!validateFinalQuantitiesForInvoice()) return;
   if(getInvoiceType()==='invoice' && confirmProgressStatus('invoice')) markStatus('invoiced');
   try{ await navigator.clipboard.writeText(buildInvoiceEmailPlainText()); flash('invoiceCopyStatus'); }
   catch(e){ selectInvoiceEmailForManualCopy(); }
@@ -8177,6 +8222,7 @@ async function openStoredPdf(docType){
   }
 }
 async function openInvoicePdf(btnEl){
+  if(!validateFinalQuantitiesForInvoice()) return;
   if(getInvoiceType()==='invoice' && confirmProgressStatus('invoice')) markStatus('invoiced');
   const btn = btnEl || null;
   const originalLabel = btn ? btn.textContent : '';
@@ -8917,14 +8963,14 @@ function productBlockText(b, htmlMode, compact){
     }
     if(b.customSpecNotes) specs.push(['Notes', b.customSpecNotes]);
     const deliveryText = b.delivery==='__custom' ? b.deliveryCustom : b.delivery;
-    return {grade, specs, specsAttached:b.specsAttached, quantity:b.quantity, unit:b.unit, tolerance:b.tolerance,
+    return {grade, specs, specsAttached:b.specsAttached, quantity:quantityDisplayValue(b), unit:b.unit, tolerance:b.tolerance,
       delivery:deliveryText, mastersReq:b.mastersReq, currency:b.currency, sellingPrice:b.sellingPrice, sellingPriceUnit:b.sellingPriceUnit||b.unit, sellingPriceDelivered:b.sellingPriceDelivered,
       costPrice:b.costPrice, costCurrency:b.costCurrency||b.currency, costPriceUnit:b.costPriceUnit||b.unit, fees:b.fees.filter(f=>f.description||f.amount), costFees:(b.costFees||[]).filter(f=>f.description||f.amount)};
   } else {
     const name = b.otherProductName==='__custom' ? b.otherProductCustom : b.otherProductName;
     const specs = [];
     if(b.customSpecNotes) specs.push(['Notes', b.customSpecNotes]);
-    return {isOther:true, name, specs, specsAttached:b.specsAttached, quantity:b.quantity, unit:b.unit, currency:b.currency, sellingPrice:b.sellingPrice, sellingPriceUnit:b.sellingPriceUnit||b.unit,
+    return {isOther:true, name, specs, specsAttached:b.specsAttached, quantity:quantityDisplayValue(b), unit:b.unit, currency:b.currency, sellingPrice:b.sellingPrice, sellingPriceUnit:b.sellingPriceUnit||b.unit,
       costPrice:b.costPrice, costCurrency:b.costCurrency||b.currency, costPriceUnit:b.costPriceUnit||b.unit, fees:b.fees.filter(f=>f.description||f.amount), costFees:(b.costFees||[]).filter(f=>f.description||f.amount)};
   }
 }
