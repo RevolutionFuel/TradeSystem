@@ -7870,8 +7870,8 @@ function buildInvoicePdfHtml(){
   const bank = BANK_DETAILS[currency] || BANK_DETAILS.USD;
   const locationOfDelivery = [fv('port'), fv('portLocation')].filter(Boolean).join(', ');
 
-  const th = (text, align) => `<th style="text-align:${align||'left'}; padding:6px 8px; border-bottom:2pt solid #1F064F; font-size:6.5pt; text-transform:uppercase; letter-spacing:0.3pt; color:#1F064F;">${text}</th>`;
-  const td = (html, align) => `<td style="text-align:${align||'left'}; padding:5px 8px; border-bottom:0.75pt solid #DAD3C1; font-size:7.5pt; color:#0F2A3F;">${html}</td>`;
+  const th = (text, align) => `<th style="text-align:${align||'left'}; padding:6px 8px; border-bottom:1pt solid #1F064F; font-size:6.5pt; text-transform:uppercase; letter-spacing:0.3pt; color:#1F064F;">${text}</th>`;
+  const td = (html, align) => `<td style="text-align:${align||'left'}; padding:5px 8px; border-bottom:0.5pt solid #DAD3C1; font-size:7.5pt; color:#0F2A3F;">${html}</td>`;
 
   const rowsHtml = rows.map(r=>{
     const qtyHtml = r.qty !== null ? formatNumberDisplay(r.qty.toString()) : '';
@@ -7887,7 +7887,7 @@ function buildInvoicePdfHtml(){
   body { ${FF} margin:0; color:#0F2A3F; }
   .print-bar { background:#FBEAD1; padding:10px 16px; display:flex; justify-content:space-between; align-items:center; font-size:11pt; }
   .print-bar button { background:#1F064F; color:#fff; border:none; padding:8px 16px; border-radius:6px; font-size:10.5pt; cursor:pointer; }
-  .sheet { max-width:800px; margin:0 auto; padding:16px 8px; }
+  .sheet { max-width:800px; margin:0 auto; padding:16px 8px; display:flex; flex-direction:column; min-height:100vh; box-sizing:border-box; }
   .logo-row { text-align:center; margin-bottom:6px; }
   .logo-row img { height:64px; }
   h1.doctitle { text-align:center; font-size:17pt; font-weight:700; color:#1F064F; margin:8px 0 20px; letter-spacing:0.5pt; }
@@ -7897,14 +7897,15 @@ function buildInvoicePdfHtml(){
   .info-lines { text-align:right; }
   .info-lines div { margin-bottom:2px; }
   table { width:100%; border-collapse:collapse; margin-top:8px; }
-  .total-row td { border-top:2pt solid #1F064F; border-bottom:none; font-weight:700; font-size:8pt; padding-top:8px; }
+  .total-row td { border-top:1pt solid #1F064F; border-bottom:none; font-weight:700; font-size:8pt; padding-top:8px; }
   .due-line { text-align:right; margin:6px 0 20px; font-size:7.5pt; }
   .due-line b { color:#1F064F; }
   .bank-heading { font-weight:700; font-size:7.5pt; margin:18px 0 6px; }
   .bank-grid { font-size:7pt; }
   .bank-grid div { margin-bottom:2px; }
   .bank-grid .label { display:inline-block; min-width:120px; font-weight:700; }
-  .legal { font-size:6pt; color:#4B6072; text-align:center; margin-top:22px; line-height:1.5; }
+  .legal { font-size:6pt; color:#0F2A3F; text-align:center; margin-top:auto; padding-top:22px; line-height:1.5; }
+  .legal b { color:#1F064F; }
   @media print { .print-bar { display:none; } .sheet { padding:0; } }
 </style>
 </head><body>
@@ -7958,12 +7959,13 @@ function buildInvoicePdfHtml(){
     </div>
 
     <div class="legal">
-      Any applicable bank charges to be at the expense of the sender so funds are received in full without deduction.<br>
+      <b>Any applicable bank charges to be at the expense of the sender so funds are received in full without deduction.</b><br>
+      <br>
       In the event of late payment we reserve the right to charge interest at 2.8% per 30-day period, and pro rata for any part thereof. All amounts outstanding for more than 30 days past the invoice due date shall incur an additional 5% administration fee.<br><br>
       Revolution Fuel (Marine) Limited, 45 Fitzroy Street, London, W1T 6EB, United Kingdom<br>
-      Telephone: +44 (0) 207 383 7072 &nbsp;&middot;&nbsp; E-mail: fuel@revolutionfuel.com<br>
-      Company Number: 10142387 &nbsp;&middot;&nbsp; VAT Registration Number: GB 243 7637 92<br>
-      www.revolutionfuel.com
+      <b>Telephone:</b> +44 (0) 207 383 7072 &nbsp;&middot;&nbsp; <b>E-mail:</b> fuel@revolutionfuel.com<br>
+      <b>Company Number:</b> 10142387 &nbsp;&middot;&nbsp; <b>VAT Registration Number:</b> GB 243 7637 92<br>
+      <b>www.revolutionfuel.com</b>
     </div>
   </div>
 </body></html>`;
