@@ -7590,11 +7590,12 @@ function currentBrokerFullName(){
 // columns blank since none of that exists yet; the invoiced copy fills in
 // what's known by then (still leaving Amount Received/Rcvd Date/Paid Date
 // blank, since those are recorded later still, once money actually moves).
-// The spreadsheet convention uses spelled-out currency names, not the
-// 3-letter codes used everywhere else in the app (confirmed for EUR-vs-
-// EURO specifically; USD/GBP follow the same pattern as a reasonable
-// extrapolation, worth confirming if that assumption is wrong).
-const CURRENCY_DISPLAY_NAMES = { USD:'DOLLAR', EUR:'EURO', GBP:'POUND' };
+// Only EUR is spelled out ('EURO') - USD and GBP use their plain ISO
+// codes. Originally built for the spreadsheet copy feature alone (which
+// used to spell out all three: DOLLAR/EURO/POUND), this same mapping is
+// now also used for the Invoice PDF/email's own currency display, since
+// both places want the identical treatment.
+const CURRENCY_DISPLAY_NAMES = { EUR:'EURO' };
 function currencyDisplayName(code){
   return CURRENCY_DISPLAY_NAMES[code] || code || '';
 }
@@ -7930,7 +7931,7 @@ function buildInvoicePdfHtml(){
         <div><span class="label">Payment Terms:</span> ${escHtml(getPaymentLine() || '(not set)')}</div>
         <div><span class="label">Payment Due Date:</span> ${escHtml(formatDateForQuote(isoDate(dueDateObj)))}</div>
         <div>&nbsp;</div>
-        <div><span class="label">Order Currency:</span> <b>${escHtml(currency)}</b></div>
+        <div><span class="label">Order Currency:</span> <b>${escHtml(currencyDisplayName(currency))}</b></div>
       </div>
     </div>
 
@@ -7938,7 +7939,7 @@ function buildInvoicePdfHtml(){
       <thead><tr>${th('Product')}${th('Spec')}${th('Quantity','right')}${th('Units','right')}${th('Price','right')}${th('Amount','right')}</tr></thead>
       <tbody>
         ${rowsHtml}
-        <tr class="total-row"><td colspan="4"></td><td style="text-align:right;">Invoice Total:</td><td style="text-align:right;">${escHtml(currency)} ${formatNumberDisplay(total.toFixed(2))}</td></tr>
+        <tr class="total-row"><td colspan="4"></td><td style="text-align:right;">Invoice Total:</td><td style="text-align:right;">${escHtml(currencyDisplayName(currency))} ${formatNumberDisplay(total.toFixed(2))}</td></tr>
       </tbody>
     </table>
     ${anyExcluded ? `<div style="font-size:6.5pt; color:#B3492E; margin-top:6px;">* Excluded \u2014 purchase and selling currencies differ and no exchange rate has been entered on the Supply Confirmation page.</div>` : ''}
@@ -7946,7 +7947,7 @@ function buildInvoicePdfHtml(){
 
     <div class="due-line">Please make payment on or before: <b>${escHtml(formatDateForQuote(isoDate(dueDateObj)))}</b></div>
 
-    <div class="bank-heading">PLEASE MAKE ALL ${escHtml(currency)} PAYMENTS TO:</div>
+    <div class="bank-heading">PLEASE MAKE ALL ${escHtml(currencyDisplayName(currency))} PAYMENTS TO:</div>
     <div class="bank-grid">
       <div><span class="label">Recipient Name:</span> ${escHtml(bank.accountName)}</div>
       <div><span class="label">Bank Name:</span> ${escHtml(bank.bankName)}</div>
@@ -8009,7 +8010,7 @@ function buildInvoiceEmailHtml(){
 
   const totalsItems = [
     `<b>Due Date:</b> ${escHtml(formatDateForQuote(isoDate(inv.dueDateObj)))}`,
-    `<b>Invoice Total:</b> ${escHtml(inv.currency)} ${escHtml(formatNumberDisplay(inv.total.toFixed(2)))}`
+    `<b>Invoice Total:</b> ${escHtml(currencyDisplayName(inv.currency))} ${escHtml(formatNumberDisplay(inv.total.toFixed(2)))}`
   ];
   parts.push(ul(totalsItems));
   parts.push(blank());
