@@ -7870,8 +7870,8 @@ function buildInvoicePdfHtml(){
   const bank = BANK_DETAILS[currency] || BANK_DETAILS.USD;
   const locationOfDelivery = [fv('port'), fv('portLocation')].filter(Boolean).join(', ');
 
-  const th = (text, align) => `<th style="text-align:${align||'left'}; padding:6px 8px; border-bottom:1pt solid #1F064F; font-size:6.5pt; text-transform:uppercase; letter-spacing:0.3pt; color:#1F064F;">${text}</th>`;
-  const td = (html, align) => `<td style="text-align:${align||'left'}; padding:5px 8px; border-bottom:0.5pt solid #DAD3C1; font-size:7.5pt; color:#0F2A3F;">${html}</td>`;
+  const th = (text, align) => `<th style="text-align:${align||'left'}; padding:6px 8px; border-bottom:1pt solid #1F064F; font-size:7.5pt; text-transform:uppercase; letter-spacing:0.3pt; color:#1F064F;">${text}</th>`;
+  const td = (html, align) => `<td style="text-align:${align||'left'}; padding:5px 8px; border-bottom:0.5pt solid #DAD3C1; font-size:8.5pt; color:#0F2A3F;">${html}</td>`;
 
   const rowsHtml = rows.map(r=>{
     const qtyHtml = r.qty !== null ? formatNumberDisplay(r.qty.toString()) : '';
@@ -7890,21 +7890,21 @@ function buildInvoicePdfHtml(){
   .sheet { max-width:800px; margin:0 auto; padding:16px 8px; display:flex; flex-direction:column; min-height:100vh; box-sizing:border-box; }
   .logo-row { text-align:center; margin-bottom:6px; }
   .logo-row img { height:64px; }
-  h1.doctitle { text-align:center; font-size:17pt; font-weight:700; color:#1F064F; margin:8px 0 20px; letter-spacing:0.5pt; }
-  .meta-grid { display:flex; justify-content:space-between; gap:24px; margin-bottom:18px; font-size:7.5pt; }
+  h1.doctitle { text-align:center; font-size:19pt; font-weight:700; color:#1F064F; margin:8px 0 28px; letter-spacing:0.5pt; }
+  .meta-grid { display:flex; justify-content:space-between; gap:24px; margin-bottom:18px; font-size:8.5pt; }
   .meta-grid .label { font-weight:700; }
   .bill-block div { margin-bottom:2px; }
   .info-lines { text-align:right; }
   .info-lines div { margin-bottom:2px; }
   table { width:100%; border-collapse:collapse; margin-top:8px; }
-  .total-row td { border-top:1pt solid #1F064F; border-bottom:none; font-weight:700; font-size:8pt; padding-top:8px; }
-  .due-line { text-align:right; margin:6px 0 20px; font-size:7.5pt; }
+  .total-row td { border-top:1pt solid #1F064F; border-bottom:none; font-weight:700; font-size:9pt; padding-top:8px; }
+  .due-line { text-align:right; margin:6px 0 20px; font-size:8.5pt; }
   .due-line b { color:#1F064F; }
-  .bank-heading { font-weight:700; font-size:7.5pt; margin:18px 0 6px; }
-  .bank-grid { font-size:7pt; }
+  .bank-heading { font-weight:700; font-size:8.5pt; margin:18px 0 6px; }
+  .bank-grid { font-size:8pt; }
   .bank-grid div { margin-bottom:2px; }
   .bank-grid .label { display:inline-block; min-width:120px; font-weight:700; }
-  .legal { font-size:6pt; color:#0F2A3F; text-align:center; margin-top:auto; padding-top:22px; line-height:1.5; }
+  .legal { font-size:7pt; color:#0F2A3F; text-align:center; margin-top:auto; padding-top:22px; line-height:1.5; }
   .legal b { color:#1F064F; }
   @media print { .print-bar { display:none; } .sheet { padding:0; } }
 </style>
@@ -7932,7 +7932,7 @@ function buildInvoicePdfHtml(){
         <div><span class="label">Payment Terms:</span> ${escHtml(getPaymentLine() || '(not set)')}</div>
         <div><span class="label">Payment Due Date:</span> ${escHtml(formatDateForQuote(isoDate(dueDateObj)))}</div>
         <div>&nbsp;</div>
-        <div><span class="label">Order Currency:</span> <b>${escHtml(currencyDisplayName(currency))}</b></div>
+        <div style="margin-top:10px;"><span class="label">Order Currency:</span> <b>${escHtml(currencyDisplayName(currency))}</b></div>
       </div>
     </div>
 
@@ -7943,8 +7943,8 @@ function buildInvoicePdfHtml(){
         <tr class="total-row"><td colspan="4"></td><td style="text-align:right;">Invoice Total:</td><td style="text-align:right;">${escHtml(currencyDisplayName(currency))} ${formatNumberDisplay(total.toFixed(2))}</td></tr>
       </tbody>
     </table>
-    ${anyExcluded ? `<div style="font-size:6.5pt; color:#B3492E; margin-top:6px;">* Excluded \u2014 purchase and selling currencies differ and no exchange rate has been entered on the Supply Confirmation page.</div>` : ''}
-    ${getTaxStatusForInvoice() ? `<div style="font-size:7.5pt; margin-top:6px;"><b>Tax Status:</b> ${escHtml(getTaxStatusForInvoice())}</div>` : ''}
+    ${anyExcluded ? `<div style="font-size:7.5pt; color:#B3492E; margin-top:6px;">* Excluded \u2014 purchase and selling currencies differ and no exchange rate has been entered on the Supply Confirmation page.</div>` : ''}
+    ${getTaxStatusForInvoice() ? `<div style="font-size:8.5pt; margin-top:6px;"><b>Tax Status:</b> ${escHtml(getTaxStatusForInvoice())}</div>` : ''}
 
     <div class="due-line">Please make payment on or before: <b>${escHtml(formatDateForQuote(isoDate(dueDateObj)))}</b></div>
 
