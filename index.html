@@ -4526,7 +4526,16 @@ function computeOrderSaveTotals(){
   const sale = computeOrderTotals('sale');
   const cost = computeOrderTotals('cost');
   const saleDom = dominantCurrencyTotal(sale.byCurrency);
-  const costDom = dominantCurrencyTotal(cost.byCurrency);
+  let costDom = dominantCurrencyTotal(cost.byCurrency);
+  const adjAmount = parseNum(fv('costAdjustmentAmount'));
+  if(adjAmount !== null && adjAmount !== 0){
+    const adjCurrency = fv('costAdjustmentCurrency') || costDom.currency || 'USD';
+    if(costDom.currency && costDom.currency === adjCurrency){
+      costDom = { total: costDom.total + adjAmount, currency: costDom.currency };
+    } else if(!costDom.currency){
+      costDom = { total: adjAmount, currency: adjCurrency };
+    }
+  }
   return {
     totalVolumeLitres: totalLitres || null,
     salesTotal: saleDom.total, salesCurrency: saleDom.currency,
@@ -6937,7 +6946,7 @@ function buildOrderSummaryRows(filterToSupplierView){
 // customer-facing order summary table elsewhere deliberately keeps using the
 // originally ordered quantity, since that table is shown before final figures
 // are even known.
-function buildProfitSummaryHtml(){
+function buildProfitSummaryHtml(costAdjustment){
   const productRows = [];
   productBlocks.forEach(b=>{
     const d = productBlockText(b);
@@ -7051,11 +7060,25 @@ function buildProfitSummaryHtml(){
   // totals shouldn't have depended on that same restriction.
   const saleTotals = computeOrderTotals('sale');
   const costTotals = computeOrderTotals('cost');
-  const buyTotalsHtml = totalsLine(costTotals.byCurrency);
+  // Purchase-side adjustment (Invoice page only) applied directly to the
+  // grand totals here, not to any individual product row - it's an
+  // order-level figure, not attributable to a specific product. Sign
+  // convention matches the invoice page's own note: a positive adjustment
+  // means the supplier billed MORE than expected (cost increases, profit
+  // falls by the same amount); negative means they billed less (cost
+  // falls, profit improves).
+  const adjustedCostByCurrency = Object.assign({}, costTotals.byCurrency);
+  const adjustedProfitByCurrency = Object.assign({}, byCurrencyProfit);
+  if(costAdjustment && costAdjustment.amount){
+    const adjCurrency = costAdjustment.currency || Object.keys(adjustedCostByCurrency)[0] || 'USD';
+    adjustedCostByCurrency[adjCurrency] = (adjustedCostByCurrency[adjCurrency] || 0) + costAdjustment.amount;
+    adjustedProfitByCurrency[adjCurrency] = (adjustedProfitByCurrency[adjCurrency] || 0) - costAdjustment.amount;
+  }
+  const buyTotalsHtml = totalsLine(adjustedCostByCurrency);
   const sellTotalsHtml = totalsLine(saleTotals.byCurrency);
-  const grandProfit = Object.values(byCurrencyProfit).reduce((a,b)=>a+b,0);
+  const grandProfit = Object.values(adjustedProfitByCurrency).reduce((a,b)=>a+b,0);
   const profitLabel = grandProfit < 0 ? 'Total loss' : 'Total profit';
-  const profitTotalsHtml = totalsLine(byCurrencyProfit);
+  const profitTotalsHtml = totalsLine(adjustedProfitByCurrency);
 
   return `<div class="profit-summary-box" style="margin:16px 0; padding:12px 14px; background:#FBEAD1; border:1.5px dashed #D98A2C; border-radius:8px;">
     <div style="font-family:var(--disp); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#8a5a1a; margin-bottom:8px;">\ud83d\udd12 Internal Profit Summary \u2014 never copied or exported</div>
@@ -8261,15 +8284,15 @@ function renderInvoicePreviewOnly(){
   // and never part of any PDF this page generates.
   const profitEl = document.getElementById('profitSummaryInvoice');
   if(profitEl){
-    let html = buildProfitSummaryHtml();
     const adjNum = parseNum(adjAmount);
+    const adjCurrency = fv('costAdjustmentCurrency') || 'USD';
+    let html = buildProfitSummaryHtml((adjNum !== null && adjNum !== 0) ? {amount: adjNum, currency: adjCurrency} : null);
     if(adjNum !== null && adjNum !== 0){
-      const adjCurrency = fv('costAdjustmentCurrency') || 'USD';
       const sign = adjNum < 0 ? '\u2212' : '+';
       const color = adjNum < 0 ? '#2E7D53' : '#B3492E'; // a negative adjustment (supplier billed us less than expected) is good for profit
       html += `<div style="margin:10px 0 0; padding:10px 14px; background:#FBEAD1; border:1.5px dashed #D98A2C; border-radius:8px; font-size:12.5px; color:#5c3d10;">
         <b>Purchase side adjustment:</b> ${sign} ${escHtml(adjCurrency)} ${escHtml(Math.abs(adjNum).toFixed(2))} to the cost side
-        (<span style="color:${color}; font-weight:700;">${adjNum < 0 ? 'improves' : 'reduces'} profit by the same amount</span>)
+        (<span style="color:${color}; font-weight:700;">already reflected in the totals above \u2014 ${adjNum < 0 ? 'improves' : 'reduces'} profit by this amount</span>)
         ${fv('costAdjustmentDescription') ? ' — ' + escHtml(fv('costAdjustmentDescription')) : ''}
       </div>`;
     }
