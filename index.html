@@ -6039,7 +6039,7 @@ function fuelBlockOrderHTML(b, idx){
       <div class="opt-group">
         ${radioOpt(b.id,'flash','60','60 DegC minimum guaranteed', b.flash)}
         ${radioOpt(b.id,'flash','55','55 DegC minimum guaranteed', b.flash)}
-        ${radioOpt(b.id,'flash','140f60c','Flash Point 140 DegF/60 DegC minimum guaranteed', b.flash)}
+        ${radioOpt(b.id,'flash','140f60c','140 DegF/60 DegC minimum guaranteed', b.flash)}
         ${radioOpt(b.id,'flash','blank','(leave blank)', b.flash)}
         <label class="opt ${b.flash==='custom'?'checked':''}">
           <input type="radio" name="flash-${b.id}" value="custom" ${b.flash==='custom'?'checked':''} onchange="updateBlock('${b.id}','flash',this.value); renderProductBlocks(); render();">
@@ -8985,7 +8985,7 @@ function productBlockText(b, htmlMode, compact){
       } else {
         if(b.flash==='60') specs.push(['Flash Point','60 DegC minimum guaranteed']);
         else if(b.flash==='55') specs.push(['Flash Point','55 DegC minimum guaranteed']);
-        else if(b.flash==='140f60c') specs.push(['Flash Point','Flash Point 140 DegF/60 DegC minimum guaranteed']);
+        else if(b.flash==='140f60c') specs.push(['Flash Point','140 DegF/60 DegC minimum guaranteed']);
         else if(b.flash==='custom' && b.flashCustom) specs.push(['Flash Point', b.flashCustom]);
       }
       if(b.fame==='free') specs.push(['FAME/Bio Content','FAME Free (de minimis)']);
@@ -13196,7 +13196,7 @@ function pbGradeDisplay(b){
 function pbFlashDisplay(b){
   if(b.flash==='60') return '60 DegC min';
   if(b.flash==='55') return '55 DegC min';
-  if(b.flash==='140f60c') return 'Flash Point 140 DegF/60 DegC min';
+  if(b.flash==='140f60c') return '140 DegF/60 DegC min';
   if(b.flash==='custom') return b.flashCustom || '';
   return '';
 }
