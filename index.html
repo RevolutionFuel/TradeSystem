@@ -6879,26 +6879,32 @@ function buildOrderSummaryRows(filterToSupplierView){
   sourceBlocks.forEach(b=>{
     const d = productBlockText(b);
     const label = d.isOther ? (d.name || 'Other Product') : (d.grade || 'Product');
-    let subtotal = null, excluded = false;
+    let subtotal = null, maxSubtotal = null, excluded = false;
     if(b.quantity && b.sellingPrice){
       subtotal = calcLineTotal(b.quantity, b.unit, b.sellingPrice, b.sellingPriceUnit || b.unit, b.sellingConversionFactor);
       if(subtotal === null) excluded = true;
+      if(b.quantityRange && b.maxQuantity){
+        maxSubtotal = calcLineTotal(b.maxQuantity, b.unit, b.sellingPrice, b.sellingPriceUnit || b.unit, b.sellingConversionFactor);
+      }
     }
     // Cost has its own currency, unit and conversion factor now — no longer
     // assumed to share the selling side's. See computeMarginAndProfit() for
     // how the two currencies get reconciled via the exchange rate.
-    let buyingSubTotal = null;
+    let buyingSubTotal = null, maxBuyingSubTotal = null;
     if(b.quantity && b.costPrice){
       buyingSubTotal = calcLineTotal(b.quantity, b.unit, b.costPrice, b.costPriceUnit || b.unit, b.costConversionFactor);
+      if(b.quantityRange && b.maxQuantity){
+        maxBuyingSubTotal = calcLineTotal(b.maxQuantity, b.unit, b.costPrice, b.costPriceUnit || b.unit, b.costConversionFactor);
+      }
     }
     const {margin, profit, needsExchangeRate} = computeMarginAndProfit(b);
     rows.push({
       indent: 0, label,
       quantity: quantityDisplayValue(b), unit: b.unit,
       sellingPrice: b.sellingPrice, sellingPriceUnit: b.sellingPriceUnit || b.unit,
-      currency: b.currency, sellingSubTotal: subtotal, excluded,
+      currency: b.currency, sellingSubTotal: subtotal, maxSellingSubTotal: maxSubtotal, excluded,
       buyingPrice: b.costPrice || null, buyingPriceUnit: b.costPriceUnit || b.unit, buyingCurrency: b.costCurrency || b.currency,
-      buyingSubTotal, margin, profit, needsExchangeRate
+      buyingSubTotal, maxBuyingSubTotal, margin, profit, needsExchangeRate
     });
     (b.fees||[]).forEach(f=>{
       const amt = parseNum(f.amount);
@@ -7138,7 +7144,7 @@ function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView
   let t = `<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:2pt 0 8pt 0; page-break-inside:${tightLayout?'auto':'avoid'};">
     <thead><tr>${th('Product')}${th('Quantity','right')}${th(priceLabel||'Price','right')}${th('Sub Total','right')}</tr></thead><tbody>`;
 
-  const byCurrency = {};
+  const byCurrency = {}, byCurrencyMax = {};
   rows.forEach(r=>{
     // A fee row only belongs to one side — skip it entirely if it doesn't
     // match the table's current mode, so a supplier never sees sale-side
@@ -7149,6 +7155,7 @@ function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView
     const useCost = priceMode === 'cost';
     const priceVal = useCost ? r.buyingPrice : r.sellingPrice;
     const subTotalVal = useCost ? r.buyingSubTotal : r.sellingSubTotal;
+    const maxSubTotalVal = useCost ? r.maxBuyingSubTotal : r.maxSellingSubTotal;
     const rowCurrency = useCost ? (r.buyingCurrency || r.currency) : r.currency;
     const rowPriceUnit = useCost ? r.buyingPriceUnit : r.sellingPriceUnit;
     const excluded = useCost ? false : r.excluded;
@@ -7166,16 +7173,29 @@ function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView
       // since there's no separate Units column any more to convey this.
       priceHtml += ` <span style="color:#4B6072; font-size:9.5pt;">per ${escHtml(singularUnit(rowPriceUnit).toLowerCase())}</span>`;
     }
+    // A range quantity means the line total is itself a range (min qty x
+    // price to max qty x price), not a single figure calculated off the
+    // minimum alone.
+    const hasMax = maxSubTotalVal !== null && maxSubTotalVal !== undefined;
     const subTotalHtml = excluded ? '<span style="color:#B3492E;">\u2014 *</span>'
-      : (subTotalVal !== null && subTotalVal !== undefined ? `${escHtml(rowCurrency)} ${escHtml(formatNumberDisplay(subTotalVal.toFixed(2)))}` : '');
+      : (subTotalVal !== null && subTotalVal !== undefined
+          ? (hasMax
+              ? `${escHtml(rowCurrency)} ${escHtml(formatNumberDisplay(subTotalVal.toFixed(2)))} - ${escHtml(formatNumberDisplay(maxSubTotalVal.toFixed(2)))}`
+              : `${escHtml(rowCurrency)} ${escHtml(formatNumberDisplay(subTotalVal.toFixed(2)))}`)
+          : '');
     t += `<tr${tightLayout?' style="page-break-inside:avoid;"':''}>${td(labelHtml, 'left', r.indent?'padding-left:20pt;':'')}${td(qtyHtml,'right')}${td(priceHtml,'right')}${td(subTotalHtml,'right','font-weight:'+(r.indent?'400':'600')+';')}</tr>`;
     if(subTotalVal !== null && subTotalVal !== undefined){
       byCurrency[rowCurrency] = (byCurrency[rowCurrency]||0) + subTotalVal;
+      byCurrencyMax[rowCurrency] = (byCurrencyMax[rowCurrency]||0) + (hasMax ? maxSubTotalVal : subTotalVal);
     }
   });
 
   Object.keys(byCurrency).forEach(currency=>{
-    t += `<tr><td colspan="3" style="${FF} text-align:right; padding:7pt 8pt; font-size:11pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">Estimated Total (${escHtml(currency)})</td><td style="${FF} text-align:right; padding:7pt 8pt; font-size:12pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">${escHtml(currency)} ${escHtml(formatNumberDisplay(byCurrency[currency].toFixed(2)))}</td></tr>`;
+    const minTotal = byCurrency[currency], maxTotal = byCurrencyMax[currency];
+    const totalHtml = maxTotal !== minTotal
+      ? `${escHtml(currency)} ${escHtml(formatNumberDisplay(minTotal.toFixed(2)))} - ${escHtml(formatNumberDisplay(maxTotal.toFixed(2)))}`
+      : `${escHtml(currency)} ${escHtml(formatNumberDisplay(minTotal.toFixed(2)))}`;
+    t += `<tr><td colspan="3" style="${FF} text-align:right; padding:7pt 8pt; font-size:11pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">Estimated Total (${escHtml(currency)})</td><td style="${FF} text-align:right; padding:7pt 8pt; font-size:12pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">${totalHtml}</td></tr>`;
   });
 
   t += `</tbody></table>`;
