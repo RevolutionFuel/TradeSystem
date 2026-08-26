@@ -2127,11 +2127,25 @@ async function generatePdfViaBackend(docType, html){
   const parsed = new DOMParser().parseFromString(html, 'text/html');
   parsed.querySelectorAll('.no-print, .print-bar').forEach(el => el.remove());
   const cleanedHtml = '<!DOCTYPE html>' + parsed.documentElement.outerHTML;
-  const res = await fetch('https://dxaajzdolalessivlseg.supabase.co/functions/v1/generate-pdf', {
+  const doFetch = () => fetch('https://dxaajzdolalessivlseg.supabase.co/functions/v1/generate-pdf', {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
     body: JSON.stringify({ orderId: currentOrderDbId, docType, html: cleanedHtml })
   });
+  let res;
+  try{
+    res = await doFetch();
+  }catch(e){
+    // A genuine "Failed to fetch" here (the request never got a response at
+    // all) can happen during a brief window where the edge function is mid
+    // cold-start/restart - confirmed directly against its own logs, not
+    // theoretical. Not a real connectivity problem on the person's end, and
+    // resolves itself within a second or two, so one short-delayed retry is
+    // worth it before surfacing an error for something that isn't really
+    // wrong with their connection or the database.
+    await new Promise(r => setTimeout(r, 1500));
+    res = await doFetch();
+  }
   let result;
   try{ result = await res.json(); }catch(e){ throw new Error('Unexpected response from the PDF service.'); }
   if(!res.ok || result.error) throw new Error(result.error || ('PDF service returned ' + res.status));
