@@ -1731,7 +1731,14 @@ const SUPPLY_OPENING_OPTIONS = [
 const PAYMENT_OPTIONS = [
   "Cash In Advance","Payment on Receipt of Invoice",
   "7 days from date of delivery","14 days from date of delivery",
-  "21 days from date of delivery","30 days from date of delivery"
+  "21 days from date of delivery","30 days from date of delivery",
+  // Appended here rather than inserted in numeric order (would go between
+  // 14 and 21 days) - PAYMENT_OPTIONS is referenced by array index
+  // (saved on orders as 'p0', 'p1', etc. via getPaymentLine() and its
+  // sibling functions), so inserting anywhere but the end would shift
+  // every later index and silently change the payment terms text shown
+  // on any existing order currently using 21 or 30 days.
+  "15 days from date of delivery"
 ];
 const SIGNOFF_OPTIONS = [
   "Please confirm to proceed with this delivery.",
