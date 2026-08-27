@@ -1740,6 +1740,12 @@ const PAYMENT_OPTIONS = [
   // on any existing order currently using 21 or 30 days.
   "15 days from date of delivery"
 ];
+// Controls the order options appear in the picker ONLY - the array above
+// keeps its original, storage-safe index positions untouched (still
+// referenced as 'p0'..'p6' on saved orders). This lets 15 days display
+// between 14 and 21 days, as requested, without touching a single
+// existing order's stored payment terms.
+const PAYMENT_OPTIONS_DISPLAY_ORDER = [0,1,2,3,6,4,5];
 const SIGNOFF_OPTIONS = [
   "Please confirm to proceed with this delivery.",
   "Awaiting your confirmation to proceed.",
@@ -3022,9 +3028,9 @@ async function init(){
   buildRadioGroup('custOpeningGroup', 'custOpening', CUSTOMER_OPENING_OPTIONS.map((t,i)=>({value:'co'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'custOpeningCustom'}]), 'co0', 'renderCustomer');
   buildRadioGroup('supSignoffGroup', 'supSignoff', SUPPLY_SIGNOFF_OPTIONS.map((t,i)=>({value:'ss'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'supSignoffCustom'}]), 'ss0', 'renderSupply');
   buildRadioGroup('custSignoffGroup', 'custSignoff', CUSTOMER_SIGNOFF_OPTIONS.map((t,i)=>({value:'cs'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'custSignoffCustom'}]), 'cs0', 'renderCustomer');
-  buildRadioGroup('paymentGroup', 'payment', PAYMENT_OPTIONS.map((t,i)=>({value:'p'+i, label:t})).concat([{value:'blank', label:'(leave blank \u2014 omit from quote)'}]), 'p4');
-  buildRadioGroup('supPaymentGroup', 'supPayment', PAYMENT_OPTIONS.map((t,i)=>({value:'p'+i, label:t})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderSupply');
-  buildRadioGroup('custPaymentGroup', 'custPayment', PAYMENT_OPTIONS.map((t,i)=>({value:'p'+i, label:t})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderCustomer');
+  buildRadioGroup('paymentGroup', 'payment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from quote)'}]), 'p4');
+  buildRadioGroup('supPaymentGroup', 'supPayment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderSupply');
+  buildRadioGroup('custPaymentGroup', 'custPayment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderCustomer');
   buildRadioGroup('signoffGroup', 'signoff', SIGNOFF_OPTIONS.map((t,i)=>({value:'s'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'signoffCustom'}]), 's0');
   buildRadioGroup('enqOpeningGroup', 'enqOpening', ENQUIRY_OPENING_OPTIONS.map((t,i)=>({value:'eo'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqOpeningCustom'}]), 'eo0', 'renderEnquiry');
   buildRadioGroup('enqSignoffGroup', 'enqSignoff', ENQUIRY_SIGNOFF_OPTIONS.map((t,i)=>({value:'es'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqSignoffCustom'}]), 'es0', 'renderEnquiry');
@@ -10583,9 +10589,9 @@ async function clearOrder(){
   custSignatureManuallySet = false;
   invoiceSignatureManuallySet = false;
   buildRadioGroup('openingGroup', 'opening', OPENING_OPTIONS.map((t,i)=>({value:'o'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'openingCustom'}]), 'o0');
-  buildRadioGroup('paymentGroup', 'payment', PAYMENT_OPTIONS.map((t,i)=>({value:'p'+i, label:t})).concat([{value:'blank', label:'(leave blank \u2014 omit from quote)'}]), 'p4');
-  buildRadioGroup('supPaymentGroup', 'supPayment', PAYMENT_OPTIONS.map((t,i)=>({value:'p'+i, label:t})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderSupply');
-  buildRadioGroup('custPaymentGroup', 'custPayment', PAYMENT_OPTIONS.map((t,i)=>({value:'p'+i, label:t})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderCustomer');
+  buildRadioGroup('paymentGroup', 'payment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from quote)'}]), 'p4');
+  buildRadioGroup('supPaymentGroup', 'supPayment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderSupply');
+  buildRadioGroup('custPaymentGroup', 'custPayment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderCustomer');
   buildRadioGroup('signoffGroup', 'signoff', SIGNOFF_OPTIONS.map((t,i)=>({value:'s'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'signoffCustom'}]), 's0');
   buildRadioGroup('enqOpeningGroup', 'enqOpening', ENQUIRY_OPENING_OPTIONS.map((t,i)=>({value:'eo'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqOpeningCustom'}]), 'eo0', 'renderEnquiry');
   buildRadioGroup('enqSignoffGroup', 'enqSignoff', ENQUIRY_SIGNOFF_OPTIONS.map((t,i)=>({value:'es'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqSignoffCustom'}]), 'es0', 'renderEnquiry');
@@ -10655,7 +10661,7 @@ async function clearQuoteFields(){
   syncTaxStatusInvoiceVisibility();
   renderQuoteProductBlocks();
   buildRadioGroup('openingGroup', 'opening', OPENING_OPTIONS.map((t,i)=>({value:'o'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'openingCustom'}]), 'o0');
-  buildRadioGroup('paymentGroup', 'payment', PAYMENT_OPTIONS.map((t,i)=>({value:'p'+i, label:t})).concat([{value:'blank', label:'(leave blank \u2014 omit from quote)'}]), 'p4');
+  buildRadioGroup('paymentGroup', 'payment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from quote)'}]), 'p4');
   buildRadioGroup('signoffGroup', 'signoff', SIGNOFF_OPTIONS.map((t,i)=>({value:'s'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'signoffCustom'}]), 's0');
   quoteSignatureManuallySet = false;
   buildRadioGroup('signatureGroup', 'signature', SIGNATURE_OPTIONS, defaultSignatureFor('quote'));
@@ -10703,7 +10709,7 @@ async function clearSupplyFields(){
   syncSupOrderTotalFromQuote();
   buildRadioGroup('supOpeningGroup', 'supOpening', SUPPLY_OPENING_OPTIONS.map((t,i)=>({value:'so'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'supOpeningCustom'}]), 'so0', 'renderSupply');
   buildRadioGroup('supSignoffGroup', 'supSignoff', SUPPLY_SIGNOFF_OPTIONS.map((t,i)=>({value:'ss'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'supSignoffCustom'}]), 'ss0', 'renderSupply');
-  buildRadioGroup('supPaymentGroup', 'supPayment', PAYMENT_OPTIONS.map((t,i)=>({value:'p'+i, label:t})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderSupply');
+  buildRadioGroup('supPaymentGroup', 'supPayment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderSupply');
   syncSupPaymentFromQuote();
   buildRadioGroup('supSignatureGroup', 'supSignature', SIGNATURE_OPTIONS, defaultSignatureFor('supply'), 'renderSupply');
   syncSupSignatureFromQuote();
@@ -10736,7 +10742,7 @@ async function clearCustomerFields(){
   document.getElementById('showCustomerOrderTotal').checked = false;
   buildRadioGroup('custOpeningGroup', 'custOpening', CUSTOMER_OPENING_OPTIONS.map((t,i)=>({value:'co'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'custOpeningCustom'}]), 'co0', 'renderCustomer');
   buildRadioGroup('custSignoffGroup', 'custSignoff', CUSTOMER_SIGNOFF_OPTIONS.map((t,i)=>({value:'cs'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'custSignoffCustom'}]), 'cs0', 'renderCustomer');
-  buildRadioGroup('custPaymentGroup', 'custPayment', PAYMENT_OPTIONS.map((t,i)=>({value:'p'+i, label:t})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderCustomer');
+  buildRadioGroup('custPaymentGroup', 'custPayment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderCustomer');
   syncCustPaymentFromQuote();
   buildRadioGroup('custSignatureGroup', 'custSignature', SIGNATURE_OPTIONS, defaultSignatureFor('customer'), 'renderCustomer');
   syncCustSignatureFromSupply();
