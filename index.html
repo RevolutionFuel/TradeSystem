@@ -5674,6 +5674,13 @@ function addProductBlock(kind){
     specsAttached: false,
     otherProductName: '', otherProductCustom: '',
     quantity: '', unit: kind==='fuel' ? 'Litres' : 'Litres', tolerance: '',
+    // Tolerance hidden behind its own checkbox, same pattern as Range
+    // below. Explicit false here since a brand new product has no
+    // tolerance value yet - see isToleranceEnabled() for how an existing,
+    // already-saved order (predating this checkbox, so this field is
+    // undefined there) is handled without losing its already-visible
+    // tolerance.
+    toleranceEnabled: false,
     // Range quantity: when on, the order is for a range (e.g. "95,000 -
     // 105,000 Litres") rather than one fixed figure — quantity itself is
     // the minimum, maxQuantity the maximum. Only affects display; every
@@ -5711,7 +5718,7 @@ function removeProductBlock(id){
 // editable from both their original page and Customer Confirmation.
 const FIELD_HOME = {
   quantity:['order','customer'], tolerance:['order'], sulphur:['order'], flashCustom:['order'], fameCustom:['order'], deliveryCustom:['order'],
-  quantityRange:['order'], maxQuantity:['order'],
+  quantityRange:['order'], maxQuantity:['order'], toleranceEnabled:['order'],
   grade:['order'], unit:['order'], mastersReq:['order'], delivery:['order'], flash:['order'], fame:['order'],
   octaneRating:['order'], ethanolContent:['order'], customSpecNotes:['order'],
   otherFuel:['order'], otherProductName:['order'], otherProductCustom:['order'], specsAttached:['quote'],
@@ -6102,7 +6109,11 @@ function fuelBlockOrderHTML(b, idx){
     </label>
     ${b.quantityRange ? `
     <div class="field" style="margin-bottom:14px;"><label>Quantity (Maximum)</label><input type="text" inputmode="decimal" data-field="maxQuantity" data-block-id="${b.id}" value="${escAttr(b.maxQuantity)}" oninput="sanitizeQuantity(this); updateBlock('${b.id}','maxQuantity',this.value)"></div>` : ''}
-    <div class="field"><label>Tolerance (\u00b1%)</label><input type="text" value="${escAttr(b.tolerance)}" placeholder="blank = omit" oninput="updateBlock('${b.id}','tolerance',this.value)"></div>
+    <label class="opt-inline" style="margin-bottom:8px;">
+      <input type="checkbox" ${isToleranceEnabled(b)?'checked':''} onchange="updateBlock('${b.id}','toleranceEnabled',this.checked)"> Tolerance
+    </label>
+    ${isToleranceEnabled(b) ? `
+    <div class="field" style="margin-bottom:14px;"><label>Tolerance (\u00b1%)</label><input type="text" value="${escAttr(b.tolerance)}" placeholder="blank = omit" oninput="updateBlock('${b.id}','tolerance',this.value)"></div>` : ''}
     <label class="opt-inline" style="margin-bottom:14px;">
       <input type="checkbox" ${b.mastersReq?'checked':''} onchange="updateBlock('${b.id}','mastersReq',this.checked)"> To master's requirements
     </label>
@@ -6754,6 +6765,17 @@ function formatNumberDisplay(str){
 // existing display location across the whole app picks this up automatically.
 function quantityDisplayValue(b){
   return (b.quantityRange && b.maxQuantity) ? `${b.quantity} - ${b.maxQuantity}` : b.quantity;
+}
+// Tolerance is hidden behind its own checkbox (same pattern as Range). For
+// a product where that checkbox has been explicitly set (true or false),
+// respect it. For one that predates this feature (toleranceEnabled is
+// undefined - every already-saved order, since this field didn't used to
+// exist), fall back to whether a tolerance value is already present, so an
+// order that's already showing a tolerance on its documents keeps doing so
+// without needing anyone to go back and manually re-tick a checkbox that
+// didn't exist when they entered it.
+function isToleranceEnabled(b){
+  return b.toleranceEnabled !== undefined ? !!b.toleranceEnabled : !!b.tolerance;
 }
 
 /* ===================== ORDER TOTAL CALCULATION ===================== */
@@ -9010,7 +9032,7 @@ function productBlockText(b, htmlMode, compact){
     }
     if(b.customSpecNotes) specs.push(['Notes', b.customSpecNotes]);
     const deliveryText = b.delivery==='__custom' ? b.deliveryCustom : b.delivery;
-    return {grade, specs, specsAttached:b.specsAttached, quantity:quantityDisplayValue(b), unit:b.unit, tolerance:b.tolerance,
+    return {grade, specs, specsAttached:b.specsAttached, quantity:quantityDisplayValue(b), unit:b.unit, tolerance: isToleranceEnabled(b) ? b.tolerance : '',
       delivery:deliveryText, mastersReq:b.mastersReq, currency:b.currency, sellingPrice:b.sellingPrice, sellingPriceUnit:b.sellingPriceUnit||b.unit, sellingPriceDelivered:b.sellingPriceDelivered,
       costPrice:b.costPrice, costCurrency:b.costCurrency||b.currency, costPriceUnit:b.costPriceUnit||b.unit, fees:b.fees.filter(f=>f.description||f.amount), costFees:(b.costFees||[]).filter(f=>f.description||f.amount)};
   } else {
