@@ -8001,7 +8001,7 @@ function computeInvoiceData(){
 
 function buildInvoicePdfHtml(){
   const inv = computeInvoiceData();
-  const {isCommission, title, billLines, rows, anyExcluded, currency, total, today, deliveryDateIso, dueDateObj, invoiceNumber} = inv;
+  const {isCommission, title, vesselName, billLines, rows, anyExcluded, currency, total, today, deliveryDateIso, dueDateObj, invoiceNumber} = inv;
   const FF = "font-family:'Calibri Light','Calibri','Segoe UI Light','Segoe UI',Arial,sans-serif;";
   const logoSrc = pdfLogoSrc();
   const bank = BANK_DETAILS[currency] || BANK_DETAILS.USD;
@@ -8064,6 +8064,7 @@ function buildInvoicePdfHtml(){
         <div><span class="label">Date of Invoice:</span> ${escHtml(formatDateForQuote(isoDate(today)))}</div>
         <div>&nbsp;</div>
         <div><span class="label">Date of Delivery:</span> ${deliveryDateIso ? escHtml(formatDateForQuote(deliveryDateIso)) : '(not set)'}</div>
+        <div><span class="label">Vessel:</span> ${escHtml(vesselName || '(not set)')}</div>
         <div><span class="label">Location of Delivery:</span> ${escHtml(locationOfDelivery || '(not set)')}</div>
         <div>&nbsp;</div>
         <div><span class="label">Payment Terms:</span> ${escHtml(getPaymentLine() || '(not set)')}</div>
