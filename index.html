@@ -4542,7 +4542,7 @@ function removeProductSpecSheet(blockId, index){
 function computeOrderSaveTotals(){
   let totalLitres = 0;
   productBlocks.forEach(b=>{
-    const qty = parseFloat(b.quantity) || 0;
+    const qty = parseFloat(effectiveQuantity(b, 'sale')) || 0;
     if(qty && CORE_VOLUME_LITRES_PER[b.unit]) totalLitres += qty * CORE_VOLUME_LITRES_PER[b.unit];
   });
   const dominantCurrencyTotal = (byCurrency) => {
@@ -6869,6 +6869,21 @@ function calcFeeTotal(fee, productQty, productUnit, convFactorField){
 // calculation elsewhere (computeOrderSaveTotals) used plain quantity×price
 // with no unit conversion, which was silently wrong whenever a product's
 // price was quoted in a different unit than its quantity.
+// Mirrors the exact logic already used for the invoice's own document
+// output (buildInvoicePdfHtml/buildInvoiceEmailHtml) - once a final
+// quantity has been entered on the Invoice page, that's the real,
+// actual quantity for this trade, and every calculation everywhere
+// (profit summary, saved/dashboard totals, spreadsheet copy) should
+// use it too, not the original order-page quantity. Falls through to
+// the original quantity when no final figure has been entered yet, so
+// nothing changes for an order that hasn't reached the Invoice stage.
+function effectiveQuantity(b, side){
+  const saleQty = parseNum(b.finalQuantity) !== null ? b.finalQuantity : b.quantity;
+  if(side === 'cost'){
+    return (b.finalBuySplit && parseNum(b.finalBuyQuantity) !== null) ? b.finalBuyQuantity : saleQty;
+  }
+  return saleQty;
+}
 function computeOrderTotals(side){
   side = side === 'cost' ? 'cost' : 'sale';
   const priceField = side === 'cost' ? 'costPrice' : 'sellingPrice';
@@ -6884,8 +6899,9 @@ function computeOrderTotals(side){
     byCurrency[currency] = (byCurrency[currency] || 0) + amount;
   };
   productBlocks.forEach(b=>{
-    if(b.quantity && b[priceField]){
-      const lineTotal = calcLineTotal(b.quantity, b.unit, b[priceField], b[priceUnitField] || b.unit, b[convFactorField]);
+    const qty = effectiveQuantity(b, side);
+    if(qty && b[priceField]){
+      const lineTotal = calcLineTotal(qty, b.unit, b[priceField], b[priceUnitField] || b.unit, b[convFactorField]);
       if(lineTotal !== null) add(b[currencyField], lineTotal);
       else hasExcluded = true;
     }
@@ -6899,7 +6915,7 @@ function computeOrderTotals(side){
         // A per-unit fee (e.g. "$0.15 per litre") needs multiplying across the
         // product's full quantity, converting first if the units don't match —
         // exactly the same maths as the product's own price line.
-        const feeTotal = calcFeeTotal(f, b.quantity, b.unit, feeConvField);
+        const feeTotal = calcFeeTotal(f, qty, b.unit, feeConvField);
         if(feeTotal !== null) add(b[currencyField], feeTotal);
         else hasExcluded = true;
       }
