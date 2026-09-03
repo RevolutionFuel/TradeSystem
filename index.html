@@ -222,7 +222,7 @@
   .missing-data-warning ul{margin:0; padding-left:20px; color:#8a2e22; font-size:12.5px; line-height:1.6;}
   .missing-data-link{color:#8a2e22; text-decoration:underline; cursor:pointer;}
   .missing-data-link:hover{color:#5c1e15;}
-  .status-picker-menu{position:absolute; top:calc(100% + 6px); right:0; z-index:20; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,0.18); padding:6px; min-width:190px; max-height:calc(100vh - 120px); overflow-y:auto;}
+  .status-picker-menu{position:absolute; top:calc(100% + 6px); right:0; z-index:20; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,0.18); padding:6px; min-width:190px; max-width:calc(100vw - 16px); max-height:calc(100vh - 120px); overflow-y:auto;}
   .status-picker-item{display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:6px; font-size:13px; color:var(--ink); cursor:pointer; white-space:nowrap;}
   .status-picker-item:hover{background:var(--brand-purple-soft);}
   .status-picker-item.current{font-weight:700; background:var(--amber-soft);}
@@ -9128,6 +9128,20 @@ function toggleStatusPicker(event){
   const opening = menu.style.display === 'none';
   menu.style.display = opening ? 'block' : 'none';
   if(opening){
+    // Reset to the default (right-anchored) position before measuring, so
+    // repeated opens don't "stick" to a stale decision made at a different
+    // screen size or orientation.
+    menu.style.left = '';
+    menu.style.right = '0';
+    const rect = menu.getBoundingClientRect();
+    if(rect.left < 8){
+      // Right-anchoring here means "extend leftward from the badge" - on a
+      // narrow screen where the badge sits near the left edge, that pushes
+      // the menu off-screen. Anchoring from the left instead makes it
+      // extend rightward into the available space instead.
+      menu.style.right = '';
+      menu.style.left = '0';
+    }
     // Closes on the next click anywhere else on the page.
     setTimeout(()=> document.addEventListener('click', closeStatusPickerOnce, {once:true}), 0);
   }
