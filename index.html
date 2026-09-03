@@ -7322,7 +7322,7 @@ function buildCommissionSummaryTableHtml(filterToSupplierView, tightLayout){
   rows.forEach(r=>{
     const labelHtml = `<b style="color:${labelColor};">${escHtml(r.label)} Commission</b>`;
     const qtyHtml = r.quantity ? `${escHtml(formatNumberDisplay(r.quantity))}${r.unit ? ' '+escHtml(r.unit) : ''}` : '';
-    const perUnitHtml = `${escHtml(r.currency)} ${escHtml(r.margin.toFixed(2))} per ${escHtml(singularUnit(r.unit).toLowerCase())}`;
+    const perUnitHtml = `${escHtml(r.currency)} ${escHtml(formatNumberDisplay(r.margin.toFixed(4).replace(/\.?0+$/,'')))} per ${escHtml(singularUnit(r.unit).toLowerCase())}`;
     const totalHtml = `${escHtml(r.currency)} ${escHtml(formatNumberDisplay(r.profit.toFixed(2)))}`;
     t += `<tr${tightLayout?' style="page-break-inside:avoid;"':''}>${td(labelHtml)}${td(qtyHtml,'right')}${td(perUnitHtml,'right')}${td(totalHtml,'right','font-weight:600;')}</tr>`;
     byCurrency[r.currency] = (byCurrency[r.currency]||0) + r.profit;
@@ -9642,7 +9642,7 @@ function buildSupplyEmailHtml(){
       }
       const {margin} = computeMarginAndProfit(b);
       if(margin !== null){
-        items.push(`<b>COMMISSION AMOUNT:</b> ${escHtml(b.currency)} ${escHtml(margin.toFixed(2))} per ${escHtml(saleUnitLabel || singularUnit(b.unit).toLowerCase())}`);
+        items.push(`<b>COMMISSION AMOUNT:</b> ${escHtml(b.currency)} ${escHtml(formatNumberDisplay(margin.toFixed(4).replace(/\.?0+$/,'')))} per ${escHtml(saleUnitLabel || singularUnit(b.unit).toLowerCase())}`);
       }
     } else if(d.costPrice){
       const costUnitLabel = singularUnit(d.costPriceUnit).toLowerCase();
@@ -9771,7 +9771,7 @@ function buildSupplyPlainText(){
       }
       const {margin} = computeMarginAndProfit(b);
       if(margin !== null){
-        lines.push('COMMISSION AMOUNT: ' + b.currency + ' ' + margin.toFixed(2) + ' per ' + (saleUnitLabel || singularUnit(b.unit).toLowerCase()));
+        lines.push('COMMISSION AMOUNT: ' + b.currency + ' ' + formatNumberDisplay(margin.toFixed(4).replace(/\.?0+$/,'')) + ' per ' + (saleUnitLabel || singularUnit(b.unit).toLowerCase()));
       }
     } else if(d.costPrice){
       lines.push('PRICE: ' + d.costCurrency + ' ' + formatNumberDisplay(d.costPrice) + ' per ' + singularUnit(d.costPriceUnit).toLowerCase());
@@ -9814,7 +9814,7 @@ function buildSupplyPlainText(){
         commissionRows.forEach(r=>{
           let line = '- ' + r.label + ' Commission';
           if(r.quantity) line += ': ' + formatNumberDisplay(r.quantity) + (r.unit ? ' '+r.unit : '');
-          line += ' @ ' + r.currency + ' ' + r.margin.toFixed(2) + ' per ' + singularUnit(r.unit).toLowerCase();
+          line += ' @ ' + r.currency + ' ' + formatNumberDisplay(r.margin.toFixed(4).replace(/\.?0+$/,'')) + ' per ' + singularUnit(r.unit).toLowerCase();
           line += ' = ' + r.currency + ' ' + formatNumberDisplay(r.profit.toFixed(2));
           lines.push(line);
           byCurrency[r.currency] = (byCurrency[r.currency]||0) + r.profit;
