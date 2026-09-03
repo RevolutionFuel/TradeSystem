@@ -4682,7 +4682,17 @@ async function saveOrderToDatabase(){
 async function loadOrderFromDatabase(id){
   if(!window.TS || !window.TS.loadOrder) return;
   const row = await window.TS.loadOrder(id);
-  await applyQuoteState(row.details || {});
+  const details = row.details || {};
+  // The top-level broker column is the reliable, backend-managed source of
+  // truth - details.broker didn't exist at all until the Assigned Broker
+  // feature was added, so for any order saved before then it would be
+  // undefined regardless of who the actual broker is. Falling back to
+  // details.broker there would silently default to whoever's currently
+  // signed in (via applyQuoteState's own fallback), and saving would then
+  // permanently reassign the order to them - exactly the bug this guards
+  // against.
+  details.broker = row.broker || details.broker || '';
+  await applyQuoteState(details);
   currentOrderDbId = row.id;
   currentOrderAmountReceived = row.amount_received;
   currentOrderReceivedDate = row.received_date;
