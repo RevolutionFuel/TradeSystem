@@ -6268,13 +6268,13 @@ function productSpecSummaryHTML(b){
 function computeMarginAndProfit(b){
   const costNum = parseNum(b.costPrice);
   const saleNum = parseNum(b.sellingPrice);
-  if(costNum === null || saleNum === null) return {margin: null, profit: null, needsExchangeRate: false};
+  if(costNum === null || saleNum === null) return {margin: null, profit: null, maxProfit: null, needsExchangeRate: false};
 
   const crossCurrency = b.costCurrency && b.currency && b.costCurrency !== b.currency;
   let rate = 1;
   if(crossCurrency){
     rate = parseNum(b.exchangeRate);
-    if(rate === null) return {margin: null, profit: null, needsExchangeRate: true};
+    if(rate === null) return {margin: null, profit: null, maxProfit: null, needsExchangeRate: true};
   }
   const costInSellingCurrency = costNum * rate;
   const margin = saleNum - costInSellingCurrency;
@@ -6285,7 +6285,19 @@ function computeMarginAndProfit(b){
   if(sellSub !== null && buySubInCostCurrency !== null){
     profit = sellSub - (buySubInCostCurrency * rate);
   }
-  return {margin, profit, needsExchangeRate: false};
+
+  // Range quantity: the max-side commission total, same exchange rate,
+  // same maths — used so the Commission Summary can show a genuine range
+  // rather than a figure calculated off the minimum alone.
+  let maxProfit = null;
+  if(b.quantityRange && b.maxQuantity){
+    const maxSellSub = calcLineTotal(b.maxQuantity, b.unit, b.sellingPrice, b.sellingPriceUnit || b.unit, b.sellingConversionFactor);
+    const maxBuySubInCostCurrency = calcLineTotal(b.maxQuantity, b.unit, b.costPrice, b.costPriceUnit || b.unit, b.costConversionFactor);
+    if(maxSellSub !== null && maxBuySubInCostCurrency !== null){
+      maxProfit = maxSellSub - (maxBuySubInCostCurrency * rate);
+    }
+  }
+  return {margin, profit, maxProfit, needsExchangeRate: false};
 }
 function pricingRowsHTML(b){
   const row = (labelText, value) => value ? `<div class="pb-summary-row"><span class="pb-summary-label">${labelText}:</span> ${value}</div>` : '';
@@ -6991,14 +7003,14 @@ function buildOrderSummaryRows(filterToSupplierView){
         maxBuyingSubTotal = calcLineTotal(b.maxQuantity, b.unit, b.costPrice, b.costPriceUnit || b.unit, b.costConversionFactor);
       }
     }
-    const {margin, profit, needsExchangeRate} = computeMarginAndProfit(b);
+    const {margin, profit, maxProfit, needsExchangeRate} = computeMarginAndProfit(b);
     rows.push({
       indent: 0, label,
       quantity: quantityDisplayValue(b), unit: b.unit,
       sellingPrice: b.sellingPrice, sellingPriceUnit: b.sellingPriceUnit || b.unit,
       currency: b.currency, sellingSubTotal: subtotal, maxSellingSubTotal: maxSubtotal, excluded,
       buyingPrice: b.costPrice || null, buyingPriceUnit: b.costPriceUnit || b.unit, buyingCurrency: b.costCurrency || b.currency,
-      buyingSubTotal, maxBuyingSubTotal, margin, profit, needsExchangeRate
+      buyingSubTotal, maxBuyingSubTotal, margin, profit, maxProfit, needsExchangeRate
     });
     (b.fees||[]).forEach(f=>{
       const amt = parseNum(f.amount);
@@ -7318,18 +7330,30 @@ function buildCommissionSummaryTableHtml(filterToSupplierView, tightLayout){
   let t = `<table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin:2pt 0 8pt 0; page-break-inside:${tightLayout?'auto':'avoid'};">
     <thead><tr>${th('Product')}${th('Quantity','right')}${th('Commission Per Unit','right')}${th('Total Commission','right')}</tr></thead><tbody>`;
 
-  const byCurrency = {};
+  const byCurrency = {}, byCurrencyMax = {};
   rows.forEach(r=>{
     const labelHtml = `<b style="color:${labelColor};">${escHtml(r.label)} Commission</b>`;
     const qtyHtml = r.quantity ? `${escHtml(formatNumberDisplay(r.quantity))}${r.unit ? ' '+escHtml(r.unit) : ''}` : '';
     const perUnitHtml = `${escHtml(r.currency)} ${escHtml(formatNumberDisplay(r.margin.toFixed(4).replace(/\.?0+$/,'')))} per ${escHtml(singularUnit(r.unit).toLowerCase())}`;
-    const totalHtml = `${escHtml(r.currency)} ${escHtml(formatNumberDisplay(r.profit.toFixed(2)))}`;
+    // A range quantity means the commission total is itself a range (min
+    // qty's commission to max qty's commission), not a single figure
+    // calculated off the minimum alone - matching how the main Order
+    // Summary table's Sub Total column already handles this.
+    const hasMax = r.maxProfit !== null && r.maxProfit !== undefined;
+    const totalHtml = hasMax
+      ? `${escHtml(r.currency)} ${escHtml(formatNumberDisplay(r.profit.toFixed(2)))} - ${escHtml(formatNumberDisplay(r.maxProfit.toFixed(2)))}`
+      : `${escHtml(r.currency)} ${escHtml(formatNumberDisplay(r.profit.toFixed(2)))}`;
     t += `<tr${tightLayout?' style="page-break-inside:avoid;"':''}>${td(labelHtml)}${td(qtyHtml,'right')}${td(perUnitHtml,'right')}${td(totalHtml,'right','font-weight:600;')}</tr>`;
     byCurrency[r.currency] = (byCurrency[r.currency]||0) + r.profit;
+    byCurrencyMax[r.currency] = (byCurrencyMax[r.currency]||0) + (hasMax ? r.maxProfit : r.profit);
   });
 
   Object.keys(byCurrency).forEach(currency=>{
-    t += `<tr><td colspan="3" style="${FF} text-align:right; padding:7pt 8pt; font-size:11pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">Total Commission (${escHtml(currency)})</td><td style="${FF} text-align:right; padding:7pt 8pt; font-size:12pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">${escHtml(currency)} ${escHtml(formatNumberDisplay(byCurrency[currency].toFixed(2)))}</td></tr>`;
+    const minTotal = byCurrency[currency], maxTotal = byCurrencyMax[currency];
+    const totalHtml = maxTotal !== minTotal
+      ? `${escHtml(currency)} ${escHtml(formatNumberDisplay(minTotal.toFixed(2)))} - ${escHtml(formatNumberDisplay(maxTotal.toFixed(2)))}`
+      : `${escHtml(currency)} ${escHtml(formatNumberDisplay(minTotal.toFixed(2)))}`;
+    t += `<tr><td colspan="3" style="${FF} text-align:right; padding:7pt 8pt; font-size:11pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">Total Commission (${escHtml(currency)})</td><td style="${FF} text-align:right; padding:7pt 8pt; font-size:12pt; font-weight:bold; color:${labelColor}; border-top:2pt solid #DAD3C1;">${totalHtml}</td></tr>`;
   });
 
   t += `</tbody></table>`;
