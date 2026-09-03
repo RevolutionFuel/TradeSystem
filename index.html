@@ -644,6 +644,17 @@
               </div>
             </fieldset>
 
+            <fieldset>
+              <legend>Assigned Broker</legend>
+              <div class="field">
+                <label>Broker</label>
+                <select id="orderBroker" onchange="renderOrderSummaryPreview(); renderSummary();">
+                  <option value="John Sipson">John Sipson</option>
+                  <option value="Barnaby Skipwith">Barnaby Skipwith</option>
+                </select>
+              </div>
+            </fieldset>
+
           </div>
         </div>
 
@@ -5983,6 +5994,14 @@ function supplierInfoSummaryHTML(){
     ${row('Contact', rec ? rec.contactName : '')}
   </div>`;
 }
+function brokerSummaryHTML(){
+  const name = fv('orderBroker');
+  if(!name) return '';
+  return `<div class="pb-summary">
+    <div class="pb-summary-title">Broker</div>
+    <div class="pb-summary-row"><span class="pb-summary-label">Broker:</span> ${escHtml(name)}</div>
+  </div>`;
+}
 // Simple read-only recap on the Order page itself — vessel/supplier info,
 // delivery details, and every product (specs, quantity, and now purchase/sale
 // price and profit too, once entered on the Quote and Supply Confirmation
@@ -5990,7 +6009,7 @@ function supplierInfoSummaryHTML(){
 function renderOrderSummaryPreview(){
   const el = document.getElementById('orderSummaryPreview');
   if(!el) return;
-  const blocks = [vesselInfoSummaryHTML(), supplierInfoSummaryHTML(), deliveryDetailsSummaryHTML()].filter(Boolean);
+  const blocks = [vesselInfoSummaryHTML(), supplierInfoSummaryHTML(), deliveryDetailsSummaryHTML(), brokerSummaryHTML()].filter(Boolean);
   if(productBlocks.length === 0 && blocks.length === 0){
     el.innerHTML = `<div class="hint">Nothing added yet.</div>`;
     return;
@@ -7712,13 +7731,21 @@ function orderDueDates(){
 function brokerInitials(fullName){
   return (fullName || '').split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase()).join('');
 }
-const SPREADSHEET_BROKER_NAMES = {
+const BROKER_NAMES_BY_EMAIL = {
   'barnaby@revolutionfuel.com': 'Barnaby Skipwith',
   'john@revolutionfuel.com': 'John Sipson'
 };
 function currentBrokerFullName(){
   const email = (graphAccount && graphAccount.username || '').toLowerCase();
-  return SPREADSHEET_BROKER_NAMES[email] || '';
+  return BROKER_NAMES_BY_EMAIL[email] || '';
+}
+// Same lookup, but keyed off the Supabase auth session (currentUserEmail) -
+// always available, unlike the Outlook connection above (which is optional
+// and may not be connected). Used to default the Assigned Broker field on
+// a new order to whoever's actually signed in, before they've had a
+// chance to touch that field directly.
+function defaultBrokerForCurrentUser(){
+  return BROKER_NAMES_BY_EMAIL[(currentUserEmail||'').toLowerCase()] || '';
 }
 // Builds the 23-column row (matching the management spreadsheet's own
 // column order exactly) as an array, so both the booking and invoiced
@@ -7747,7 +7774,7 @@ function buildSpreadsheetRow(includeInvoiceFields){
   return [
     orderNumberVal || '', orderPart, reference, fv('quoteDate') || '', fv('finalETA') || fv('eta') || '',
     fv('vessel') || '', fv('port') || '', totals.totalVolumeLitres != null ? String(totals.totalVolumeLitres) : '',
-    brokerInitials(currentBrokerFullName()),
+    brokerInitials(fv('orderBroker') || currentBrokerFullName()),
     '', // Status - deliberately left blank: this cell holds the spreadsheet's own live formula (derived from Inv Date/Rcvd Date/Paid Date), so pasting a computed value here would overwrite it with static text that stops updating
     includeInvoiceFields ? todayIso : '',
     fv('vOwner') || '', currencyDisplayName(totals.salesCurrency), totals.salesTotal != null ? String(totals.salesTotal) : '',
@@ -10572,6 +10599,7 @@ async function clearOrder(){
   document.getElementById('multiSupplierMode').checked = false;
   document.getElementById('quoteRef').value = await generateQuoteReference();
   document.getElementById('quoteDate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('orderBroker').value = defaultBrokerForCurrentUser();
   document.getElementById('greeting').value = 'Dear Captain,';
   document.getElementById('vessel').value = '';
   document.getElementById('vesselOrder').value = '';
@@ -11074,6 +11102,7 @@ async function renderSummary(){
     let body = '';
     body += summaryField('Vessel', summaryEntityLink('vessel', vesselId, vesselName));
     body += summaryField('Registered Owner', summaryEntityLink('owner', ownerId, ownerName));
+    body += summaryField('Broker', escHtml(fv('orderBroker')));
     body += summaryField('Port', summaryEntityLink('port', portId, portName));
     body += summaryField('ETA', escHtml(fv('eta')));
     body += summaryField('Delivery time', escHtml(fv('deliveryTime')));
@@ -12896,6 +12925,7 @@ function collectQuoteState(){
     savedAt: new Date().toISOString(),
     quoteRef: fv('quoteRef'),
     quoteDate: fv('quoteDate'),
+    broker: fv('orderBroker'),
     greeting: fv('greeting'),
     openingLineText: getOpeningLine(),
     vessel: {
@@ -12984,6 +13014,7 @@ function collectQuoteState(){
 async function applyQuoteState(data){
   document.getElementById('quoteRef').value = data.quoteRef || await generateQuoteReference();
   document.getElementById('quoteDate').value = data.quoteDate || new Date().toISOString().slice(0,10);
+  document.getElementById('orderBroker').value = data.broker || defaultBrokerForCurrentUser();
   document.getElementById('greeting').value = data.greeting || 'Dear Captain,';
   applyTextToCustomizableGroup('openingGroup', 'opening', data.openingLineText, 'custom', 'openingCustom');
 
