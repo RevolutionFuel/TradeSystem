@@ -4553,7 +4553,7 @@ function removeProductSpecSheet(blockId, index){
 function computeOrderSaveTotals(){
   let totalLitres = 0;
   productBlocks.forEach(b=>{
-    const qty = parseFloat(effectiveQuantity(b, 'sale')) || 0;
+    const qty = parseNum(effectiveQuantity(b, 'sale')) || 0;
     if(qty && CORE_VOLUME_LITRES_PER[b.unit]) totalLitres += qty * CORE_VOLUME_LITRES_PER[b.unit];
   });
   const dominantCurrencyTotal = (byCurrency) => {
@@ -4584,25 +4584,25 @@ function computeOrderSaveTotals(){
 function buildOrderProductLines(){
   return (productBlocks||[]).map(b=>{
     const fees = [];
-    (b.fees||[]).forEach(f=> fees.push({side:'sell', description:f.description||'', amount:parseFloat(f.amount)||null, currency: b.currency||null}));
-    (b.costFees||[]).forEach(f=> fees.push({side:'cost', description:f.description||'', amount:parseFloat(f.amount)||null, currency: b.costCurrency||null}));
+    (b.fees||[]).forEach(f=> fees.push({side:'sell', description:f.description||'', amount:parseNum(f.amount), currency: b.currency||null}));
+    (b.costFees||[]).forEach(f=> fees.push({side:'cost', description:f.description||'', amount:parseNum(f.amount), currency: b.costCurrency||null}));
     const supplierNameText = b.supplierName || fv('supplierName') || '';
     return {
       productId: resolveProductId(productBlockName(b)),
       productName: productBlockName(b) || '',
       supplierOrgId: resolveSupplierId(supplierNameText),
       supplierName: supplierNameText,
-      quantity: parseFloat(b.quantity) || null,
-      finalQuantity: parseFloat(b.finalQuantity) || null,
-      finalBuyQuantity: parseFloat(b.finalBuyQuantity) || null,
-      sellPrice: parseFloat(b.sellingPrice) || null,
+      quantity: parseNum(b.quantity),
+      finalQuantity: parseNum(b.finalQuantity),
+      finalBuyQuantity: parseNum(b.finalBuyQuantity),
+      sellPrice: parseNum(b.sellingPrice),
       sellCurrency: b.currency || null,
       sellUnit: b.sellingPriceUnit || null,
       deliveryPriceIncluded: !!b.sellingPriceDelivered,
-      costPrice: parseFloat(b.costPrice) || null,
+      costPrice: parseNum(b.costPrice),
       costCurrency: b.costCurrency || null,
       costUnit: b.costPriceUnit || null,
-      exchangeRate: parseFloat(b.exchangeRate) || null,
+      exchangeRate: parseNum(b.exchangeRate),
       specSheets: b.specSheets || [],
       fees
     };
