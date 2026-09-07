@@ -7205,7 +7205,7 @@ function buildProfitSummaryHtml(costAdjustment){
     }
 
     productRows.push({
-      label, saleQty, buyQty, sameQty: saleQty === buyQty,
+      label, saleQty, buyQty, sameQty: saleQty === buyQty, unit: b.unit,
       buyPrice: b.costPrice, buyCurrency: b.costCurrency || b.currency, buyUnit: singularUnit(b.costPriceUnit || b.unit).toLowerCase(), buyTotal: buyTotalWithFees, hasCostFees: costFeesTotal !== 0,
       sellPrice: b.sellingPrice, sellCurrency: b.currency, sellUnit: singularUnit(b.sellingPriceUnit || b.unit).toLowerCase(), saleTotal,
       feesTotal, costFeesTotal, margin, profit, needsExchangeRate
@@ -7214,14 +7214,17 @@ function buildProfitSummaryHtml(costAdjustment){
   if(productRows.length === 0) return '';
 
   const th = (text, align) => `<th style="text-align:${align||'left'}; padding:5px 6px; border-bottom:2px solid #D98A2C; font-size:9.5px; text-transform:uppercase; letter-spacing:0.2px; color:#8a5a1a; white-space:nowrap;">${escHtml(text)}</th>`;
-  const td = (html, align, extra) => `<td style="text-align:${align||'left'}; padding:5px 6px; border-bottom:1px solid #F0DCB0; font-size:12px; color:#5c3d10; ${extra||''}">${html}</td>`;
+  const td = (html, align, extra) => `<td style="text-align:${align||'left'}; padding:5px 6px; border-bottom:1px solid #F0DCB0; font-size:12px; color:#5c3d10; vertical-align:top; ${extra||''}">${html}</td>`;
 
   let byCurrencyBuy = {}, byCurrencySell = {}, byCurrencyProfit = {};
   let bodyHtml = '';
   productRows.forEach(r=>{
+    // Quantity now shown with its unit name (e.g. "3,117.27 litres"),
+    // top-aligned with the per-unit price line in the Buy/Sell columns
+    // rather than sitting as a separate, differently-aligned column.
     const qtyHtml = r.sameQty
-      ? formatNumberDisplay(r.saleQty)
-      : `${formatNumberDisplay(r.saleQty)} sell<br><span style="font-size:10.5px; color:#8a5a1a;">${formatNumberDisplay(r.buyQty)} buy</span>`;
+      ? `${formatNumberDisplay(r.saleQty)} ${escHtml(r.unit)}`
+      : `${formatNumberDisplay(r.saleQty)} ${escHtml(r.unit)} sell<br><span style="font-size:10.5px; color:#8a5a1a;">${formatNumberDisplay(r.buyQty)} ${escHtml(r.unit)} buy</span>`;
     const buyHtml = r.buyTotal !== null
       ? `${escHtml(r.buyCurrency)} ${formatNumberDisplay(r.buyPrice)}/${escHtml(r.buyUnit)}<br><b>${escHtml(r.buyCurrency)} ${formatNumberDisplay(r.buyTotal.toFixed(2))}</b>`
       : `${escHtml(r.buyCurrency)} ${formatNumberDisplay(r.buyPrice)}/${escHtml(r.buyUnit)}`;
@@ -7241,8 +7244,11 @@ function buildProfitSummaryHtml(costAdjustment){
     if(r.needsExchangeRate){
       profitHtml = `<i style="color:#B3492E;">Needs exchange rate</i>`;
     } else if(r.profit !== null){
-      const marginNote = r.margin !== null ? `<br><span style="font-size:10px; color:#8a5a1a; font-weight:400;">${escHtml(r.sellCurrency)} ${formatNumberDisplay(r.margin.toFixed(4).replace(/\.?0+$/,''))}/unit</span>` : '';
-      profitHtml = `${escHtml(r.sellCurrency)} ${formatNumberDisplay(r.profit.toFixed(2))}${marginNote}`;
+      // Margin per unit shown above the total now (with the actual unit
+      // name, e.g. "/litre", rather than the generic "/unit"), since the
+      // per-unit rate is the more immediately useful figure to see first.
+      const marginNote = r.margin !== null ? `<span style="font-size:10px; color:#8a5a1a; font-weight:400;">${escHtml(r.sellCurrency)} ${formatNumberDisplay(r.margin.toFixed(4).replace(/\.?0+$/,''))}/${escHtml(r.sellUnit)}</span><br>` : '';
+      profitHtml = `${marginNote}${escHtml(r.sellCurrency)} ${formatNumberDisplay(r.profit.toFixed(2))}`;
       profitColor = r.profit < 0 ? '#B3492E' : '#2E7D53';
       byCurrencyBuy[r.buyCurrency] = (byCurrencyBuy[r.buyCurrency]||0) + (r.buyTotal||0);
       byCurrencySell[r.sellCurrency] = (byCurrencySell[r.sellCurrency]||0) + (r.saleTotal||0) + r.feesTotal;
@@ -7252,7 +7258,14 @@ function buildProfitSummaryHtml(costAdjustment){
     bodyHtml += `<tr>${td(`<b>${escHtml(r.label)}</b>`)}${td(qtyHtml,'right')}${td(buyHtml,'right')}${td(sellHtml,'right')}${td(feesHtml,'right')}${td(profitHtml,'right',`font-weight:700; color:${profitColor};`)}</tr>`;
   });
 
-  const totalsLine = (byCurrency) => Object.keys(byCurrency).map(c => `${c} ${formatNumberDisplay(byCurrency[c].toFixed(2))}`).join(' + ');
+  // Sign-aware: a negative total (whether from a genuine loss or a cost
+  // adjustment large enough to flip a currency negative) reads as
+  // "− USD 0.14", not "USD -0.14" - and when multiple currencies are
+  // joined together, each is formatted this way independently.
+  const totalsLine = (byCurrency) => Object.keys(byCurrency).map(c => {
+    const val = byCurrency[c];
+    return `${val < 0 ? '\u2212 ' : ''}${c} ${formatNumberDisplay(Math.abs(val).toFixed(2))}`;
+  }).join(' + ');
   // Sale/purchase grand totals now come from computeOrderTotals() — the same
   // single-source-of-truth calculation the Order Summary box and the saved
   // order total use — rather than this box's own separate accumulation,
@@ -7263,7 +7276,11 @@ function buildProfitSummaryHtml(costAdjustment){
   // Summary box correctly still counted its sale side. Total profit below
   // still uses this box's own per-row figures, since profit genuinely can't
   // be shown for a row that isn't fully resolvable — but the sale/purchase
-  // totals shouldn't have depended on that same restriction.
+  // totals shouldn't have depended on that same restriction. Both already
+  // correctly include fees (computeOrderTotals() sums each product's own
+  // fees/costFees array in too) - the "(incl. fees)" label wording was
+  // dropped since fees are unconditionally part of the total either way,
+  // not a special, callable-out case.
   const saleTotals = computeOrderTotals('sale');
   const costTotals = computeOrderTotals('cost');
   // Purchase-side adjustment (Invoice page only) applied directly to the
@@ -7276,9 +7293,31 @@ function buildProfitSummaryHtml(costAdjustment){
   const adjustedCostByCurrency = Object.assign({}, costTotals.byCurrency);
   const adjustedProfitByCurrency = Object.assign({}, byCurrencyProfit);
   if(costAdjustment && costAdjustment.amount){
-    const adjCurrency = costAdjustment.currency || Object.keys(adjustedCostByCurrency)[0] || 'USD';
+    const existingCostCurrencies = Object.keys(adjustedCostByCurrency);
+    // If the adjustment's own currency doesn't match any currency this
+    // order's costs are actually in, but there's exactly one dominant cost
+    // currency already, apply it there instead of creating a second,
+    // artificial currency entry (e.g. an adjustment left at its default
+    // currency rather than deliberately changed to match a single-currency
+    // deal) - this is what previously produced things like
+    // "EUR 187.04 + USD -0.14" instead of one genuinely combined total.
+    // Genuinely multi-currency deals (more than one existing cost currency)
+    // still fall back to the adjustment's own stated currency, since there's
+    // no single obvious currency to assume there.
+    const adjCurrency = (costAdjustment.currency && adjustedCostByCurrency[costAdjustment.currency] !== undefined)
+      ? costAdjustment.currency
+      : (existingCostCurrencies.length === 1 ? existingCostCurrencies[0] : (costAdjustment.currency || existingCostCurrencies[0] || 'USD'));
     adjustedCostByCurrency[adjCurrency] = (adjustedCostByCurrency[adjCurrency] || 0) + costAdjustment.amount;
-    adjustedProfitByCurrency[adjCurrency] = (adjustedProfitByCurrency[adjCurrency] || 0) - costAdjustment.amount;
+    // The profit-side currency should follow the same resolution as the
+    // cost side above - the adjustment affects profit through the same
+    // underlying cost, so it must land in the same currency bucket there
+    // too, not be re-resolved independently against a different set of
+    // existing currencies (sale-side profit currencies, not cost ones).
+    const existingProfitCurrencies = Object.keys(adjustedProfitByCurrency);
+    const adjProfitCurrency = (costAdjustment.currency && adjustedProfitByCurrency[costAdjustment.currency] !== undefined)
+      ? costAdjustment.currency
+      : (existingProfitCurrencies.length === 1 ? existingProfitCurrencies[0] : (costAdjustment.currency || existingProfitCurrencies[0] || 'USD'));
+    adjustedProfitByCurrency[adjProfitCurrency] = (adjustedProfitByCurrency[adjProfitCurrency] || 0) - costAdjustment.amount;
   }
   const buyTotalsHtml = totalsLine(adjustedCostByCurrency);
   const sellTotalsHtml = totalsLine(saleTotals.byCurrency);
@@ -7287,7 +7326,7 @@ function buildProfitSummaryHtml(costAdjustment){
   const profitTotalsHtml = totalsLine(adjustedProfitByCurrency);
 
   return `<div class="profit-summary-box" style="margin:16px 0; padding:12px 14px; background:#FBEAD1; border:1.5px dashed #D98A2C; border-radius:8px;">
-    <div style="font-family:var(--disp); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#8a5a1a; margin-bottom:8px;">\ud83d\udd12 Internal Profit Summary \u2014 never copied or exported</div>
+    <div style="font-family:var(--disp); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:#8a5a1a; margin-bottom:8px;">\ud83d\udd12 Deal Summary</div>
     <div class="profit-summary-scroll">
     <table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse;">
       <thead><tr>${th('Product')}${th('Qty','right')}${th('Buy','right')}${th('Sell','right')}${th('Fees','right')}${th('Profit','right')}</tr></thead>
@@ -7295,8 +7334,8 @@ function buildProfitSummaryHtml(costAdjustment){
     </table>
     </div>
     ${buyTotalsHtml || sellTotalsHtml ? `<div style="margin-top:10px; padding-top:8px; border-top:1.5px solid #D98A2C; font-size:12.5px; color:#5c3d10; text-align:right;">
-      ${buyTotalsHtml ? `<div>Total purchase cost: <b>${escHtml(buyTotalsHtml)}</b></div>` : ''}
-      ${sellTotalsHtml ? `<div>Total sale value (incl. fees): <b>${escHtml(sellTotalsHtml)}</b></div>` : ''}
+      ${buyTotalsHtml ? `<div>Total Purchase Costs: <b>${escHtml(buyTotalsHtml)}</b></div>` : ''}
+      ${sellTotalsHtml ? `<div>Total Sale Value: <b>${escHtml(sellTotalsHtml)}</b></div>` : ''}
       ${profitTotalsHtml ? `<div style="font-size:13.5px; margin-top:2px;">${profitLabel} for this order: <b style="color:${grandProfit<0?'#B3492E':'#2E7D53'};">${escHtml(profitTotalsHtml)}</b></div>` : ''}
     </div>` : ''}
     ${productBlocks.length > productRows.length ? `<div style="margin-top:6px; font-size:10.5px; color:#8a5a1a;">Some products don't have a purchase price entered yet on the Supply Confirmation page, so aren't included above.</div>` : ''}
@@ -11137,6 +11176,16 @@ function summaryField(label, safeValueHtml){
   if(!safeValueHtml) return '';
   return `<div class="item-detail-field"><span class="item-detail-label">${escHtml(label)}</span><div class="item-detail-value">${safeValueHtml}</div></div>`;
 }
+// Combines several {label, valueHtml} pairs onto one visual line, skipping
+// any with no value - used where the Summary tab groups related fields
+// (e.g. Vessel + Registered Owner) together rather than each getting its
+// own full-width row.
+function summaryFieldRow(fields){
+  const items = fields.filter(f => f.valueHtml);
+  if(!items.length) return '';
+  const cells = items.map(f => `<div style="flex:1; min-width:140px;"><span class="item-detail-label">${escHtml(f.label)}</span><div class="item-detail-value">${f.valueHtml}</div></div>`).join('');
+  return `<div class="item-detail-field" style="display:flex; gap:20px; flex-wrap:wrap;">${cells}</div>`;
+}
 function summarySection(title, started, bodyHtml, gotoPage){
   const dot = `<span class="summary-status-dot ${started ? 'is-started' : ''}" title="${started ? 'Started' : 'Not started yet'}"></span>`;
   if(started && bodyHtml){
@@ -11210,24 +11259,38 @@ async function renderSummary(){
   {
     const started = !!(vesselName || portName || productBlocks.length);
     let body = '';
-    body += summaryField('Vessel', summaryEntityLink('vessel', vesselId, vesselName));
-    body += summaryField('Registered Owner', summaryEntityLink('owner', ownerId, ownerName));
-    body += summaryField('Broker', escHtml(fv('orderBroker')));
-    body += summaryField('Port', summaryEntityLink('port', portId, portName));
-    body += summaryField('ETA', escHtml(formatDateForQuote(fv('eta'))));
-    body += summaryField('Delivery time', escHtml(fv('deliveryTime')));
     const paymentRef = vesselId ? vesselPaymentReference(vesselId) : '';
-    if(paymentRef) body += summaryField('Payment reference', `<span title="IMO/MMSI + flag state code — quote this when making or receiving payment for this deal">${escHtml(paymentRef)}</span>`);
+    // Order number, payment reference, and broker moved to the top and
+    // sharing one line - order number specifically wasn't shown anywhere
+    // on this tab before at all (only in the loaded Order Summary preview
+    // panel on the Details page itself).
+    body += summaryFieldRow([
+      {label:'Order number', valueHtml: escHtml(orderNumberVal)},
+      {label:'Payment reference', valueHtml: paymentRef ? `<span title="IMO/MMSI + flag state code — quote this when making or receiving payment for this deal">${escHtml(paymentRef)}</span>` : ''},
+      {label:'Broker', valueHtml: escHtml(fv('orderBroker'))}
+    ]);
+    body += summaryFieldRow([
+      {label:'Vessel', valueHtml: summaryEntityLink('vessel', vesselId, vesselName)},
+      {label:'Registered Owner', valueHtml: summaryEntityLink('owner', ownerId, ownerName)}
+    ]);
+    body += summaryFieldRow([
+      {label:'Port', valueHtml: summaryEntityLink('port', portId, portName)},
+      {label:'ETA', valueHtml: escHtml(formatDateForQuote(fv('eta')))},
+      {label:'Delivery time', valueHtml: escHtml(fv('deliveryTime'))}
+    ]);
     if(productBlocks.length){
       const rows = productBlocks.map(pb=>{
         let name;
         if(pb.kind==='fuel'){ name = pb.grade==='other' ? (pb.otherFuel||'Fuel') : (pb.grade||'Fuel').toUpperCase(); }
         else { name = (pb.otherProductName==='__custom' ? pb.otherProductCustom : pb.otherProductName) || 'Product'; }
         const sheets = pb.specSheets || [];
+        // Labelled with visible text now, not just the paperclip icon on
+        // its own - "Spec sheet" for one, or "Spec sheet 1"/"Spec sheet 2"
+        // etc. when a product has more than one attached.
         const specLink = sheets.length === 1
-          ? `<a href="#" onclick="openSpecSheetLink('${pb.id}', 0); return false;" title="${escAttr(sheets[0].displayName||'Spec sheet')}">\ud83d\udcce</a>`
+          ? `<a href="#" onclick="openSpecSheetLink('${pb.id}', 0); return false;" title="${escAttr(sheets[0].displayName||'Spec sheet')}">\ud83d\udcce Spec sheet</a>`
           : sheets.length > 1
-            ? sheets.map((s,i)=>`<a href="#" onclick="openSpecSheetLink('${pb.id}', ${i}); return false;" title="${escAttr(s.displayName||'Spec sheet')}">\ud83d\udcce</a>`).join(' ')
+            ? sheets.map((s,i)=>`<a href="#" onclick="openSpecSheetLink('${pb.id}', ${i}); return false;" title="${escAttr(s.displayName||'Spec sheet')}">\ud83d\udcce Spec sheet ${i+1}</a>`).join(' ')
             : '';
         return `<tr><td>${escHtml(name)}</td><td>${escHtml(pb.quantity||'')} ${escHtml(pb.unit||'')}</td><td>${specLink}</td></tr>`;
       }).join('');
@@ -11246,7 +11309,21 @@ async function renderSummary(){
   // its own.
   {
     const pricingStarted = productBlocks.some(pb => pb.sellingPrice || pb.costPrice);
-    const body = buildProfitSummaryHtml() || '';
+    // Mirrors the Invoice page's own logic exactly, so a purchase-side
+    // adjustment shows here too, not just on the Invoice page itself.
+    const adjAmount = fv('costAdjustmentAmount');
+    const adjNum = parseNum(adjAmount);
+    const adjCurrency = fv('costAdjustmentCurrency') || 'USD';
+    let body = buildProfitSummaryHtml((adjNum !== null && adjNum !== 0) ? {amount: adjNum, currency: adjCurrency} : null) || '';
+    if(adjNum !== null && adjNum !== 0){
+      const sign = adjNum < 0 ? '\u2212' : '+';
+      const color = adjNum < 0 ? '#2E7D53' : '#B3492E';
+      body += `<div style="margin:10px 0 0; padding:10px 14px; background:#FBEAD1; border:1.5px dashed #D98A2C; border-radius:8px; font-size:12.5px; color:#5c3d10;">
+        <b>Purchase side adjustment:</b> ${sign} ${escHtml(adjCurrency)} ${escHtml(Math.abs(adjNum).toFixed(2))} to the cost side
+        (<span style="color:${color}; font-weight:700;">already reflected in the totals above \u2014 ${adjNum < 0 ? 'improves' : 'reduces'} profit by this amount</span>)
+        ${fv('costAdjustmentDescription') ? ' — ' + escHtml(fv('costAdjustmentDescription')) : ''}
+      </div>`;
+    }
     html.push(summarySection('Pricing', pricingStarted, body, 'quote'));
   }
 
