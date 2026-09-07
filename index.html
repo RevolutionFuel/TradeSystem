@@ -521,8 +521,12 @@
   .summary-link{color:var(--amber); font-weight:600; text-decoration:none;}
   .summary-link:hover{text-decoration:underline;}
   .summary-goto{color:var(--teal-dark); font-weight:600; text-decoration:underline; cursor:pointer;}
-  .summary-products-table{width:100%; border-collapse:collapse; font-size:13px; margin-top:4px;}
-  .summary-products-table td{padding:4px 8px 4px 0; border-bottom:1px solid var(--line-soft);}
+  .summary-grid-row{display:grid; grid-template-columns:repeat(3, 1fr); gap:20px;}
+  .summary-products-grid{display:grid; grid-template-columns:repeat(3, 1fr); gap:20px; padding:4px 0; border-bottom:1px solid var(--line-soft); font-size:13px;}
+  .summary-products-header{font-family:var(--disp); font-size:10.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--ink-soft); border-bottom:1px solid var(--line); padding-bottom:6px; margin-top:4px;}
+  @media (max-width:640px){
+    .summary-grid-row, .summary-products-grid, .summary-products-header{grid-template-columns:1fr;}
+  }
 </style>
 </head>
 <body>
@@ -11200,10 +11204,16 @@ function summaryField(label, safeValueHtml){
 // (e.g. Vessel + Registered Owner) together rather than each getting its
 // own full-width row.
 function summaryFieldRow(fields){
-  const items = fields.filter(f => f.valueHtml);
-  if(!items.length) return '';
-  const cells = items.map(f => `<div style="flex:1; min-width:140px;"><span class="item-detail-label">${escHtml(f.label)}</span><div class="item-detail-value">${f.valueHtml}</div></div>`).join('');
-  return `<div class="item-detail-field" style="display:flex; gap:20px; flex-wrap:wrap;">${cells}</div>`;
+  if(!fields.some(f => f.valueHtml)) return '';
+  // Every field gets its own reserved grid cell, whether or not it has a
+  // value - this is what keeps a 2-field row (e.g. Vessel/Owner) aligned
+  // under the same fixed-width columns as a 3-field row above or below it,
+  // rather than a later field shifting left to fill a missing one's spot.
+  const cells = fields.map(f => f.valueHtml
+    ? `<div><span class="item-detail-label">${escHtml(f.label)}</span><div class="item-detail-value">${f.valueHtml}</div></div>`
+    : `<div></div>`
+  ).join('');
+  return `<div class="item-detail-field summary-grid-row">${cells}</div>`;
 }
 function summarySection(title, started, bodyHtml, gotoPage){
   const dot = `<span class="summary-status-dot ${started ? 'is-started' : ''}" title="${started ? 'Started' : 'Not started yet'}"></span>`;
@@ -11311,9 +11321,10 @@ async function renderSummary(){
           : sheets.length > 1
             ? sheets.map((s,i)=>`<a href="#" onclick="openSpecSheetLink('${pb.id}', ${i}); return false;" title="${escAttr(s.displayName||'Spec sheet')}">\ud83d\udcce Spec sheet ${i+1}</a>`).join(' ')
             : '';
-        return `<tr><td>${escHtml(name)}</td><td>${escHtml(pb.quantity||'')} ${escHtml(pb.unit||'')}</td><td>${specLink}</td></tr>`;
+        return `<div class="summary-products-grid"><div>${escHtml(name)}</div><div>${escHtml(pb.quantity||'')} ${escHtml(pb.unit||'')}</div><div>${specLink}</div></div>`;
       }).join('');
-      body += `<div class="item-detail-field"><span class="item-detail-label">Products</span><table class="summary-products-table"><tbody>${rows}</tbody></table></div>`;
+      body += `<div class="item-detail-field"><span class="item-detail-label">Products</span>` +
+        `<div class="summary-products-header summary-grid-row"><div>Product</div><div>Quantity</div><div>Spec sheet</div></div>${rows}</div>`;
     }
     html.push(summarySection('Vessel & Order Details', started, body, 'order'));
   }
