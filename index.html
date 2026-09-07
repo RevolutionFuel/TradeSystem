@@ -11209,16 +11209,16 @@ async function renderSummary(){
   }
 
   // ---- Pricing ----
-  // Reuses buildOrderSummaryTableHtml() and buildProfitSummaryHtml() as-is —
-  // the same functions already confirmed correct (unit-aware) elsewhere —
-  // rather than computing anything fresh here, so this can never drift from
-  // what the Order Summary box or the profit box themselves show. Plain
-  // styling for now; formatting to be refined later.
+  // Reuses buildProfitSummaryHtml() as-is - the same function already
+  // confirmed correct (unit-aware) elsewhere - rather than computing
+  // anything fresh here, so this can never drift from what the profit box
+  // itself shows. The separate order summary table (sale price/quantity/
+  // sub total) used to be shown here too, but it's pure duplication - the
+  // profit box already covers the same per-product pricing information on
+  // its own.
   {
     const pricingStarted = productBlocks.some(pb => pb.sellingPrice || pb.costPrice);
-    const orderTableHtml = buildOrderSummaryTableHtml('selling', true);
-    const profitHtml = buildProfitSummaryHtml();
-    const body = (orderTableHtml || '') + (profitHtml || '');
+    const body = buildProfitSummaryHtml() || '';
     html.push(summarySection('Pricing', pricingStarted, body, 'quote'));
   }
 
