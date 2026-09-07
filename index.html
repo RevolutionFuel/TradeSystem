@@ -11257,6 +11257,12 @@ async function renderSummary(){
   const agentNameVal = fv('agentNameSupply') || fv('agentNameCustomer');
   const agentId = resolveAgentId();
   const orderNumberVal = fv('orderNumberSupply') || fv('orderNumberCustomer') || fv('orderNumberInvoice');
+  // Before a real order number exists (still at Enquiry/Quote stage), show
+  // the quote reference in its place instead, relabelled accordingly - so
+  // this row always has some identifying reference visible rather than a
+  // blank gap for every deal that hasn't progressed to an order yet.
+  const orderRefLabel = orderNumberVal ? 'Order number' : 'Enquiry reference';
+  const orderRefVal = orderNumberVal || fv('quoteRef');
 
   // Correspondence contacts only store {name, jobTitle}, not an id or which
   // parent they came from — resolved here by matching against this order's
@@ -11294,7 +11300,7 @@ async function renderSummary(){
     // on this tab before at all (only in the loaded Order Summary preview
     // panel on the Details page itself).
     body += summaryFieldRow([
-      {label:'Order number', valueHtml: escHtml(orderNumberVal)},
+      {label:orderRefLabel, valueHtml: escHtml(orderRefVal)},
       {label:'Payment reference', valueHtml: paymentRef ? `<span title="IMO/MMSI + flag state code — quote this when making or receiving payment for this deal">${escHtml(paymentRef)}</span>` : ''},
       {label:'Broker', valueHtml: escHtml(fv('orderBroker'))}
     ]);
