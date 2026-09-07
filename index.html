@@ -2154,7 +2154,12 @@ async function generatePdfViaBackend(docType, html){
   const doFetch = () => fetch('https://dxaajzdolalessivlseg.supabase.co/functions/v1/generate-pdf', {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ orderId: currentOrderDbId, docType, html: cleanedHtml })
+    // For an invoice specifically, the actual type (Proforma/Commission/
+    // Invoice) travels alongside docType so the backend can store each as
+    // its own separate document rather than overwriting one another under
+    // one generic "invoice" file - detected here so every existing caller
+    // of this function needs no changes at all.
+    body: JSON.stringify({ orderId: currentOrderDbId, docType, invoiceType: docType === 'invoice' ? getInvoiceType() : null, html: cleanedHtml })
   });
   let res;
   try{
@@ -2223,7 +2228,7 @@ async function draftInOutlookGeneric(opts){
           contentType: 'application/pdf',
           contentBytes: result.pdfBase64
         });
-        if(result.path){ lastStoredPdfPaths[opts.pdfDocType] = result.path; if(document.getElementById('summaryContent')) renderSummary(); }
+        if(result.path){ lastStoredPdfPaths[storageKeyFor(opts.pdfDocType)] = result.path; if(document.getElementById('summaryContent')) renderSummary(); }
       }catch(e){
         console.error('TS: PDF attachment generation failed', e);
         const proceed = confirm('Could not generate the PDF to attach (' + (e && e.message ? e.message : 'unknown error') + ').\n\nCreate the draft anyway, without the attachment?');
@@ -4728,6 +4733,20 @@ async function loadOrderFromDatabase(id){
   orderNumberPendingAssignment = false;
   clearOrderNumberPendingPlaceholder();
   const row = await window.TS.loadOrder(id);
+  // Restored directly from the order's own dedicated columns (loadOrder()
+  // already selects '*') rather than left to only ever reflect whatever
+  // was generated earlier in this same browser session - otherwise a
+  // stored PDF's link would vanish from the Summary tab the moment the
+  // order was closed and reopened, even though the file itself is still
+  // safely sitting in Storage.
+  lastStoredPdfPaths = {
+    quotation: row.quotation_pdf_path || null,
+    supplier: row.supplier_pdf_path || null,
+    customer: row.customer_pdf_path || null,
+    invoice: row.invoice_pdf_path || null,
+    proforma: row.proforma_pdf_path || null,
+    commission: row.commission_pdf_path || null
+  };
   const details = row.details || {};
   // The top-level broker column is the reliable, backend-managed source of
   // truth - details.broker didn't exist at all until the Assigned Broker
@@ -8403,7 +8422,15 @@ function selectInvoiceEmailForManualCopy(){
 // it to) or if this fails; never blocks the person from getting their PDF
 // or draft either way, since this is a nice-to-have for the Summary tab,
 // not something the immediate task depends on.
-let lastStoredPdfPaths = { quotation:null, supplier:null, customer:null, invoice:null };
+let lastStoredPdfPaths = { quotation:null, supplier:null, customer:null, invoice:null, proforma:null, commission:null };
+// Mirrors the backend's own storageKey resolution exactly (see
+// generate-pdf's own comment) - for docType 'invoice', the actual
+// storage/tracking key is whichever specific invoice type is currently
+// selected, not the generic 'invoice' itself, so Proforma/Commission/
+// Invoice are tracked (and linked from the Summary tab) independently.
+function storageKeyFor(docType){
+  return docType === 'invoice' ? getInvoiceType() : docType;
+}
 async function openStoredPdf(docType){
   const path = lastStoredPdfPaths[docType];
   if(!path || !window.TS || !window.TS.getInvoicePdfUrl) return;
@@ -8425,7 +8452,7 @@ async function openInvoicePdf(btnEl){
     const result = await generatePdfViaBackend('invoice', html);
     const blob = base64ToBlob(result.pdfBase64, 'application/pdf');
     await downloadPdfBlob(blob, pdfDisplayFilename('invoice'));
-    if(result.path){ lastStoredPdfPaths.invoice = result.path; if(document.getElementById('summaryContent')) renderSummary(); }
+    if(result.path){ lastStoredPdfPaths[storageKeyFor('invoice')] = result.path; if(document.getElementById('summaryContent')) renderSummary(); }
   }catch(e){
     console.error('TS: openInvoicePdf failed', e);
     alert('Could not generate the PDF: ' + (e && e.message ? e.message : 'unknown error'));
@@ -8895,7 +8922,7 @@ async function openPdfQuotation(docType, btnEl){
     const result = await generatePdfViaBackend(docType, html);
     const blob = base64ToBlob(result.pdfBase64, 'application/pdf');
     await downloadPdfBlob(blob, pdfDisplayFilename(docType));
-    if(result.path){ lastStoredPdfPaths[docType] = result.path; if(document.getElementById('summaryContent')) renderSummary(); }
+    if(result.path){ lastStoredPdfPaths[storageKeyFor(docType)] = result.path; if(document.getElementById('summaryContent')) renderSummary(); }
   }catch(e){
     console.error('TS: openPdfQuotation failed', e);
     alert('Could not generate the PDF: ' + (e && e.message ? e.message : 'unknown error'));
@@ -10650,6 +10677,7 @@ async function clearOrder(){
   try{ localStorage.removeItem('ts-order-draft'); }catch(e){ /* private browsing or similar - fine to skip */ }
   orderNumberPendingAssignment = false;
   clearOrderNumberPendingPlaceholder();
+  lastStoredPdfPaths = { quotation:null, supplier:null, customer:null, invoice:null, proforma:null, commission:null };
   // Contact selections (both "to" and "cc") — previously missing from this
   // reset entirely, same bug pattern as the reminder fields further below:
   // picking contacts on one enquiry, then starting a new one, would
@@ -11273,7 +11301,16 @@ async function renderSummary(){
     let body = '';
     body += summaryField('Invoice type', invTypeEl ? escHtml(cap(invTypeEl.value)) : '');
     body += summaryField('Final ETA', escHtml(formatDateForQuote(fv('finalETA'))));
-    if(lastStoredPdfPaths.invoice) body += summaryField('Stored PDF', '<button type="button" class="btn-ghost btn-sm" onclick="openStoredPdf(\'invoice\')">View PDF</button>');
+    // Each invoice type generated gets its own link - a Proforma and a
+    // later Commission Invoice on the same order are separate documents,
+    // not revisions of one another, so both stay independently accessible
+    // rather than the later one silently replacing the earlier one's link.
+    const invoiceLinks = [
+      lastStoredPdfPaths.invoice ? `<button type="button" class="btn-ghost btn-sm" onclick="openStoredPdf('invoice')">Invoice</button>` : '',
+      lastStoredPdfPaths.proforma ? `<button type="button" class="btn-ghost btn-sm" onclick="openStoredPdf('proforma')">Proforma</button>` : '',
+      lastStoredPdfPaths.commission ? `<button type="button" class="btn-ghost btn-sm" onclick="openStoredPdf('commission')">Commission</button>` : ''
+    ].filter(Boolean);
+    if(invoiceLinks.length) body += summaryField('Stored PDF' + (invoiceLinks.length > 1 ? 's' : ''), invoiceLinks.join(' '));
     // Payment tracking - editable only once the order has actually been
     // invoiced (before that there's nothing to have been paid yet) and
     // only once it has a real saved id to update against.
