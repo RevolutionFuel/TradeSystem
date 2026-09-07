@@ -1011,7 +1011,7 @@
               <legend>Order number</legend>
               <div class="row">
                 <div class="field"><label for="orderNumberSupply">Order number</label><input type="text" id="orderNumberSupply" placeholder="e.g. RF1746" oninput="syncOrderNumber(this.value)"></div>
-                <button class="btn-ghost btn-sm" style="align-self:flex-end; margin-bottom:1px;" onclick="assignNextOrderNumber()">Assign next</button>
+                <button class="btn-ghost btn-sm" style="align-self:flex-end; margin-bottom:1px;" onclick="manuallyAssignNextOrderNumber()">Assign next</button>
               </div>
               <div class="hint">Shared with Customer Confirmation. Only assign this once a quote actually progresses to an order — leave blank until then.</div>
             </fieldset>
@@ -1195,7 +1195,7 @@
               <legend>Order number</legend>
               <div class="row">
                 <div class="field"><label for="orderNumberCustomer">Order number</label><input type="text" id="orderNumberCustomer" placeholder="e.g. RF1746" oninput="syncOrderNumber(this.value)"></div>
-                <button class="btn-ghost btn-sm" style="align-self:flex-end; margin-bottom:1px;" onclick="assignNextOrderNumber()">Assign next</button>
+                <button class="btn-ghost btn-sm" style="align-self:flex-end; margin-bottom:1px;" onclick="manuallyAssignNextOrderNumber()">Assign next</button>
               </div>
               <div class="hint">Shared with Supply Confirmation. Only assign this once a quote actually progresses to an order — leave blank until then.</div>
             </fieldset>
@@ -1346,7 +1346,7 @@
               <legend>Order number</legend>
               <div class="row">
                 <div class="field"><label for="orderNumberInvoice">Order number</label><input type="text" id="orderNumberInvoice" placeholder="e.g. RF1746" oninput="syncOrderNumber(this.value)"></div>
-                <button class="btn-ghost btn-sm" style="align-self:flex-end; margin-bottom:1px;" onclick="assignNextOrderNumber()">Assign next</button>
+                <button class="btn-ghost btn-sm" style="align-self:flex-end; margin-bottom:1px;" onclick="manuallyAssignNextOrderNumber()">Assign next</button>
               </div>
               <div class="hint">Shared with Supply and Customer Confirmation.</div>
             </fieldset>
@@ -3155,9 +3155,36 @@ async function generateOrderNumber(){
   }catch(e){ console.error(e); }
   return 'RF' + count;
 }
+let orderNumberAssignmentPromise = null;
 async function assignNextOrderNumber(){
-  const next = await generateOrderNumber();
-  syncOrderNumber(next);
+  // If an assignment is already in progress, wait for that same one rather
+  // than triggering a second RPC call - this is what actually used to lose
+  // order numbers: two actions (e.g. "Copy email" and "Download PDF" both
+  // clicked in quick succession) each seeing no number assigned yet and
+  // each calling the RPC, consuming two numbers when only the second one
+  // to finish ever actually got used.
+  if(orderNumberAssignmentPromise) return orderNumberAssignmentPromise;
+  orderNumberAssignmentPromise = (async () => {
+    try{
+      const next = await generateOrderNumber();
+      syncOrderNumber(next);
+    } finally {
+      orderNumberAssignmentPromise = null;
+    }
+  })();
+  return orderNumberAssignmentPromise;
+}
+// The manual "Assign next" button specifically - unlike the automatic path
+// (ensureOrderNumberAssigned(), which only ever assigns once per order),
+// this can deliberately overwrite an existing number. Warns first if one's
+// already there, since generating a new one always permanently skips the
+// old one (it can never be reused later) - catches an accidental second
+// click before it wastes a number, without blocking a genuinely deliberate
+// re-assignment.
+async function manuallyAssignNextOrderNumber(){
+  const current = fv('orderNumberSupply') || fv('orderNumberCustomer') || fv('orderNumberInvoice');
+  if(current && !confirm(`This order already has number ${current} assigned. Assigning a new one will permanently skip ${current} — it can't be reused later. Continue?`)) return;
+  await assignNextOrderNumber();
 }
 // The Order Number field appears on the Supply, Customer Confirmation, and
 // Invoice pages (all need to show/use the same value) — separate inputs kept
