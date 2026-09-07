@@ -11120,6 +11120,25 @@ function switchView(v){
   scheduleStickyOffsetUpdate();
   window.scrollTo(0, 0); // see the matching comment in switchOrderPage() - same stuck-scroll risk when switching into a locked page
 }
+// Only acts while the adjustment amount is still empty - once something's
+// actually been typed, whatever currency is showing is treated as a
+// deliberate choice and left alone from then on, even if this gets called
+// again later (e.g. switching back to the Invoice page a second time).
+// This is what previously let an adjustment sit at the generic USD default
+// on a EUR-only deal (RF1758's real scenario) with nobody ever having
+// consciously chosen USD at all - just never having had a reason to touch
+// the field.
+function defaultCostAdjustmentCurrencyIfUntouched(){
+  if(fv('costAdjustmentAmount')) return;
+  const cost = computeOrderTotals('cost');
+  const currencies = Object.keys(cost.byCurrency);
+  // Only when there's exactly one dominant cost currency - a genuinely
+  // multi-currency order has no single obvious answer, so it stays at the
+  // neutral USD fallback, same as before.
+  if(currencies.length === 1){
+    document.getElementById('costAdjustmentCurrency').value = currencies[0];
+  }
+}
 function switchOrderPage(page){
   ['order','enquire','quote','supply','customer','invoice','summary'].forEach(p=>{
     document.getElementById('orderPage'+cap(p)).classList.toggle('active', p===page);
@@ -11128,7 +11147,7 @@ function switchOrderPage(page){
   if(page==='enquire') renderEnquiry();
   if(page==='supply') renderSupply();
   if(page==='customer') renderCustomer();
-  if(page==='invoice') renderInvoicePreviewOnly();
+  if(page==='invoice'){ defaultCostAdjustmentCurrencyIfUntouched(); renderInvoicePreviewOnly(); }
   if(page==='summary') renderSummary();
   // The contact picker is deliberately on-demand (a "Show available
   // contacts" button, not auto-loaded) to avoid a fetch on every page a
