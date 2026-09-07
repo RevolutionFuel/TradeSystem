@@ -11138,7 +11138,7 @@ async function renderSummary(){
     body += summaryField('Registered Owner', summaryEntityLink('owner', ownerId, ownerName));
     body += summaryField('Broker', escHtml(fv('orderBroker')));
     body += summaryField('Port', summaryEntityLink('port', portId, portName));
-    body += summaryField('ETA', escHtml(fv('eta')));
+    body += summaryField('ETA', escHtml(formatDateForQuote(fv('eta'))));
     body += summaryField('Delivery time', escHtml(fv('deliveryTime')));
     const paymentRef = vesselId ? vesselPaymentReference(vesselId) : '';
     if(paymentRef) body += summaryField('Payment reference', `<span title="IMO/MMSI + flag state code — quote this when making or receiving payment for this deal">${escHtml(paymentRef)}</span>`);
@@ -11187,7 +11187,7 @@ async function renderSummary(){
     const started = orderStatusFlags.quoted || anyPriced;
     let body = '';
     body += summaryField('Reference', escHtml(fv('quoteRef')));
-    body += summaryField('Date issued', escHtml(fv('quoteDate')));
+    body += summaryField('Date issued', escHtml(formatDateForQuote(fv('quoteDate'))));
     body += summaryField('Payment terms', escHtml(getPaymentLine()));
     body += summaryField('Validity', fv('validityMins') ? escHtml(fv('validityMins')) + ' minutes' : '');
     if(quoteSelectedContacts.length) body += summaryField('Contacts', quoteSelectedContacts.map(contactLinkHtml).join(', '));
@@ -11224,7 +11224,7 @@ async function renderSummary(){
     const invTypeEl = document.querySelector('input[name="invoiceType"]:checked');
     let body = '';
     body += summaryField('Invoice type', invTypeEl ? escHtml(cap(invTypeEl.value)) : '');
-    body += summaryField('Final ETA', escHtml(fv('finalETA')));
+    body += summaryField('Final ETA', escHtml(formatDateForQuote(fv('finalETA'))));
     if(lastStoredPdfPaths.invoice) body += summaryField('Stored PDF', '<button type="button" class="btn-ghost btn-sm" onclick="openStoredPdf(\'invoice\')">View PDF</button>');
     // Payment tracking - editable only once the order has actually been
     // invoiced (before that there's nothing to have been paid yet) and
