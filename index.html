@@ -1013,7 +1013,7 @@
                 <div class="field"><label for="orderNumberSupply">Order number</label><input type="text" id="orderNumberSupply" placeholder="e.g. RF1746" oninput="syncOrderNumber(this.value)"></div>
                 <button class="btn-ghost btn-sm" style="align-self:flex-end; margin-bottom:1px;" onclick="manuallyAssignNextOrderNumber()">Assign next</button>
               </div>
-              <div class="hint">Shared with Customer Confirmation. Only assign this once a quote actually progresses to an order — leave blank until then.</div>
+              <div class="hint">Shared with Customer Confirmation. Only assign this once a quote actually progresses to an order — leave blank until then. The actual number isn't taken from the counter until the order is saved, so clicking this and not saving costs nothing.</div>
             </fieldset>
 
             <fieldset>
@@ -1197,7 +1197,7 @@
                 <div class="field"><label for="orderNumberCustomer">Order number</label><input type="text" id="orderNumberCustomer" placeholder="e.g. RF1746" oninput="syncOrderNumber(this.value)"></div>
                 <button class="btn-ghost btn-sm" style="align-self:flex-end; margin-bottom:1px;" onclick="manuallyAssignNextOrderNumber()">Assign next</button>
               </div>
-              <div class="hint">Shared with Supply Confirmation. Only assign this once a quote actually progresses to an order — leave blank until then.</div>
+              <div class="hint">Shared with Supply Confirmation. Only assign this once a quote actually progresses to an order — leave blank until then. The actual number isn't taken from the counter until the order is saved, so clicking this and not saving costs nothing.</div>
             </fieldset>
 
             <fieldset>
@@ -3155,32 +3155,37 @@ async function generateOrderNumber(){
   }catch(e){ console.error(e); }
   return 'RF' + count;
 }
-let orderNumberAssignmentPromise = null;
+let orderNumberPendingAssignment = false;
+function markOrderNumberPending(){
+  orderNumberPendingAssignment = true;
+  ['orderNumberSupply','orderNumberCustomer','orderNumberInvoice'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.placeholder = '(will be assigned when saved)';
+  });
+}
+function clearOrderNumberPendingPlaceholder(){
+  ['orderNumberSupply','orderNumberCustomer','orderNumberInvoice'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.placeholder = 'e.g. RF1746';
+  });
+}
+// Deliberately doesn't call the RPC / touch the sequence at all here - just
+// marks the intent to assign one. The real number is only ever generated
+// at the moment of an actual database save (see saveOrderToDatabase()), so
+// the counter is never consumed for an order that gets abandoned, closed
+// without saving, or simply reconsidered before it's actually persisted.
 async function assignNextOrderNumber(){
-  // If an assignment is already in progress, wait for that same one rather
-  // than triggering a second RPC call - this is what actually used to lose
-  // order numbers: two actions (e.g. "Copy email" and "Download PDF" both
-  // clicked in quick succession) each seeing no number assigned yet and
-  // each calling the RPC, consuming two numbers when only the second one
-  // to finish ever actually got used.
-  if(orderNumberAssignmentPromise) return orderNumberAssignmentPromise;
-  orderNumberAssignmentPromise = (async () => {
-    try{
-      const next = await generateOrderNumber();
-      syncOrderNumber(next);
-    } finally {
-      orderNumberAssignmentPromise = null;
-    }
-  })();
-  return orderNumberAssignmentPromise;
+  markOrderNumberPending();
 }
 // The manual "Assign next" button specifically - unlike the automatic path
 // (ensureOrderNumberAssigned(), which only ever assigns once per order),
-// this can deliberately overwrite an existing number. Warns first if one's
-// already there, since generating a new one always permanently skips the
-// old one (it can never be reused later) - catches an accidental second
-// click before it wastes a number, without blocking a genuinely deliberate
-// re-assignment.
+// this can deliberately overwrite an existing number. Warns first if a
+// REAL, already-assigned number exists (fv() is only ever non-empty once
+// one's actually been generated and saved, or typed manually - marking
+// "pending" alone never populates it), since generating a new one on the
+// next save would permanently skip the existing one. Re-clicking while
+// still only pending (not yet saved) needs no warning at all, since
+// nothing has been consumed yet either way.
 async function manuallyAssignNextOrderNumber(){
   const current = fv('orderNumberSupply') || fv('orderNumberCustomer') || fv('orderNumberInvoice');
   if(current && !confirm(`This order already has number ${current} assigned. Assigning a new one will permanently skip ${current} — it can't be reused later. Continue?`)) return;
@@ -4661,6 +4666,18 @@ async function saveOrderToDatabase(){
   orderSaveInProgress = true;
   if(btn){ btn.disabled = true; btn.textContent = 'Saving...'; }
   try{
+    // If an order number was requested (via "Assign next") but not yet
+    // actually generated, this is the one, only moment it gets pulled from
+    // the sequence - guarantees the counter is never touched for an order
+    // that doesn't actually get saved. Deliberately before the retry loop
+    // below, not inside it, so a quote-ref-collision retry reuses this
+    // same number rather than generating (and wasting) a second one.
+    if(orderNumberPendingAssignment){
+      const next = await generateOrderNumber();
+      syncOrderNumber(next);
+      orderNumberPendingAssignment = false;
+      clearOrderNumberPendingPlaceholder();
+    }
     // Safety net: closes the same gap as the one on order load (see
     // syncOwnerFromVesselIfBlank's own comment) - guarantees the database
     // never receives a stale-blank owner snapshot on this save, even if
@@ -4708,6 +4725,8 @@ async function saveOrderToDatabase(){
 // already knows how to reconstruct from.
 async function loadOrderFromDatabase(id){
   if(!window.TS || !window.TS.loadOrder) return;
+  orderNumberPendingAssignment = false;
+  clearOrderNumberPendingPlaceholder();
   const row = await window.TS.loadOrder(id);
   const details = row.details || {};
   // The top-level broker column is the reliable, backend-managed source of
@@ -10629,6 +10648,8 @@ async function startNewOrderFromBar(){
 }
 async function clearOrder(){
   try{ localStorage.removeItem('ts-order-draft'); }catch(e){ /* private browsing or similar - fine to skip */ }
+  orderNumberPendingAssignment = false;
+  clearOrderNumberPendingPlaceholder();
   // Contact selections (both "to" and "cc") — previously missing from this
   // reset entirely, same bug pattern as the reminder fields further below:
   // picking contacts on one enquiry, then starting a new one, would
