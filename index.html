@@ -1202,6 +1202,8 @@
                 <button class="btn-ghost btn-sm" style="align-self:flex-end; margin-bottom:1px;" onclick="manuallyAssignNextOrderNumber()">Assign next</button>
               </div>
               <div class="hint">Shared with Supply Confirmation. Only assign this once a quote actually progresses to an order — leave blank until then. The actual number isn't taken from the counter until the order is saved, so clicking this and not saving costs nothing.</div>
+              <div class="field"><label for="customerPoNumber">Customer PO number <span style="font-weight:400; text-transform:none; color:var(--ink-soft);">(optional)</span></label><input type="text" id="customerPoNumber" placeholder="e.g. PO-4521"></div>
+              <div class="hint">If entered, this is included on the Customer Confirmation PDF and on the Customer Invoice.</div>
             </fieldset>
 
             <fieldset>
@@ -7516,6 +7518,9 @@ function buildPdfQuotationHtml(docType){
   const orderNum = docType === 'supplier' ? getSupplyOrderNumberForView() : (fv('orderNumberSupply') || fv('orderNumberCustomer'));
   const ref = (docType !== 'quotation' && orderNum) ? orderNum : quoteRefVal;
   const dateIssued = formatDateForQuote(fv('quoteDate')) || formatDateForQuote(new Date().toISOString().slice(0,10));
+  // Customer's own PO number — optional, shown only on the document the
+  // customer themselves receives, right alongside our own reference.
+  const customerPoNum = docType === 'customer' ? fv('customerPoNumber') : '';
 
   // Recipient block — the Supplier Confirmation addresses the supplier (with the
   // vessel noted as context for delivery), everything else addresses the vessel
@@ -7772,7 +7777,7 @@ function buildPdfQuotationHtml(docType){
       ${logoSrc ? `<img src="${logoSrc}" alt="Revolution Fuel">` : `<div style="font-weight:bold; font-size:18pt; color:#1F064F;">Revolution Fuel</div>`}
       <div>
         <div class="doc-title">${escHtml((docType === 'supplier' && isBrokeredDealActiveForCurrentView()) ? 'Brokered Deal Confirmation' : cfg.title)}</div>
-        <div class="doc-meta">Reference: ${escHtml(ref)}<br>Date: ${escHtml(dateIssued)}${tightLayout ? '<br><span style="font-style:italic;">If more than one page, all pages form part of this document.</span>' : ''}</div>
+        <div class="doc-meta">Reference: ${escHtml(ref)}<br>${customerPoNum ? `Customer PO: ${escHtml(customerPoNum)}<br>` : ''}Date: ${escHtml(dateIssued)}${tightLayout ? '<br><span style="font-style:italic;">If more than one page, all pages form part of this document.</span>' : ''}</div>
       </div>
     </div>
 
@@ -8165,12 +8170,17 @@ function computeInvoiceData(){
   const vesselRef = vesselPaymentReference(resolveVesselId());
   const invoiceNumber = orderRef ? `${orderRef}-${vesselRef}`.replace(/-$/,'') : `RFQ${String(today.getFullYear()).slice(-2)}-DRAFT`;
 
-  return {invType, isCommission, title, vesselName, billLines, rows, productRows, anyExcluded, currency, total, today, deliveryDateIso, dueDateObj, invoiceNumber};
+  // Customer's own PO number — only relevant on invoices actually addressed
+  // to the customer (Invoice/Proforma), never the Commission Invoice, which
+  // is addressed to the supplier.
+  const customerPoNum = !isCommission ? fv('customerPoNumber') : '';
+
+  return {invType, isCommission, title, vesselName, billLines, rows, productRows, anyExcluded, currency, total, today, deliveryDateIso, dueDateObj, invoiceNumber, customerPoNum};
 }
 
 function buildInvoicePdfHtml(){
   const inv = computeInvoiceData();
-  const {isCommission, title, vesselName, billLines, rows, anyExcluded, currency, total, today, deliveryDateIso, dueDateObj, invoiceNumber} = inv;
+  const {isCommission, title, vesselName, billLines, rows, anyExcluded, currency, total, today, deliveryDateIso, dueDateObj, invoiceNumber, customerPoNum} = inv;
   const FF = "font-family:'Calibri Light','Calibri','Segoe UI Light','Segoe UI',Arial,sans-serif;";
   const logoSrc = pdfLogoSrc();
   const bank = BANK_DETAILS[currency] || BANK_DETAILS.USD;
@@ -8230,6 +8240,7 @@ function buildInvoicePdfHtml(){
       </div>
       <div class="info-lines">
         <div><span class="label">Invoice Number:</span> ${escHtml(invoiceNumber)}</div>
+        ${customerPoNum ? `<div><span class="label">Customer PO Number:</span> ${escHtml(customerPoNum)}</div>` : ''}
         <div><span class="label">Date of Invoice:</span> ${escHtml(formatDateForQuote(isoDate(today)))}</div>
         <div>&nbsp;</div>
         <div><span class="label">Date of Delivery:</span> ${deliveryDateIso ? escHtml(formatDateForQuote(deliveryDateIso)) : '(not set)'}</div>
@@ -8302,6 +8313,7 @@ function buildInvoiceEmailHtml(){
 
   const detailItems = [];
   if(inv.vesselName) detailItems.push(`<b>Vessel:</b> ${escHtml(inv.vesselName)}`);
+  if(inv.customerPoNum) detailItems.push(`<b>Customer PO Number:</b> ${escHtml(inv.customerPoNum)}`);
   if(fv('port')) detailItems.push(`<b>Port:</b> ${escHtml(fv('port'))}`);
   if(inv.deliveryDateIso) detailItems.push(`<b>Delivery Date:</b> ${escHtml(formatDateForQuote(inv.deliveryDateIso))}`);
   parts.push(ul(detailItems));
@@ -10257,6 +10269,12 @@ function buildCustomerEmailHtml(){
     parts.push(blank());
   }
 
+  const custPoNum = fv('customerPoNumber');
+  if(custPoNum){
+    parts.push(p(`<b>Customer PO Number:</b> ${escHtml(custPoNum)}`));
+    parts.push(blank());
+  }
+
   const agent = getAgentInfo();
   if(agent){
     parts.push(heading('Local Agent: ' + agent.name));
@@ -10382,6 +10400,12 @@ function buildCustomerPlainText(){
   const custOrderNumPlain = fv('orderNumberCustomer');
   if(custOrderNumPlain){
     lines.push('Order Number: ' + custOrderNumPlain);
+    lines.push('');
+  }
+
+  const custPoNumPlain = fv('customerPoNumber');
+  if(custPoNumPlain){
+    lines.push('Customer PO Number: ' + custPoNumPlain);
     lines.push('');
   }
 
@@ -10772,6 +10796,7 @@ async function clearOrder(){
   syncTaxStatusInvoiceVisibility();
   document.getElementById('orderNumberSupply').value = '';
   document.getElementById('orderNumberCustomer').value = '';
+  document.getElementById('customerPoNumber').value = '';
   clearAgentInfo();
   document.getElementById('supplierName').value = '';
   document.getElementById('supplierNameOrder').value = '';
@@ -11401,6 +11426,7 @@ async function renderSummary(){
   {
     const started = orderStatusFlags.customerConfirmed;
     let body = '';
+    body += summaryField('Customer PO number', escHtml(fv('customerPoNumber')));
     body += summaryField('Payment terms', escHtml(getCustPaymentLine()));
     if(custSelectedContacts.length) body += summaryField('Contacts', custSelectedContacts.map(contactLinkHtml).join(', '));
     if(lastStoredPdfPaths.customer) body += summaryField('Stored PDF', '<button type="button" class="btn-ghost btn-sm" onclick="openStoredPdf(\'customer\')">View PDF</button>');
@@ -13189,6 +13215,7 @@ function collectQuoteState(){
     signoffLineText: getSignoffLine(),
     signatureKey: getSignatureKey(),
     orderNumber: fv('orderNumberSupply'),
+    customerPoNumber: fv('customerPoNumber'),
     supplierName: fv('supplierName'),
     supGreeting: fv('supGreeting'),
     supOpeningLineText: getSupOpeningLine(),
@@ -13397,6 +13424,8 @@ async function applyQuoteState(data){
   document.getElementById('orderNumberSupply').value = data.orderNumber || '';
   document.getElementById('orderNumberCustomer').value = data.orderNumber || '';
   document.getElementById('orderNumberInvoice').value = data.orderNumber || '';
+
+  document.getElementById('customerPoNumber').value = data.customerPoNumber || '';
 
   document.getElementById('supplierName').value = data.supplierName || '';
   document.getElementById('supplierNameOrder').value = data.supplierName || '';
