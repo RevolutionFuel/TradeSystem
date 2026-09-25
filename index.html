@@ -337,6 +337,10 @@
   .opt input{margin-top:2px; flex-shrink:0;}
   .opt.checked{border-color:var(--teal); background:#EFF7F8;}
   .opt .opt-sub{width:100%; margin-top:6px;}
+  /* Sits inline between "Custom:" and "days from date of delivery", so it
+     stays narrow rather than taking the full row like .opt-sub does. */
+  .opt .opt-sub-days{width:4.5em; text-align:center; padding:2px 4px; font-size:13px; border:1px solid var(--line); border-radius:4px; background:#fff;}
+  .opt .opt-sub-days:focus{outline:none; border-color:var(--teal);}
   .opt-inline{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--ink-soft); text-transform:none; font-weight:400; letter-spacing:normal;}
   .autocomplete{position:relative;}
   .ac-list{position:absolute; z-index:20; left:0; right:0; top:100%; background:#fff; border:1px solid var(--line); border-radius:0 0 8px 8px; max-height:220px; overflow-y:auto; box-shadow:0 8px 20px rgba(15,42,63,0.15); display:none;}
@@ -1763,6 +1767,35 @@ const PAYMENT_OPTIONS = [
 // between 14 and 21 days, as requested, without touching a single
 // existing order's stored payment terms.
 const PAYMENT_OPTIONS_DISPLAY_ORDER = [0,1,2,3,6,4,5];
+// Every credit-terms picker (Quote, Supply Confirmation, Customer
+// Confirmation) is built from this one helper so the three can't drift
+// apart as options are added.
+//
+// The "Custom" option lets a broker type any number of days rather than
+// being limited to the fixed list above. Deliberately NOT added to
+// PAYMENT_OPTIONS: it has no fixed text, and that array's indices are
+// load-bearing. Its generated text ("<n> days from date of delivery")
+// matches the shape of the fixed options exactly, which is what makes the
+// invoice due-date parser (computeDueDate) and the saved-order text
+// matching (applyTextToPaymentGroup) work on it with no special-casing.
+const PAYMENT_CUSTOM_DAYS_SUFFIX = 'days from date of delivery';
+function paymentRadioOptions(blankLabel, customDaysId){
+  return PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]}))
+    .concat([
+      {value:'pcustom', label:'Custom:', customDays:true, customId:customDaysId, customSuffix:PAYMENT_CUSTOM_DAYS_SUFFIX},
+      {value:'blank', label:blankLabel}
+    ]);
+}
+// Builds the terms text for a custom-days selection. Returns '' while the
+// box is empty, so a half-finished selection omits the line rather than
+// emitting something broken like "NaN days from date of delivery".
+function customPaymentDaysText(fieldId){
+  const raw = (fv(fieldId) || '').replace(/\D/g,'');
+  if(!raw) return '';
+  const n = parseInt(raw, 10);
+  if(!n) return '';
+  return `${n} ${PAYMENT_CUSTOM_DAYS_SUFFIX}`;
+}
 const SIGNOFF_OPTIONS = [
   "Please confirm to proceed with this delivery.",
   "Awaiting your confirmation to proceed.",
@@ -3050,9 +3083,9 @@ async function init(){
   buildRadioGroup('custOpeningGroup', 'custOpening', CUSTOMER_OPENING_OPTIONS.map((t,i)=>({value:'co'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'custOpeningCustom'}]), 'co0', 'renderCustomer');
   buildRadioGroup('supSignoffGroup', 'supSignoff', SUPPLY_SIGNOFF_OPTIONS.map((t,i)=>({value:'ss'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'supSignoffCustom'}]), 'ss0', 'renderSupply');
   buildRadioGroup('custSignoffGroup', 'custSignoff', CUSTOMER_SIGNOFF_OPTIONS.map((t,i)=>({value:'cs'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'custSignoffCustom'}]), 'cs0', 'renderCustomer');
-  buildRadioGroup('paymentGroup', 'payment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from quote)'}]), 'p4');
-  buildRadioGroup('supPaymentGroup', 'supPayment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderSupply');
-  buildRadioGroup('custPaymentGroup', 'custPayment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderCustomer');
+  buildRadioGroup('paymentGroup', 'payment', paymentRadioOptions('(leave blank \u2014 omit from quote)', 'paymentCustomDays'), 'p4');
+  buildRadioGroup('supPaymentGroup', 'supPayment', paymentRadioOptions('(leave blank \u2014 omit from confirmation)', 'supPaymentCustomDays'), 'p4', 'renderSupply');
+  buildRadioGroup('custPaymentGroup', 'custPayment', paymentRadioOptions('(leave blank \u2014 omit from confirmation)', 'custPaymentCustomDays'), 'p4', 'renderCustomer');
   buildRadioGroup('signoffGroup', 'signoff', SIGNOFF_OPTIONS.map((t,i)=>({value:'s'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'signoffCustom'}]), 's0');
   buildRadioGroup('enqOpeningGroup', 'enqOpening', ENQUIRY_OPENING_OPTIONS.map((t,i)=>({value:'eo'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqOpeningCustom'}]), 'eo0', 'renderEnquiry');
   buildRadioGroup('enqSignoffGroup', 'enqSignoff', ENQUIRY_SIGNOFF_OPTIONS.map((t,i)=>({value:'es'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqSignoffCustom'}]), 'es0', 'renderEnquiry');
@@ -3229,10 +3262,30 @@ function buildRadioGroup(containerId, name, options, defaultValue, renderFnName)
     if(opt.custom){
       inner += `<input type="text" class="opt-sub" id="${opt.customId}" placeholder="Type custom text..." oninput="${renderFnName}()" onclick="event.stopPropagation()">`;
     }
+    if(opt.customDays){
+      inner += ` <input type="text" class="opt-sub-days" id="${opt.customId}" inputmode="numeric" maxlength="3" placeholder="45" oninput="onCustomPaymentDaysInput(this,'${containerId}','${name}','${renderFnName}')" onclick="event.stopPropagation()"> ${escHtml(opt.customSuffix||'')}`;
+    }
     inner += `</span>`;
     wrap.innerHTML = inner;
     el.appendChild(wrap);
   });
+}
+// Typing a number of days implies choosing the Custom option, so selecting
+// the radio is done here rather than making the broker click it separately.
+//
+// EVERY edit of the days box goes through onRadioChange - including when
+// Custom is already selected. That matters on Supply and Customer: if Custom
+// arrived there by cascading from the Quote, editing the number is a
+// deliberate divergence and must set that page's *ManuallySet flag, or the
+// next Quote change silently overwrites it (the "buy on 30, sell on 21"
+// case). onRadioChange also handles the Quote -> Supply -> Customer sync,
+// the selection styling and the re-render, exactly as for a normal click.
+function onCustomPaymentDaysInput(el, containerId, name, renderFnName){
+  const cleaned = el.value.replace(/\D/g,'');
+  if(el.value !== cleaned) el.value = cleaned;
+  const radio = document.querySelector(`input[name="${name}"][value="pcustom"]`);
+  if(radio) radio.checked = true;
+  onRadioChange(containerId, name, renderFnName);
 }
 // Supply Confirmation's payment terms track the Quote's until someone changes
 // them directly on the Supply Confirmation page — same "default to match,
@@ -3242,12 +3295,22 @@ function buildRadioGroup(containerId, name, options, defaultValue, renderFnName)
 // with a supplier.
 let supPaymentManuallySet = false;
 let custPaymentManuallySet = false;
+// The custom-days number has to travel with the selection, not just the
+// radio value - each page has its own days box, so copying only the value
+// would leave the following page showing "Custom" with an empty box and no
+// terms text at all.
+function copyCustomPaymentDays(fromId, toId){
+  const from = document.getElementById(fromId);
+  const to = document.getElementById(toId);
+  if(from && to) to.value = from.value;
+}
 function syncSupPaymentFromQuote(){
   if(supPaymentManuallySet) return;
   const quoteVal = getRadioValue('payment') || 'p4';
   const radio = document.querySelector(`input[name="supPayment"][value="${quoteVal}"]`);
   if(!radio) return;
   radio.checked = true;
+  if(quoteVal === 'pcustom') copyCustomPaymentDays('paymentCustomDays', 'supPaymentCustomDays');
   document.querySelectorAll('#supPaymentGroup .opt').forEach(o=>{
     o.classList.toggle('checked', o.querySelector('input').checked);
   });
@@ -3259,6 +3322,7 @@ function syncCustPaymentFromQuote(){
   const radio = document.querySelector(`input[name="custPayment"][value="${quoteVal}"]`);
   if(!radio) return;
   radio.checked = true;
+  if(quoteVal === 'pcustom') copyCustomPaymentDays('paymentCustomDays', 'custPaymentCustomDays');
   document.querySelectorAll('#custPaymentGroup .opt').forEach(o=>{
     o.classList.toggle('checked', o.querySelector('input').checked);
   });
@@ -9139,18 +9203,21 @@ function getCustSignoffLine(){
 function getPaymentLine(){
   const v = getRadioValue('payment');
   if(!v || v==='blank') return '';
+  if(v==='pcustom') return customPaymentDaysText('paymentCustomDays');
   const idx = parseInt(v.substring(1));
   return PAYMENT_OPTIONS[idx];
 }
 function getSupPaymentLine(){
   const v = getRadioValue('supPayment');
   if(!v || v==='blank') return '';
+  if(v==='pcustom') return customPaymentDaysText('supPaymentCustomDays');
   const idx = parseInt(v.substring(1));
   return PAYMENT_OPTIONS[idx];
 }
 function getCustPaymentLine(){
   const v = getRadioValue('custPayment');
   if(!v || v==='blank') return '';
+  if(v==='pcustom') return customPaymentDaysText('custPaymentCustomDays');
   const idx = parseInt(v.substring(1));
   return PAYMENT_OPTIONS[idx];
 }
@@ -10848,9 +10915,9 @@ async function clearOrder(){
   custSignatureManuallySet = false;
   invoiceSignatureManuallySet = false;
   buildRadioGroup('openingGroup', 'opening', OPENING_OPTIONS.map((t,i)=>({value:'o'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'openingCustom'}]), 'o0');
-  buildRadioGroup('paymentGroup', 'payment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from quote)'}]), 'p4');
-  buildRadioGroup('supPaymentGroup', 'supPayment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderSupply');
-  buildRadioGroup('custPaymentGroup', 'custPayment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderCustomer');
+  buildRadioGroup('paymentGroup', 'payment', paymentRadioOptions('(leave blank \u2014 omit from quote)', 'paymentCustomDays'), 'p4');
+  buildRadioGroup('supPaymentGroup', 'supPayment', paymentRadioOptions('(leave blank \u2014 omit from confirmation)', 'supPaymentCustomDays'), 'p4', 'renderSupply');
+  buildRadioGroup('custPaymentGroup', 'custPayment', paymentRadioOptions('(leave blank \u2014 omit from confirmation)', 'custPaymentCustomDays'), 'p4', 'renderCustomer');
   buildRadioGroup('signoffGroup', 'signoff', SIGNOFF_OPTIONS.map((t,i)=>({value:'s'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'signoffCustom'}]), 's0');
   buildRadioGroup('enqOpeningGroup', 'enqOpening', ENQUIRY_OPENING_OPTIONS.map((t,i)=>({value:'eo'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqOpeningCustom'}]), 'eo0', 'renderEnquiry');
   buildRadioGroup('enqSignoffGroup', 'enqSignoff', ENQUIRY_SIGNOFF_OPTIONS.map((t,i)=>({value:'es'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'enqSignoffCustom'}]), 'es0', 'renderEnquiry');
@@ -10920,7 +10987,7 @@ async function clearQuoteFields(){
   syncTaxStatusInvoiceVisibility();
   renderQuoteProductBlocks();
   buildRadioGroup('openingGroup', 'opening', OPENING_OPTIONS.map((t,i)=>({value:'o'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'openingCustom'}]), 'o0');
-  buildRadioGroup('paymentGroup', 'payment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from quote)'}]), 'p4');
+  buildRadioGroup('paymentGroup', 'payment', paymentRadioOptions('(leave blank \u2014 omit from quote)', 'paymentCustomDays'), 'p4');
   buildRadioGroup('signoffGroup', 'signoff', SIGNOFF_OPTIONS.map((t,i)=>({value:'s'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'signoffCustom'}]), 's0');
   quoteSignatureManuallySet = false;
   buildRadioGroup('signatureGroup', 'signature', SIGNATURE_OPTIONS, defaultSignatureFor('quote'));
@@ -10968,7 +11035,7 @@ async function clearSupplyFields(){
   syncSupOrderTotalFromQuote();
   buildRadioGroup('supOpeningGroup', 'supOpening', SUPPLY_OPENING_OPTIONS.map((t,i)=>({value:'so'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'supOpeningCustom'}]), 'so0', 'renderSupply');
   buildRadioGroup('supSignoffGroup', 'supSignoff', SUPPLY_SIGNOFF_OPTIONS.map((t,i)=>({value:'ss'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'supSignoffCustom'}]), 'ss0', 'renderSupply');
-  buildRadioGroup('supPaymentGroup', 'supPayment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderSupply');
+  buildRadioGroup('supPaymentGroup', 'supPayment', paymentRadioOptions('(leave blank \u2014 omit from confirmation)', 'supPaymentCustomDays'), 'p4', 'renderSupply');
   syncSupPaymentFromQuote();
   buildRadioGroup('supSignatureGroup', 'supSignature', SIGNATURE_OPTIONS, defaultSignatureFor('supply'), 'renderSupply');
   syncSupSignatureFromQuote();
@@ -11001,7 +11068,7 @@ async function clearCustomerFields(){
   document.getElementById('showCustomerOrderTotal').checked = false;
   buildRadioGroup('custOpeningGroup', 'custOpening', CUSTOMER_OPENING_OPTIONS.map((t,i)=>({value:'co'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'custOpeningCustom'}]), 'co0', 'renderCustomer');
   buildRadioGroup('custSignoffGroup', 'custSignoff', CUSTOMER_SIGNOFF_OPTIONS.map((t,i)=>({value:'cs'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'custSignoffCustom'}]), 'cs0', 'renderCustomer');
-  buildRadioGroup('custPaymentGroup', 'custPayment', PAYMENT_OPTIONS_DISPLAY_ORDER.map(i=>({value:'p'+i, label:PAYMENT_OPTIONS[i]})).concat([{value:'blank', label:'(leave blank \u2014 omit from confirmation)'}]), 'p4', 'renderCustomer');
+  buildRadioGroup('custPaymentGroup', 'custPayment', paymentRadioOptions('(leave blank \u2014 omit from confirmation)', 'custPaymentCustomDays'), 'p4', 'renderCustomer');
   syncCustPaymentFromQuote();
   buildRadioGroup('custSignatureGroup', 'custSignature', SIGNATURE_OPTIONS, defaultSignatureFor('customer'), 'renderCustomer');
   syncCustSignatureFromSupply();
@@ -13163,17 +13230,30 @@ function applyTextToCustomizableGroup(containerId, name, savedText, customValue,
     onRadioChange(containerId, name);
   }
 }
-function applyTextToPaymentGroup(savedText, containerId, name, renderFnName){
+function applyTextToPaymentGroup(savedText, containerId, name, renderFnName, customDaysId){
   containerId = containerId || 'paymentGroup';
   name = name || 'payment';
+  customDaysId = customDaysId || 'paymentCustomDays';
   if(!savedText){
     const blankRadio = document.querySelector(`input[name="${name}"][value="blank"]`);
     if(blankRadio){ blankRadio.checked = true; onRadioChange(containerId, name, renderFnName); }
     return;
   }
-  selectRadioByLabelText(name, containerId, savedText);
-  // No custom option exists for payment terms — if the saved text no longer
-  // matches any current option, the previous selection is simply left as-is.
+  if(selectRadioByLabelText(name, containerId, savedText)) return;
+  // Didn't match a fixed option, so this is either a custom number of days
+  // or terms text from a version that no longer offers that option. A
+  // custom-days order is recognised by its "<n> days from date of delivery"
+  // shape and restored into the Custom option; anything else leaves the
+  // existing selection alone, as before.
+  const m = new RegExp(`^(\\d+)\\s+${PAYMENT_CUSTOM_DAYS_SUFFIX}$`, 'i').exec(savedText.trim());
+  if(!m) return;
+  const customRadio = document.querySelector(`input[name="${name}"][value="pcustom"]`);
+  const daysEl = document.getElementById(customDaysId);
+  if(customRadio && daysEl){
+    daysEl.value = m[1];
+    customRadio.checked = true;
+    onRadioChange(containerId, name, renderFnName);
+  }
 }
 
 function collectQuoteState(){
@@ -13439,7 +13519,7 @@ async function applyQuoteState(data){
   // Same "resume tracking if it matched, keep the divergence if it didn't" rule
   // used for payment terms, applied here to the signature cascade too.
   supSignatureManuallySet = !!data.supSignatureKey && data.supSignatureKey !== data.signatureKey;
-  applyTextToPaymentGroup(data.supPaymentLineText, 'supPaymentGroup', 'supPayment', 'renderSupply');
+  applyTextToPaymentGroup(data.supPaymentLineText, 'supPaymentGroup', 'supPayment', 'renderSupply', 'supPaymentCustomDays');
   // If the saved Supply Confirmation terms matched the Quote's at save time, resume
   // tracking; if they'd already been set differently, keep that as a deliberate
   // divergence rather than snapping back to match on the next Quote change.
@@ -13456,7 +13536,7 @@ async function applyQuoteState(data){
   if(custSigRadio){ custSigRadio.checked = true; onRadioChange('custSignatureGroup','custSignature','renderCustomer'); }
   // Customer's signature cascades from Supply's, not the Quote's directly.
   custSignatureManuallySet = !!data.custSignatureKey && data.custSignatureKey !== data.supSignatureKey;
-  applyTextToPaymentGroup(data.custPaymentLineText, 'custPaymentGroup', 'custPayment', 'renderCustomer');
+  applyTextToPaymentGroup(data.custPaymentLineText, 'custPaymentGroup', 'custPayment', 'renderCustomer', 'custPaymentCustomDays');
   custPaymentManuallySet = !!data.custPaymentLineText && data.custPaymentLineText !== data.paymentLineText;
   document.getElementById('showCustomerOrderTotal').checked = !!data.showCustomerOrderTotal;
 
