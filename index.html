@@ -398,6 +398,27 @@
   .mgmt-tabs button.active{background:var(--teal-dark); color:#fff; border-color:var(--teal-dark);}
   .mgmt-tabs-select{background:#fff; border:1px solid var(--line); color:var(--teal-dark); font-size:13px; font-weight:600; padding:9px 14px; border-radius:8px; cursor:pointer; font-family:inherit; width:100%;}
   .mgmt-search{margin-bottom:12px;}
+  /* Ports: search + List/Map switch on one row, then one filter per column */
+  .ports-toolbar{display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap;}
+  .ports-toolbar .mgmt-search{flex:1 1 240px;}
+  .ports-view-toggle{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#fff; flex-shrink:0;}
+  .ports-view-toggle button{border:none; border-radius:0; background:transparent; color:var(--ink-soft); padding:8px 16px; font-size:12.5px;}
+  .ports-view-toggle button + button{border-left:1px solid var(--line);}
+  .ports-view-toggle button.active{background:var(--teal-dark); color:#fff;}
+  .ports-filters{display:grid; grid-template-columns:repeat(auto-fill, minmax(165px, 1fr)); gap:8px 10px; margin-bottom:10px; align-items:end;}
+  .ports-filter{display:flex; flex-direction:column; gap:3px; font-size:10.5px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.04em;}
+  .ports-filter select{font-size:12.5px; padding:6px 8px; text-transform:none; letter-spacing:normal; font-weight:500;}
+  .ports-filter.is-active select{border-color:var(--teal); background:#EFF7F8; font-weight:600;}
+  .ports-filters .btn-ghost{align-self:end;}
+  .ports-map-canvas{height:62vh; min-height:360px; border:1px solid var(--line-soft); border-radius:8px; background:#AAD3DF;}
+  .port-pin-marker{background:none; border:none;}
+  .port-pin-marker svg{display:block; overflow:visible;}
+  .ports-map-legend{display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:8px; font-size:12px; color:var(--ink-soft); align-items:center;}
+  .ports-map-legend span{display:inline-flex; align-items:center; gap:5px;}
+  .port-popup{font-family:var(--body); min-width:170px;}
+  .port-popup-name{font-weight:700; font-size:13.5px; color:var(--ink); margin-bottom:2px;}
+  .port-popup-meta{font-size:12px; color:var(--ink-soft); margin-bottom:2px;}
+  .port-popup button{margin-top:6px;}
   table.mgmt-table{width:100%; border-collapse:collapse; font-size:12.5px;}
   table.mgmt-table th{text-align:left; font-family:var(--disp); font-size:10.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--ink-soft); padding:6px 8px; border-bottom:2px solid var(--line);}
   table.mgmt-table td{padding:4px 6px; border-bottom:1px solid var(--line-soft); vertical-align:middle;}
@@ -1595,13 +1616,24 @@
         <div class="mgmt-add-row">
           <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('port')">+ Add new port</button>
         </div>
-        <div class="mgmt-search"><input type="text" id="portSearch" placeholder="Search ports, types, countries or regions..." oninput="renderPortTable()"></div>
+        <div class="ports-toolbar">
+          <div class="mgmt-search"><input type="text" id="portSearch" placeholder="Search ports, types, countries or regions..." oninput="renderPortTable()" aria-label="Search ports"></div>
+          <div class="ports-view-toggle" role="group" aria-label="Ports view">
+            <button type="button" id="portViewList" class="active" aria-pressed="true" onclick="setPortView('list')">List</button>
+            <button type="button" id="portViewMap" aria-pressed="false" onclick="setPortView('map')">Map</button>
+          </div>
+        </div>
+        <div class="ports-filters" id="portFilters"></div>
         <div class="mgmt-count" id="portCount"></div>
-        <div class="table-wrap">
+        <div class="table-wrap" id="portListWrap">
           <table class="mgmt-table mgmt-mergeable" id="portTable">
             <thead id="portTableHead"></thead>
             <tbody id="portTableBody"></tbody>
           </table>
+        </div>
+        <div id="portMapWrap" style="display:none;">
+          <div id="portMapCanvas" class="ports-map-canvas"></div>
+          <div class="ports-map-legend" id="portMapLegend"></div>
         </div>
       </div>
     </div>
@@ -13044,8 +13076,112 @@ async function reloadAllOrgLists(){
 
 
 /* ===================== MANAGE: PORTS ===================== */
+// The Ports list has two views of the same filtered set: the table (List)
+// and a Leaflet map of branded pins (Map). Search and the per-column filters
+// apply to both, so switching view never changes which ports you're looking
+// at. Filters are faceted: each dropdown only offers values that exist among
+// the ports matching the search and the OTHER filters, with a count, so it
+// can't lead to an empty result by accident.
+const PORT_FILTER_FIELDS = [
+  ['locationType', 'Type'],
+  ['country', 'Country'],
+  ['localRegion', 'Local region'],
+  ['oceanographicRegion', 'Oceanographic region'],
+  ['geographicRegion', 'Geographic region']
+];
+const PORT_FILTER_NOT_SET = '__not_set__'; // finds ports with that field blank
+let portFilters = {};
+let portView = 'list';
+try{ if(localStorage.getItem('ts-ports-view') === 'map') portView = 'map'; }catch(e){ /* private browsing - default to list */ }
+
+// Search matches the port name, type, country or any region - so "Greece",
+// "Marina" or "Mediterranean" narrows the list as well as a port name does.
+function portSearchText(p){
+  return [p.name, p.locationType, p.country, p.localRegion, p.oceanographicRegion, p.geographicRegion]
+    .map(x => (x || '').toLowerCase()).join('\n');
+}
+// exceptField lets a dropdown count its own options against everything
+// EXCEPT itself (otherwise picking "Greece" would leave only "Greece" to pick).
+function portMatchesFilters(p, exceptField){
+  for(const [field] of PORT_FILTER_FIELDS){
+    if(field === exceptField) continue;
+    const want = portFilters[field];
+    if(!want) continue;
+    const have = (p[field] || '').trim();
+    if(want === PORT_FILTER_NOT_SET ? have !== '' : have !== want) return false;
+  }
+  return true;
+}
+// escHtml leaves quotes alone (fine for text), but these values go inside a
+// value="..." attribute - a country/region containing " would break it.
+function portAttr(s){ return escHtml(s).replace(/"/g,'&quot;'); }
+function activePortFilterCount(){
+  return PORT_FILTER_FIELDS.filter(([f]) => portFilters[f]).length;
+}
+function renderPortFilters(q){
+  const bySearch = PORTS.filter(p => !q || portSearchText(p).includes(q));
+  let html = '';
+  PORT_FILTER_FIELDS.forEach(([field, label])=>{
+    const counts = new Map();
+    let notSet = 0;
+    bySearch.forEach(p=>{
+      if(!portMatchesFilters(p, field)) return;
+      const v = (p[field] || '').trim();
+      if(v) counts.set(v, (counts.get(v) || 0) + 1); else notSet++;
+    });
+    const current = portFilters[field] || '';
+    // Keep the chosen value listed even if another filter has since reduced
+    // it to zero, so the dropdown still shows what's actually selected.
+    if(current && current !== PORT_FILTER_NOT_SET && !counts.has(current)) counts.set(current, 0);
+    const total = Array.from(counts.values()).reduce((a, b) => a + b, 0) + notSet;
+    const values = Array.from(counts.keys()).sort((a, b) => a.localeCompare(b, undefined, {sensitivity:'base'}));
+    let opts = `<option value="">All (${total})</option>`;
+    values.forEach(v=>{
+      opts += `<option value="${portAttr(v)}"${v === current ? ' selected' : ''}>${escHtml(v)} (${counts.get(v)})</option>`;
+    });
+    if(notSet || current === PORT_FILTER_NOT_SET){
+      opts += `<option value="${PORT_FILTER_NOT_SET}"${current === PORT_FILTER_NOT_SET ? ' selected' : ''}>Not set (${notSet})</option>`;
+    }
+    html += `<label class="ports-filter${current ? ' is-active' : ''}">${escHtml(label)}` +
+      `<select data-field="${field}" onchange="onPortFilterChange(this)">${opts}</select></label>`;
+  });
+  if(activePortFilterCount()) html += `<button type="button" class="btn-ghost btn-sm" onclick="clearPortFilters()">Clear filters</button>`;
+  document.getElementById('portFilters').innerHTML = html;
+}
+function onPortFilterChange(sel){
+  portFilters[sel.dataset.field] = sel.value;
+  renderPortTable();
+}
+function clearPortFilters(){
+  portFilters = {};
+  renderPortTable();
+}
+function setPortView(view){
+  portView = view === 'map' ? 'map' : 'list';
+  try{ localStorage.setItem('ts-ports-view', portView); }catch(e){ /* fine to skip */ }
+  renderPortTable();
+}
+
 function renderPortTable(){
   const q = (document.getElementById('portSearch').value||'').toLowerCase();
+  renderPortFilters(q);
+  const isMap = portView === 'map';
+  document.getElementById('portViewList').classList.toggle('active', !isMap);
+  document.getElementById('portViewList').setAttribute('aria-pressed', String(!isMap));
+  document.getElementById('portViewMap').classList.toggle('active', isMap);
+  document.getElementById('portViewMap').setAttribute('aria-pressed', String(isMap));
+  document.getElementById('portListWrap').style.display = isMap ? 'none' : '';
+  document.getElementById('portMapWrap').style.display = isMap ? '' : 'none';
+
+  let filtered = PORTS.map((p,i)=>({p,i})).filter(({p})=> (!q || portSearchText(p).includes(q)) && portMatchesFilters(p));
+  let countText = `${filtered.length} of ${PORTS.length} ports`;
+  if(isMap){
+    const shown = renderPortMap(filtered, q);
+    if(shown < filtered.length) countText += ` · ${filtered.length - shown} without coordinates not shown on the map`;
+    document.getElementById('portCount').textContent = countText;
+    return;
+  }
+  document.getElementById('portCount').textContent = countText;
   const tbody = document.getElementById('portTableBody');
   tbody.innerHTML = '';
   // Country and the three region fields (all already loaded with each port
@@ -13060,13 +13196,7 @@ function renderPortTable(){
     mgmtSortTh('ports','oceanographicRegion','Oceanographic region','renderPortTable', 'mgmt-wide-col') +
     mgmtSortTh('ports','geographicRegion','Geographic region','renderPortTable', 'mgmt-wide-col') +
     '<th class="mgmt-compact-col">Details</th></tr>';
-  // Search matches the port name, type, country or any region - so "Greece",
-  // "Marina" or "Mediterranean" narrows the list as well as a port name does.
-  const portSearchText = p => [p.name, p.locationType, p.country, p.localRegion, p.oceanographicRegion, p.geographicRegion]
-    .map(x => (x || '').toLowerCase()).join('\n');
-  let filtered = PORTS.map((p,i)=>({p,i})).filter(({p})=> !q || portSearchText(p).includes(q));
   filtered = mgmtSortPairs(filtered, 'ports', pr=>pr.p[mgmtSort.ports.field]);
-  document.getElementById('portCount').textContent = `${filtered.length} of ${PORTS.length} ports`;
   filtered.forEach(({p,i})=>{
     const tr = document.createElement('tr');
     tr.onclick = () => openItemDetail('port', p.id);
@@ -13084,6 +13214,145 @@ function renderPortTable(){
     tbody.appendChild(tr);
   });
 }
+
+/* ---- Ports map ---- */
+// Map pin artwork, one per ports.location_type (design agreed 29 Sep 2026 -
+// see project doc 08). Each is drawn white-on-black as an SVG mask: white
+// shows the gold gradient, black cut-outs (windows, display panels) let the
+// purple pin body show through. The viewBox of each fits the artwork's
+// smallest enclosing circle to 90% of the pin head, so every icon is as
+// large as its shape allows. The Port pin is the logo's propeller mark.
+const PORT_PIN_ART = {
+  port: { viewBox: '-104.98 -90.90 1552.12 1552.12', art: "<g transform=\"translate(0,1376) scale(1,-1)\"><path d=\"M541 1374 c-4 -2 -13 -4 -28 -6 -6 -1 -15 -3 -19 -4 -5 -2 -12 -4 -17 -4 -8 -2 -26 -7 -35 -11 -3 -1 -8 -3 -11 -4 -4 -1 -9 -3 -11 -4 -3 -1 -8 -3 -12 -5 -4 -1 -8 -3 -10 -4 -2 -2 -6 -3 -8 -4 -3 -1 -7 -3 -8 -4 -2 -1 -5 -3 -8 -4 -6 -3 -20 -10 -35 -21 -32 -21 -85 -79 -100 -108 -1 -3 -3 -6 -4 -8 -5 -10 -10 -22 -11 -26 -1 -2 -2 -7 -4 -9 -1 -3 -3 -8 -3 -12 -1 -4 -3 -12 -5 -16 -5 -19 -5 -56 0 -72 0 -3 2 -10 4 -15 1 -5 3 -11 4 -13 1 -1 3 -5 4 -9 1 -3 3 -7 5 -9 1 -2 3 -5 3 -7 1 -3 6 -11 13 -21 26 -36 66 -74 121 -115 27 -21 34 -26 49 -34 2 -1 6 -3 9 -5 9 -6 15 -10 20 -12 2 -2 8 -5 13 -8 5 -3 11 -6 15 -8 3 -2 9 -5 14 -7 9 -5 16 -9 38 -21 9 -4 17 -8 19 -9 1 -1 5 -3 7 -4 2 -1 6 -3 7 -3 2 -2 6 -3 29 -14 4 -2 10 -5 13 -6 7 -3 10 -10 5 -13 -8 -6 -101 -7 -164 -3 -18 1 -19 1 -32 4 -5 1 -16 3 -24 3 -8 1 -19 3 -23 5 -5 1 -14 3 -20 3 -6 1 -15 3 -20 5 -6 2 -13 3 -17 4 -4 1 -9 2 -12 3 -3 2 -9 4 -13 5 -5 1 -9 3 -10 3 -2 1 -5 3 -8 4 -4 1 -8 3 -10 4 -3 2 -6 3 -8 4 -5 2 -38 17 -42 20 -1 0 -6 3 -9 5 -9 4 -31 16 -44 23 -15 9 -27 16 -42 24 -4 2 -9 5 -11 6 -26 14 -42 10 -56 -13 -6 -10 -13 -25 -15 -32 -1 -2 -2 -7 -4 -10 -10 -23 -12 -47 -12 -114 0 -66 3 -101 12 -126 2 -3 3 -9 4 -13 1 -4 3 -10 5 -14 2 -3 3 -6 3 -7 0 -1 2 -5 4 -10 2 -4 4 -9 4 -9 0 -2 11 -23 13 -27 1 -1 5 -7 8 -12 4 -6 10 -14 13 -18 4 -4 9 -11 13 -16 8 -10 31 -33 42 -41 11 -8 20 -14 23 -15 1 -1 4 -2 5 -3 5 -3 25 -11 32 -12 29 -4 81 1 107 10 3 1 9 3 13 5 3 1 9 3 12 5 3 2 6 3 7 3 1 0 6 2 17 9 5 2 11 5 14 7 2 1 7 4 9 6 2 1 7 5 11 7 7 4 14 9 23 16 4 2 9 7 13 9 3 2 9 7 12 10 4 2 12 9 18 13 38 30 110 101 163 160 23 26 26 29 30 26 2 -1 2 -14 -1 -24 -2 -5 -4 -12 -5 -17 0 -4 -2 -11 -4 -15 -1 -4 -3 -10 -4 -14 0 -4 -2 -9 -3 -11 -1 -2 -3 -8 -4 -13 -2 -5 -3 -10 -4 -12 -1 -2 -3 -7 -4 -12 -2 -5 -4 -10 -5 -13 -1 -2 -3 -6 -4 -10 0 -3 -2 -7 -4 -9 -1 -3 -3 -8 -4 -11 -1 -4 -3 -8 -4 -10 -1 -2 -2 -5 -3 -7 -3 -11 -28 -63 -37 -79 -2 -3 -6 -9 -8 -13 -14 -24 -33 -52 -50 -74 -14 -17 -27 -30 -79 -82 -55 -56 -59 -61 -59 -74 0 -23 36 -60 80 -82 3 -2 7 -4 9 -5 1 -1 5 -3 8 -4 2 -1 6 -2 9 -4 2 -1 6 -3 9 -4 3 -1 8 -3 11 -4 2 -2 7 -3 9 -4 3 -1 8 -2 11 -4 4 -1 9 -3 13 -4 3 -1 8 -2 11 -4 4 -1 11 -3 16 -4 11 -2 16 -4 18 -6 2 -3 139 -3 140 -1 1 3 6 5 17 7 6 1 12 3 14 4 2 1 6 3 10 4 23 7 60 30 82 50 13 12 33 39 37 49 1 1 2 5 4 8 1 3 3 8 4 12 1 3 2 10 4 16 7 24 6 96 0 121 -2 5 -4 14 -4 20 -1 5 -3 13 -4 18 -2 5 -3 11 -4 15 -1 4 -3 10 -5 15 -1 5 -3 11 -4 13 0 2 -2 8 -3 12 -2 4 -4 10 -5 14 0 3 -2 8 -3 10 -1 1 -3 6 -4 9 -1 4 -3 9 -4 12 -2 2 -4 7 -4 10 -1 4 -3 8 -4 11 -2 2 -3 7 -4 10 -1 3 -3 7 -4 9 -2 3 -3 6 -3 7 -1 1 -3 6 -5 11 -9 19 -12 25 -12 25 0 1 -7 17 -11 25 -1 2 -6 10 -10 18 -4 8 -11 21 -15 30 -8 15 -11 21 -20 38 -14 26 -15 28 -6 28 6 0 48 -27 84 -54 35 -27 76 -67 115 -110 15 -17 20 -24 33 -40 1 -2 4 -6 7 -11 10 -12 13 -17 19 -26 3 -5 7 -11 8 -13 2 -3 5 -8 7 -10 1 -3 4 -8 6 -11 4 -7 24 -46 24 -47 0 -1 1 -3 3 -6 1 -2 3 -6 4 -9 1 -2 3 -6 5 -10 1 -3 3 -7 3 -7 0 -1 2 -6 4 -10 19 -38 23 -46 24 -48 2 -2 4 -6 5 -8 3 -5 12 -14 17 -16 23 -11 90 35 133 92 2 3 7 9 10 13 11 15 25 37 36 58 3 6 11 22 12 24 0 1 1 5 3 8 1 3 3 8 4 10 1 3 2 7 4 10 1 3 3 9 4 13 1 4 2 10 4 13 1 3 3 9 3 13 1 4 3 12 4 18 9 37 9 92 1 124 -2 7 -4 15 -5 17 0 2 -2 8 -3 13 -2 4 -4 9 -5 12 -8 30 -46 69 -85 88 -5 3 -12 5 -14 6 -2 1 -7 2 -9 4 -3 1 -7 2 -10 3 -2 1 -8 2 -13 4 -5 2 -14 4 -20 4 -6 1 -13 3 -15 3 -26 7 -139 8 -179 2 -6 0 -21 -2 -35 -4 -13 -1 -28 -3 -34 -4 -5 -1 -16 -3 -25 -4 -8 -1 -19 -3 -24 -4 -5 -2 -15 -4 -21 -4 -6 -1 -16 -3 -20 -4 -5 -2 -13 -3 -17 -4 -4 -1 -11 -2 -16 -3 -18 -5 -20 3 -5 17 10 9 16 14 31 25 3 2 9 7 14 11 4 4 10 9 14 11 3 2 10 7 15 11 4 3 11 8 14 10 3 2 8 5 11 7 3 2 7 5 8 6 2 1 9 5 15 9 7 5 12 8 13 8 0 0 4 2 7 5 4 2 8 4 8 4 1 0 3 1 4 2 2 1 6 4 10 6 18 9 32 16 33 16 0 0 2 1 4 3 2 1 6 3 9 4 3 1 9 3 13 5 4 2 8 4 9 4 0 0 4 1 7 3 3 1 8 4 12 4 3 1 8 3 12 5 4 2 8 3 11 4 2 0 7 2 11 3 3 2 10 4 15 4 4 1 11 3 14 4 4 2 10 3 15 4 4 1 12 2 18 4 6 2 16 4 22 4 7 1 15 3 20 4 10 2 27 4 64 8 16 1 33 5 41 9 16 9 18 12 17 39 0 25 0 27 -10 57 -8 24 -32 69 -53 95 -2 3 -6 8 -10 13 -21 27 -67 73 -88 87 -2 1 -7 5 -12 8 -9 6 -16 10 -25 15 -4 2 -9 5 -10 5 -1 1 -5 3 -8 4 -4 2 -9 4 -11 5 -11 4 -28 9 -43 12 -8 2 -17 4 -21 4 -16 4 -59 3 -72 -1 -21 -6 -35 -11 -43 -17 -3 -1 -8 -5 -12 -8 -12 -8 -32 -27 -40 -38 -4 -6 -9 -12 -10 -14 -7 -8 -13 -18 -20 -31 -9 -16 -24 -48 -24 -50 0 0 -2 -4 -3 -8 -4 -7 -5 -10 -10 -27 -2 -5 -4 -12 -6 -16 -1 -4 -3 -10 -4 -14 -1 -4 -2 -11 -4 -16 -2 -5 -4 -12 -5 -17 0 -4 -2 -11 -3 -15 -2 -4 -4 -13 -5 -19 -1 -6 -3 -14 -4 -17 -1 -4 -3 -11 -4 -16 0 -6 -2 -15 -4 -20 -1 -6 -3 -16 -4 -23 0 -7 -2 -18 -4 -24 -1 -7 -3 -18 -4 -27 0 -8 -2 -20 -4 -27 -2 -15 -4 -28 -5 -50 0 -18 -1 -20 -5 -20 -3 0 -9 6 -10 10 -1 2 -3 6 -4 9 -2 3 -4 8 -5 12 0 3 -2 8 -4 10 -1 3 -3 8 -4 11 0 4 -2 8 -3 10 -1 2 -3 8 -4 12 -1 5 -3 11 -5 15 -1 3 -3 9 -3 13 -1 3 -3 9 -4 13 -2 3 -4 9 -4 14 -1 4 -3 11 -5 16 -1 5 -3 13 -3 19 -1 5 -3 14 -5 19 -1 5 -3 15 -4 24 0 8 -2 22 -4 30 -2 18 -3 23 -4 69 -2 57 1 110 5 133 1 3 3 12 3 19 1 7 3 17 5 22 1 6 3 16 4 24 1 7 3 18 4 23 3 11 4 41 2 46 -4 12 -16 21 -38 25 -10 2 -19 6 -19 7 0 2 -29 1 -32 -1z\"></path></g>" },
+  marina: { viewBox: '-2.71 8.91 69.09 69.09', art: "<path d=\"M3 37 H44 L42 46 H13 Q7 44.5 3 37 Z\"></path><path d=\"M13 37 L17 30 H38 L41 37 Z\"></path><path d=\"M20 30 L24 24 H35 L36.5 30 Z\"></path><rect x=\"29\" y=\"18.5\" width=\"2\" height=\"5.5\"></rect><rect x=\"26\" y=\"18\" width=\"8\" height=\"1.8\" rx=\"0.9\"></rect><rect x=\"19.5\" y=\"32.5\" width=\"7.5\" height=\"2.5\" rx=\"1\" fill=\"#000\"></rect><rect x=\"29\" y=\"32.5\" width=\"7.5\" height=\"2.5\" rx=\"1\" fill=\"#000\"></rect><rect x=\"25.5\" y=\"26\" width=\"8\" height=\"2.2\" rx=\"1\" fill=\"#000\"></rect><rect x=\"44\" y=\"35\" width=\"18\" height=\"4.5\" rx=\"1\"></rect><rect x=\"47\" y=\"39\" width=\"3.5\" height=\"17\"></rect><rect x=\"56.5\" y=\"39\" width=\"3.5\" height=\"17\"></rect><rect x=\"55\" y=\"30\" width=\"4\" height=\"5\" rx=\"1.2\"></rect><path d=\"M41 37 L55.5 32.5\" fill=\"none\" stroke=\"#fff\" style=\"stroke-width: 1.8; stroke-linecap: round\"></path><path d=\"M3 51 q3.5 -3 7 0 t7 0 t7 0 t7 0 t7 0 t6 0\" fill=\"none\" stroke=\"#fff\" style=\"stroke-width: 2.5; stroke-linecap: round\"></path>" },
+  anchorage: { viewBox: '0.08 -0.71 63.77 63.77', art: "<circle cx=\"32\" cy=\"10\" r=\"5.5\" fill=\"none\" stroke=\"#fff\" style=\"stroke-width: 4\"></circle><rect x=\"29.5\" y=\"15\" width=\"5\" height=\"40\" rx=\"2\"></rect><rect x=\"18\" y=\"21\" width=\"28\" height=\"5\" rx=\"2.5\"></rect><path d=\"M11.5 37 Q13 54.5 32 55.5 Q51 54.5 52.5 37\" fill=\"none\" stroke=\"#fff\" style=\"stroke-width: 5; stroke-linecap: round\"></path><path d=\"M5 41 L11.5 29.5 L18 41 Z\"></path><path d=\"M59 41 L52.5 29.5 L46 41 Z\"></path>" },
+  shipyard: { viewBox: '1.68 -1.51 66.92 66.92', art: "<rect x=\"34\" y=\"54\" width=\"17\" height=\"4\" rx=\"1\"></rect><rect x=\"40\" y=\"12\" width=\"5\" height=\"43\"></rect><rect x=\"41.3\" y=\"18\" width=\"2.4\" height=\"5\" fill=\"#000\"></rect><rect x=\"41.3\" y=\"26\" width=\"2.4\" height=\"5\" fill=\"#000\"></rect><rect x=\"41.3\" y=\"34\" width=\"2.4\" height=\"5\" fill=\"#000\"></rect><rect x=\"41.3\" y=\"42\" width=\"2.4\" height=\"5\" fill=\"#000\"></rect><rect x=\"14\" y=\"10\" width=\"38.5\" height=\"3.5\" rx=\"1\"></rect><path d=\"M40 10 L42.5 3 L45 10 Z\"></path><path d=\"M42.5 3.5 L16 10.5 M42.5 3.5 L51.5 10.5\" fill=\"none\" stroke=\"#fff\" style=\"stroke-width: 1.6\"></path><rect x=\"45\" y=\"13.5\" width=\"5.5\" height=\"5.5\" rx=\"1\"></rect><rect x=\"46.3\" y=\"14.8\" width=\"2.9\" height=\"2.4\" fill=\"#000\"></rect><rect x=\"19\" y=\"13.5\" width=\"6\" height=\"2.5\"></rect><path d=\"M22 16 V25\" fill=\"none\" stroke=\"#fff\" style=\"stroke-width: 2\"></path><rect x=\"19.5\" y=\"25\" width=\"5\" height=\"4\" rx=\"1\"></rect><path d=\"M22 29 L12 37 M22 29 L32 37\" fill=\"none\" stroke=\"#fff\" style=\"stroke-width: 1.6\"></path><path d=\"M6 37 H38 L35.5 45.5 H14 Q8.5 44 6 37 Z\"></path><path d=\"M13 37 L16.5 31.5 H30 L33 37 Z\"></path><rect x=\"18\" y=\"33.5\" width=\"11\" height=\"2\" rx=\"1\" fill=\"#000\"></rect>" },
+  fueldock: { viewBox: '-5.79 -3.08 69.52 69.52', art: "<rect x=\"13\" y=\"4\" width=\"32\" height=\"5\" rx=\"2\"></rect><rect x=\"15\" y=\"6\" width=\"28\" height=\"48\" rx=\"3\"></rect><rect x=\"19.5\" y=\"13\" width=\"19\" height=\"14\" rx=\"1.5\" fill=\"#000\"></rect><rect x=\"22\" y=\"15.5\" width=\"14\" height=\"3.5\" rx=\"0.8\"></rect><rect x=\"22\" y=\"21.5\" width=\"9\" height=\"3.5\" rx=\"0.8\"></rect><rect x=\"20\" y=\"32\" width=\"4.5\" height=\"4.5\" rx=\"1\" fill=\"#000\"></rect><rect x=\"26.75\" y=\"32\" width=\"4.5\" height=\"4.5\" rx=\"1\" fill=\"#000\"></rect><rect x=\"33.5\" y=\"32\" width=\"4.5\" height=\"4.5\" rx=\"1\" fill=\"#000\"></rect><rect x=\"19.5\" y=\"41\" width=\"19\" height=\"2\" rx=\"1\" fill=\"#000\"></rect><rect x=\"11\" y=\"53\" width=\"36\" height=\"5\" rx=\"1.5\"></rect><path d=\"M43 17 H47 Q51 17 51 21 V40 Q51 45 47 45 H43\" fill=\"none\" stroke=\"#fff\" style=\"stroke-width: 3; stroke-linecap: round\"></path>" },
+};
+const PORT_PIN_TYPE_KEYS = { 'Port':'port', 'Marina':'marina', 'Anchorage':'anchorage', 'Shipyard':'shipyard', 'Fuel Dock':'fueldock' };
+const PORT_PIN_LEGEND = [['Port','port'], ['Marina','marina'], ['Anchorage','anchorage'], ['Shipyard','shipyard'], ['Fuel Dock','fueldock']];
+const PORT_PIN_PATH = 'M24 60.5 C21 53 8 44 3.38 33 A22.5 22.5 0 1 1 44.62 33 C40 44 27 53 24 60.5 Z';
+function portPinKey(locationType){ return PORT_PIN_TYPE_KEYS[(locationType || '').trim()] || 'port'; }
+// The gradients, shadow and artwork masks are defined ONCE in a hidden sprite
+// and every marker references them by id - so 600 pins are 600 tiny SVGs,
+// not 600 copies of the artwork. Sized 0x0 rather than display:none, which
+// would stop the browser rendering gradients/masks referenced from it.
+function ensurePortPinDefs(){
+  if(document.getElementById('rfPinDefs')) return;
+  let masks = '';
+  Object.entries(PORT_PIN_ART).forEach(([key, a])=>{
+    masks += `<mask id="rfpin-art-${key}" maskUnits="userSpaceOnUse" x="0" y="0" width="48" height="62">` +
+      `<svg x="3" y="3" width="42" height="42" viewBox="${a.viewBox}" fill="#fff">${a.art}</svg></mask>`;
+  });
+  const holder = document.createElement('div');
+  holder.innerHTML = '<svg id="rfPinDefs" width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden;"><defs>' +
+    '<linearGradient id="rfpin-gold" gradientUnits="userSpaceOnUse" x1="0" y1="3" x2="0" y2="45"><stop offset="0" stop-color="#FBDBA1"/><stop offset="0.5" stop-color="#F7BF4A"/><stop offset="1" stop-color="#C48F26"/></linearGradient>' +
+    '<radialGradient id="rfpin-purple" gradientUnits="userSpaceOnUse" cx="17" cy="13" r="42"><stop offset="0" stop-color="#341D6D"/><stop offset="0.6" stop-color="#1F064F"/><stop offset="1" stop-color="#1F064F"/></radialGradient>' +
+    '<filter id="rfpin-shadow" x="-30%" y="-20%" width="160%" height="150%"><feDropShadow dx="0" dy="1.5" stdDeviation="1.2" flood-color="#1F064F" flood-opacity="0.4"/></filter>' +
+    masks + '</defs></svg>';
+  document.body.appendChild(holder.firstChild);
+}
+function portPinSvg(key, width){
+  const h = Math.round(width * 62 / 48 * 100) / 100;
+  return `<svg viewBox="0 0 48 62" width="${width}" height="${h}" aria-hidden="true" focusable="false"><g filter="url(#rfpin-shadow)">` +
+    `<path d="${PORT_PIN_PATH}" fill="url(#rfpin-purple)" stroke="#F7BF4A" stroke-width="1.5" stroke-linejoin="round"/>` +
+    `<rect x="3" y="3" width="42" height="42" fill="url(#rfpin-gold)" mask="url(#rfpin-art-${key})"/></g></svg>`;
+}
+const portPinIconCache = {};
+function portPinIcon(locationType){
+  const key = portPinKey(locationType);
+  if(!portPinIconCache[key]){
+    // 32 wide -> 41.3 tall; the anchor is the pin's tip (24,60.5 in the 48x62 viewBox).
+    portPinIconCache[key] = L.divIcon({ className:'port-pin-marker', html: portPinSvg(key, 32),
+      iconSize:[32, 41], iconAnchor:[16, 40], popupAnchor:[0, -36] });
+  }
+  return portPinIconCache[key];
+}
+function portPopupHtml(p){
+  const typeCountry = [p.locationType, p.country].filter(Boolean).join(' · ');
+  const regions = [p.localRegion, p.oceanographicRegion, p.geographicRegion].filter(Boolean).join(' · ');
+  return `<div class="port-popup"><div class="port-popup-name">${escHtml(p.name)}</div>` +
+    (typeCountry ? `<div class="port-popup-meta">${escHtml(typeCountry)}</div>` : '') +
+    (regions ? `<div class="port-popup-meta">${escHtml(regions)}</div>` : '') +
+    (isRealUuid(p.id) ? `<button type="button" class="btn-primary btn-sm" onclick="openItemDetail('port','${p.id}')">Open details</button>` : '') +
+    `</div>`;
+}
+let portMapInstance = null;
+let portMapLayer = null;
+let portMapFitKey = null;     // search+filters the map was last zoomed to
+let portMapPendingBounds = null; // zoom waiting for the map to become visible
+function portHasCoords(p){
+  return p.latitude !== '' && p.latitude !== null && p.latitude !== undefined && isFinite(Number(p.latitude))
+    && p.longitude !== '' && p.longitude !== null && p.longitude !== undefined && isFinite(Number(p.longitude));
+}
+function fitPortMap(bounds){
+  if(!portMapInstance || !bounds) return;
+  const canvas = document.getElementById('portMapCanvas');
+  if(!canvas.offsetWidth){ portMapPendingBounds = bounds; return; } // hidden: zoom once it's shown
+  portMapPendingBounds = null;
+  portMapInstance.invalidateSize();
+  // animate:false matters - Leaflet silently DROPS a new zoom request while a
+  // previous zoom animation is still running, so changing two filters in
+  // quick succession would leave the map showing the first result's area.
+  portMapInstance.fitBounds(bounds, { padding:[40, 40], maxZoom:11, animate:false });
+}
+// Returns how many of the filtered ports were placed on the map.
+function renderPortMap(filtered, q){
+  const canvas = document.getElementById('portMapCanvas');
+  const legend = document.getElementById('portMapLegend');
+  if(typeof L === 'undefined'){
+    canvas.innerHTML = '<div class="hint" style="padding:16px;">Map did not load — check your internet connection and reload.</div>';
+    legend.innerHTML = '';
+    return 0;
+  }
+  ensurePortPinDefs();
+  if(!portMapInstance){
+    portMapInstance = L.map('portMapCanvas', { zoomControl:true, scrollWheelZoom:true, worldCopyJump:true, minZoom:2 }).setView([30, 10], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
+    }).addTo(portMapInstance);
+    portMapLayer = L.layerGroup().addTo(portMapInstance);
+    // The map is often (re)shown after being hidden - switching tab, coming
+    // back from a port's detail page - and Leaflet needs telling its size
+    // changed, or it draws grey tiles. Also applies any zoom that was asked
+    // for while it was hidden.
+    if(typeof ResizeObserver !== 'undefined'){
+      new ResizeObserver(()=>{
+        if(!canvas.offsetWidth) return;
+        portMapInstance.invalidateSize();
+        if(portMapPendingBounds) fitPortMap(portMapPendingBounds);
+      }).observe(canvas);
+    }
+  }
+  portMapLayer.clearLayers();
+  const points = [];
+  const typeCounts = {};
+  filtered.forEach(({p})=>{
+    if(!portHasCoords(p)) return;
+    const ll = [Number(p.latitude), Number(p.longitude)];
+    L.marker(ll, { icon: portPinIcon(p.locationType), title: p.name, alt: p.name })
+      .bindPopup(portPopupHtml(p))
+      .addTo(portMapLayer);
+    points.push(ll);
+    const key = portPinKey(p.locationType);
+    typeCounts[key] = (typeCounts[key] || 0) + 1;
+  });
+  legend.innerHTML = PORT_PIN_LEGEND.map(([label, key]) =>
+    `<span>${portPinSvg(key, 16)}${escHtml(label)} (${typeCounts[key] || 0})</span>`).join('');
+  // Zoom to fit whatever's showing - but only when the search or filters
+  // actually changed, so saving a port or returning from its detail page
+  // doesn't throw away where you'd panned to.
+  const fitKey = PORTS.length + '|' + q + '|' + JSON.stringify(portFilters);
+  if(fitKey !== portMapFitKey){
+    portMapFitKey = fitKey;
+    if(points.length) fitPortMap(L.latLngBounds(points));
+  } else if(portMapPendingBounds && canvas.offsetWidth){
+    // A zoom asked for while the map was hidden, and we're visible again.
+    fitPortMap(portMapPendingBounds);
+  }
+  return points.length;
+}
+
 async function editPort(i, value){
   PORTS[i].name = value;
   await saveList('ql-ports', PORTS);
