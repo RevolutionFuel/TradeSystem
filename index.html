@@ -1595,10 +1595,10 @@
         <div class="mgmt-add-row">
           <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('port')">+ Add new port</button>
         </div>
-        <div class="mgmt-search"><input type="text" id="portSearch" placeholder="Search ports..." oninput="renderPortTable()"></div>
+        <div class="mgmt-search"><input type="text" id="portSearch" placeholder="Search ports, countries or regions..." oninput="renderPortTable()"></div>
         <div class="mgmt-count" id="portCount"></div>
         <div class="table-wrap">
-          <table class="mgmt-table">
+          <table class="mgmt-table mgmt-mergeable" id="portTable">
             <thead id="portTableHead"></thead>
             <tbody id="portTableBody"></tbody>
           </table>
@@ -13048,16 +13048,36 @@ function renderPortTable(){
   const q = (document.getElementById('portSearch').value||'').toLowerCase();
   const tbody = document.getElementById('portTableBody');
   tbody.innerHTML = '';
-  document.getElementById('portTableHead').innerHTML = '<tr>' + mgmtSortTh('ports','name','Port','renderPortTable') + '</tr>';
-  let filtered = PORTS.map((p,i)=>({p,i})).filter(({p})=> !q || p.name.toLowerCase().includes(q));
+  // Country and the three region fields (all already loaded with each port
+  // by TS.fetchPorts) shown as sortable columns, same layout as Vessels: on
+  // narrower screens (<=1100px, via .mgmt-mergeable) they collapse into one
+  // stacked "Details" column rather than forcing a horizontal scroll.
+  document.getElementById('portTableHead').innerHTML = '<tr>' +
+    mgmtSortTh('ports','name','Port','renderPortTable') +
+    mgmtSortTh('ports','country','Country','renderPortTable', 'mgmt-wide-col') +
+    mgmtSortTh('ports','localRegion','Local region','renderPortTable', 'mgmt-wide-col') +
+    mgmtSortTh('ports','oceanographicRegion','Oceanographic region','renderPortTable', 'mgmt-wide-col') +
+    mgmtSortTh('ports','geographicRegion','Geographic region','renderPortTable', 'mgmt-wide-col') +
+    '<th class="mgmt-compact-col">Details</th></tr>';
+  // Search matches the port name, country or any region - so "Greece" or
+  // "Mediterranean" narrows the list as well as a port name does.
+  const portSearchText = p => [p.name, p.country, p.localRegion, p.oceanographicRegion, p.geographicRegion]
+    .map(x => (x || '').toLowerCase()).join('\n');
+  let filtered = PORTS.map((p,i)=>({p,i})).filter(({p})=> !q || portSearchText(p).includes(q));
   filtered = mgmtSortPairs(filtered, 'ports', pr=>pr.p[mgmtSort.ports.field]);
   document.getElementById('portCount').textContent = `${filtered.length} of ${PORTS.length} ports`;
   filtered.forEach(({p,i})=>{
     const tr = document.createElement('tr');
     tr.onclick = () => openItemDetail('port', p.id);
+    const compactLines = [p.country, p.localRegion, p.oceanographicRegion, p.geographicRegion]
+      .filter(Boolean).join(' · ');
     tr.innerHTML = `
       <td class="mgmt-item-name">${escHtml(p.name)}</td>
-      
+      <td class="mgmt-wide-col">${escHtml(p.country || '—')}</td>
+      <td class="mgmt-wide-col">${escHtml(p.localRegion || '—')}</td>
+      <td class="mgmt-wide-col">${escHtml(p.oceanographicRegion || '—')}</td>
+      <td class="mgmt-wide-col">${escHtml(p.geographicRegion || '—')}</td>
+      <td class="mgmt-compact-col">${escHtml(compactLines || '—')}</td>
     `;
     tbody.appendChild(tr);
   });
