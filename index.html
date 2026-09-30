@@ -13458,7 +13458,7 @@ function fitPortMap(bounds){
 // Base maps for every Leaflet map in the app. Two backgrounds to choose from
 // - "Street" (OpenStreetMap) and "Ocean" (MapTiler Ocean: seabed depth
 // shading + contours) - plus the OpenSeaMap sea-marks overlay (buoys,
-// lights, harbour marks). The switch sits top-right; Street by default, the last background
+// lights, harbour marks). The switch sits top-right; Ocean by default, the last background
 // picked is remembered (localStorage) for every map.
 // MapTiler key: free plan (trial - commercial use needs a paid plan), locked
 // to revolutionfuel.github.io / revolutionfuel.com in the MapTiler account,
@@ -13527,11 +13527,11 @@ function addMapTiles(map){
     attribution: 'Sea marks &copy; <a href="https://www.openseamap.org" target="_blank" rel="noopener">OpenSeaMap</a> contributors',
     maxZoom: 18, zIndex: 5
   });
-  // Street is the default; Ocean is opt-in while it's on trial. The last
-  // choice is remembered.
-  let pref = 'street';
-  try { pref = localStorage.getItem(MAP_BASE_PREF) || 'street'; } catch(e){}
-  (pref === 'ocean' ? ocean : street).addTo(map);
+  // Ocean is the default (John, 30 Sep); anyone who has picked Street keeps
+  // it - the last choice is remembered per device.
+  let pref = 'ocean';
+  try { pref = localStorage.getItem(MAP_BASE_PREF) || 'ocean'; } catch(e){}
+  (pref === 'street' ? street : ocean).addTo(map);
   seamarks.addTo(map);
 
   // MapTiler logo, shown only while the Ocean background is on.
