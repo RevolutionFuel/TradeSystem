@@ -557,6 +557,11 @@
     .summary-grid-row, .summary-products-grid, .summary-products-header{grid-template-columns:1fr;}
   }
 .maptiler-logo img{display:block;}
+.country-products{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;}
+.country-product-chip{display:inline-block;padding:5px 12px;border-radius:999px;border:1px solid var(--line, #d9dce6);background:var(--surface, #fff);color:var(--ink, #1c1b3a);font:inherit;font-size:13px;font-weight:600;cursor:default;}
+button.country-product-chip{cursor:pointer;}
+button.country-product-chip:hover{border-color:#F7BF4A;}
+.country-products-edit{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 16px;margin-top:4px;}
 </style>
 </head>
 <body>
@@ -11764,6 +11769,7 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'name', label:'Name', type:'text'},
       {key:'iso2', label:'ISO code (2 letters, e.g. GR)', type:'text'},
       {key:'aliasesText', label:'Other names it goes by (comma-separated)', type:'text'},
+      {key:'productIds', label:'Products available', type:'country-products'},
       {key:'slug', viewLabel:'Web address', label:'Web address (slug) — stays fixed if renamed; clear it to regenerate', type:'text'},
       {key:'notes', label:'Notes', type:'textarea'}
     ],
@@ -12234,6 +12240,11 @@ function renderItemDetail(){
   deleteBtn.style.display = (deletableKinds.includes(itemDetailState.kind) && !itemDetailState.editMode && !itemDetailState.isNew && isRealUuid(item.id)) ? '' : 'none';
   let anyFieldShown = false;
   const renderOneField = f=>{
+    if(f.type === 'country-products'){
+      const html = countryProductsFieldHtml(item, f, itemDetailState.editMode);
+      if(html && !itemDetailState.editMode) anyFieldShown = true;
+      return html;
+    }
     const value = itemDetailFieldValue(item, f.key) || '';
     if(!itemDetailState.editMode){
       if(f.hideInView) return '';
@@ -12578,6 +12589,10 @@ async function saveItemDetail(){
   schema.fields.forEach(f=>{
     const el = document.getElementById(itemDetailInputId(f.key));
     if(!el) return;
+    if(f.type === 'country-products'){
+      itemDetailSetFieldValue(item, f.key, [...el.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value));
+      return;
+    }
     const raw = f.type === 'checkbox' ? el.checked : el.value;
     itemDetailSetFieldValue(item, f.key, typeof raw === 'string' ? raw.trim() : raw);
   });
@@ -13649,14 +13664,15 @@ async function fetchPlaceRows(table, columns, cacheKey){
 }
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, {sensitivity:'base'});
 async function loadCountries(){
-  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes', 'ts-countries-cache');
+  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes, product_ids', 'ts-countries-cache');
   if(!rows){
     const names = Array.from(new Set((PORTS || []).map(p => (p.country || '').trim()).filter(Boolean)));
     rows = names.map(n => ({ id: '', name: n, slug: '', iso2: '', aliases: [], notes: '' }));
   }
   COUNTRIES = rows.map(r => ({
     id: r.id, name: r.name, slug: r.slug || '', iso2: r.iso2 || '', aliases: r.aliases || [],
-    aliasesText: (r.aliases || []).join(', '), notes: r.notes || '', _savedName: r.name, _savedSlug: r.slug || ''
+    aliasesText: (r.aliases || []).join(', '), notes: r.notes || '', productIds: r.product_ids || [],
+    _savedName: r.name, _savedSlug: r.slug || ''
   })).sort(byName);
 }
 const ISLAND_SHARED_LABEL = '— shared between countries —';
@@ -13813,6 +13829,44 @@ function renderIslandTable(){
   });
 }
 function parseAliases(text){ return (text || '').split(',').map(x => x.trim()).filter(Boolean); }
+// The fixed set of products a country can be marked as offering (John,
+// 30 Sep). Stored on the country as product ids (countries.product_ids) so
+// each links to its product page; the label shown is the product's current
+// name, falling back to the name here if the product isn't loaded.
+const COUNTRY_PRODUCT_OPTIONS = [
+  { id: '60135265-774c-41b6-82eb-9e51783b9cbf', name: 'Auto Gas Oil' },
+  { id: '5d56225b-9c1d-4018-ae11-467fce50768a', name: 'Automotive Diesel Oil' },
+  { id: 'c113ec83-71b4-47cb-904a-1af06e5af32b', name: 'Marine Gas Oil' },
+  { id: '0de1a202-f890-403e-bb8b-ea07c29b65bd', name: 'Ultra Low Sulphur Diesel' },
+  { id: 'b69ce9c6-8ad0-4c9c-a0c8-4e89745b797f', name: 'Lubricants and Greases' },
+  { id: 'bd3b42ec-fa4f-40dd-a90d-9226fcbe752c', name: 'Jet A1' }
+];
+function countryProductLabel(opt){
+  const p = (PRODUCTS || []).find(x => x.id === opt.id);
+  return (p && p.name) || opt.name;
+}
+function countryProductsFieldHtml(item, f, editMode){
+  const chosen = new Set(Array.isArray(item.productIds) ? item.productIds : []);
+  if(editMode){
+    const fid = itemDetailInputId(f.key);
+    return `<div class="item-detail-field">
+      <span class="item-detail-label">${escHtml(f.label)}</span>
+      <div id="${fid}" class="country-products-edit">${COUNTRY_PRODUCT_OPTIONS.map(o =>
+        `<label class="opt-inline"><input type="checkbox" value="${escAttr(o.id)}" ${chosen.has(o.id) ? 'checked' : ''}> ${escHtml(countryProductLabel(o))}</label>`).join('')}</div>
+    </div>`;
+  }
+  const shown = COUNTRY_PRODUCT_OPTIONS.filter(o => chosen.has(o.id));
+  if(!shown.length) return '';
+  return `<div class="item-detail-field">
+    <span class="item-detail-label">${escHtml(f.viewLabel || f.label)}</span>
+    <div class="country-products">${shown.map(o => {
+      const linked = (PRODUCTS || []).some(x => x.id === o.id);
+      return linked
+        ? `<button type="button" class="country-product-chip" onclick="openItemDetail('product', '${o.id}')">${escHtml(countryProductLabel(o))}</button>`
+        : `<span class="country-product-chip">${escHtml(countryProductLabel(o))}</span>`;
+    }).join('')}</div>
+  </div>`;
+}
 async function saveCountryRemote(item){
   item.iso2 = (item.iso2 || '').trim().toUpperCase();
   if(item.iso2 && !/^[A-Z]{2}$/.test(item.iso2)){
@@ -13820,7 +13874,8 @@ async function saveCountryRemote(item){
     item.iso2 = '';
   }
   item.aliases = parseAliases(item.aliasesText);
-  const row = { name: item.name, iso2: item.iso2 || null, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null };
+  const row = { name: item.name, iso2: item.iso2 || null, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null,
+    product_ids: Array.isArray(item.productIds) ? item.productIds : [] };
   const oldName = item._savedName;
   if(!window.TS || !window.TS.getClient) return;
   try{
@@ -13841,7 +13896,7 @@ async function saveCountryRemote(item){
     }
     item._savedName = item.name;
     COUNTRIES.sort(byName);
-    writePlaceCache('ts-countries-cache', COUNTRIES, c => ({id:c.id, name:c.name, slug:c.slug, iso2:c.iso2, aliases:c.aliases, notes:c.notes}));
+    writePlaceCache('ts-countries-cache', COUNTRIES, c => ({id:c.id, name:c.name, slug:c.slug, iso2:c.iso2, aliases:c.aliases, notes:c.notes, product_ids:c.productIds || []}));
   }catch(e){
     placeSaveError(e, 'name, ISO code or web address', item.name);
     item.slug = item._savedSlug || '';
