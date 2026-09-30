@@ -13466,23 +13466,69 @@ function fitPortMap(bounds){
 // the MapTiler logo on the map while Ocean is showing.
 const MAPTILER_KEY = 'Zmoqkdc0jG25vtz9HcDw';
 const MAP_BASE_PREF = 'ts-map-base';
+const MAPLIBRE_JS = 'https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js';
+const MAPLIBRE_CSS = 'https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css';
+const MAPLIBRE_LEAFLET_JS = 'https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js';
+const OCEAN_STYLE_URL = 'https://api.maptiler.com/maps/ocean-v4/style.json?key=' + MAPTILER_KEY;
+const OCEAN_ATTRIBUTION = '<a href="https://www.maptiler.com/copyright/" target="_blank" rel="noopener">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">&copy; OpenStreetMap contributors</a>';
+let maplibreLoading = null;
+function loadMaplibre(){
+  if(window.maplibregl && L.maplibreGL) return Promise.resolve();
+  if(maplibreLoading) return maplibreLoading;
+  const script = src => new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.src = src; el.onload = resolve; el.onerror = () => reject(new Error('Could not load ' + src));
+    document.head.appendChild(el);
+  });
+  if(!document.querySelector('link[data-maplibre]')){
+    const css = document.createElement('link');
+    css.rel = 'stylesheet'; css.href = MAPLIBRE_CSS; css.setAttribute('data-maplibre', '');
+    document.head.appendChild(css);
+  }
+  maplibreLoading = script(MAPLIBRE_JS).then(() => script(MAPLIBRE_LEAFLET_JS))
+    .catch(err => { maplibreLoading = null; throw err; });
+  return maplibreLoading;
+}
+// A Leaflet layer that shows MapTiler Ocean via MapLibre GL, loading MapLibre
+// on first use. Fires 'fail' if it can't get the map up at all. Built on
+// first call, not at startup, so a missing Leaflet can't break the app.
+let OceanLayer = null;
+function makeOceanLayer(){
+  if(!OceanLayer) OceanLayer = L.Layer.extend({
+  getAttribution(){ return OCEAN_ATTRIBUTION; },
+  onAdd(map){
+    this._wanted = true;
+    loadMaplibre().then(() => {
+      if(!this._wanted || this._gl || !this._map) return;
+      this._gl = L.maplibreGL({ style: OCEAN_STYLE_URL, attributionControl: false, interactive: false });
+      this._gl.addTo(map);
+      const gl = this._gl.getMaplibreMap();
+      let loaded = false;
+      gl.once('load', () => { loaded = true; this.fire('ready'); });
+      gl.on('error', () => { if(!loaded) this.fire('fail'); });
+    }).catch(() => { if(this._wanted) this.fire('fail'); });
+  },
+  onRemove(map){
+    this._wanted = false;
+    if(this._gl){ map.removeLayer(this._gl); this._gl = null; }
+  }
+  });
+  return new OceanLayer();
+}
 function addMapTiles(map){
   const street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
   });
-  // 512px tiles (zoomOffset -1) = a quarter of the requests of 256px tiles,
-  // which keeps us well inside the plan's monthly allowance. WebP rather than
-  // PNG: the depth shading compresses far better, so tiles arrive much faster.
-  const ocean = L.tileLayer('https://api.maptiler.com/maps/ocean-v4/{z}/{x}/{y}.webp?key=' + MAPTILER_KEY, {
-    tileSize: 512, zoomOffset: -1, maxZoom: 18, crossOrigin: true,
-    attribution: '<a href="https://www.maptiler.com/copyright/" target="_blank" rel="noopener">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">&copy; OpenStreetMap contributors</a>'
-  });
+  // Ocean is drawn in the browser from MapTiler's vector data (MapLibre GL),
+  // not downloaded as finished images - the image version was far too slow
+  // (30 Sep). MapLibre (~1 MB) is only fetched the first time Ocean is shown.
+  const ocean = makeOceanLayer();
   const seamarks = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
     attribution: 'Sea marks &copy; <a href="https://www.openseamap.org" target="_blank" rel="noopener">OpenSeaMap</a> contributors',
     maxZoom: 18, zIndex: 5
   });
-  // Street is the default: Ocean tiles are slow to arrive (30 Sep), so Ocean
-  // is opt-in until that's solved. The last choice is remembered.
+  // Street is the default; Ocean is opt-in while it's on trial. The last
+  // choice is remembered.
   let pref = 'street';
   try { pref = localStorage.getItem(MAP_BASE_PREF) || 'street'; } catch(e){}
   (pref === 'ocean' ? ocean : street).addTo(map);
@@ -13498,17 +13544,14 @@ function addMapTiles(map){
   };
   if(map.hasLayer(ocean)) logo.addTo(map);
 
-  // If Ocean tiles fail (key refused, allowance used up) fall back to Street
-  // rather than leave a blank map. A few stray failures are tolerated.
-  let oceanOk = 0, oceanErr = 0, fallingBack = false;
-  ocean.on('tileload', () => { oceanOk++; });
-  ocean.on('tileerror', () => {
-    oceanErr++;
-    if(oceanErr >= 4 && oceanOk === 0 && map.hasLayer(ocean)){
-      fallingBack = true;
-      map.removeLayer(ocean); street.addTo(map); street.bringToBack(); logo.remove();
-      fallingBack = false;
-    }
+  // If Ocean can't load (MapLibre blocked, key refused, allowance used up)
+  // fall back to Street rather than leave a blank map.
+  let fallingBack = false;
+  ocean.on('fail', () => {
+    if(!map.hasLayer(ocean)) return;
+    fallingBack = true;
+    map.removeLayer(ocean); street.addTo(map); logo.remove();
+    fallingBack = false;
   });
 
   map.on('baselayerchange', e => {
