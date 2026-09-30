@@ -555,6 +555,7 @@
   @media (max-width:640px){
     .summary-grid-row, .summary-products-grid, .summary-products-header{grid-template-columns:1fr;}
   }
+.maptiler-logo img{display:block;}
 </style>
 </head>
 <body>
@@ -13453,18 +13454,67 @@ function fitPortMap(bounds){
   // quick succession would leave the map showing the first result's area.
   portMapInstance.fitBounds(bounds, { padding:[40, 40], maxZoom:11, animate:false });
 }
-// Base map for every Leaflet map in the app: OpenStreetMap streets with the
-// OpenSeaMap sea-marks overlay (buoys, lights, harbour marks) on top.
-// A small switch in the corner turns the sea marks off/on.
+// Base maps for every Leaflet map in the app. Two backgrounds to choose from
+// - "Street" (OpenStreetMap) and "Ocean" (MapTiler Ocean: seabed depth
+// shading + contours) - plus the OpenSeaMap sea-marks overlay (buoys,
+// lights, harbour marks). The switch sits top-right; the last background
+// picked is remembered (localStorage) for every map.
+// MapTiler key: free plan (trial - commercial use needs a paid plan), locked
+// to revolutionfuel.github.io / revolutionfuel.com in the MapTiler account,
+// so it is safe to sit in public page source. The free plan also requires
+// the MapTiler logo on the map while Ocean is showing.
+const MAPTILER_KEY = 'Zmoqkdc0jG25vtz9HcDw';
+const MAP_BASE_PREF = 'ts-map-base';
 function addMapTiles(map){
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  const street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
-  }).addTo(map);
+  });
+  // 512px tiles (zoomOffset -1) = a quarter of the requests of 256px tiles,
+  // which keeps us well inside the plan's monthly allowance.
+  const ocean = L.tileLayer('https://api.maptiler.com/maps/ocean-v4/{z}/{x}/{y}.png?key=' + MAPTILER_KEY, {
+    tileSize: 512, zoomOffset: -1, maxZoom: 18, crossOrigin: true,
+    attribution: '<a href="https://www.maptiler.com/copyright/" target="_blank" rel="noopener">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">&copy; OpenStreetMap contributors</a>'
+  });
   const seamarks = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
     attribution: 'Sea marks &copy; <a href="https://www.openseamap.org" target="_blank" rel="noopener">OpenSeaMap</a> contributors',
-    maxZoom: 18, opacity: 1
-  }).addTo(map);
-  L.control.layers(null, { 'Sea marks': seamarks }, { position: 'topright', collapsed: false }).addTo(map);
+    maxZoom: 18, zIndex: 5
+  });
+  let pref = 'ocean';
+  try { pref = localStorage.getItem(MAP_BASE_PREF) || 'ocean'; } catch(e){}
+  (pref === 'street' ? street : ocean).addTo(map);
+  seamarks.addTo(map);
+
+  // MapTiler logo, shown only while the Ocean background is on.
+  const logo = L.control({ position: 'bottomleft' });
+  logo.onAdd = function(){
+    const a = L.DomUtil.create('a', 'maptiler-logo');
+    a.href = 'https://www.maptiler.com'; a.target = '_blank'; a.rel = 'noopener';
+    a.innerHTML = '<img src="https://api.maptiler.com/resources/logo.svg" alt="MapTiler" height="22">';
+    return a;
+  };
+  if(map.hasLayer(ocean)) logo.addTo(map);
+
+  // If Ocean tiles fail (key refused, allowance used up) fall back to Street
+  // rather than leave a blank map. A few stray failures are tolerated.
+  let oceanOk = 0, oceanErr = 0, fallingBack = false;
+  ocean.on('tileload', () => { oceanOk++; });
+  ocean.on('tileerror', () => {
+    oceanErr++;
+    if(oceanErr >= 4 && oceanOk === 0 && map.hasLayer(ocean)){
+      fallingBack = true;
+      map.removeLayer(ocean); street.addTo(map); street.bringToBack(); logo.remove();
+      fallingBack = false;
+    }
+  });
+
+  map.on('baselayerchange', e => {
+    const isOcean = e.layer === ocean;
+    if(isOcean) logo.addTo(map); else logo.remove();
+    if(fallingBack) return; // not the user's choice - keep their saved pick
+    try { localStorage.setItem(MAP_BASE_PREF, isOcean ? 'ocean' : 'street'); } catch(err){}
+  });
+  L.control.layers({ 'Street': street, 'Ocean': ocean }, { 'Sea marks': seamarks },
+    { position: 'topright', collapsed: false }).addTo(map);
   return seamarks;
 }
 
