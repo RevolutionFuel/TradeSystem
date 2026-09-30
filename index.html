@@ -562,6 +562,9 @@
 button.country-product-chip{cursor:pointer;}
 button.country-product-chip:hover{border-color:#F7BF4A;}
 .country-products-edit{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 16px;margin-top:4px;}
+.tax-guidance-text{white-space:pre-wrap;line-height:1.5;}
+.tax-guidance-updated{margin-top:4px;}
+.tax-guidance-input{width:100%;min-height:180px;}
 </style>
 </head>
 <body>
@@ -11770,6 +11773,8 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'iso2', label:'ISO code (2 letters, e.g. GR)', type:'text'},
       {key:'aliasesText', label:'Other names it goes by (comma-separated)', type:'text'},
       {key:'productIds', label:'Products available', type:'country-products'},
+      {key:'taxTypes', label:'Fuel tax treatments available', type:'multi-check', get options(){ return FUEL_TAX_TYPES; }},
+      {key:'taxGuidance', label:'Tax guidance', type:'tax-guidance'},
       {key:'slug', viewLabel:'Web address', label:'Web address (slug) — stays fixed if renamed; clear it to regenerate', type:'text'},
       {key:'notes', label:'Notes', type:'textarea'}
     ],
@@ -12240,8 +12245,10 @@ function renderItemDetail(){
   deleteBtn.style.display = (deletableKinds.includes(itemDetailState.kind) && !itemDetailState.editMode && !itemDetailState.isNew && isRealUuid(item.id)) ? '' : 'none';
   let anyFieldShown = false;
   const renderOneField = f=>{
-    if(f.type === 'country-products'){
-      const html = countryProductsFieldHtml(item, f, itemDetailState.editMode);
+    if(f.type === 'country-products' || f.type === 'multi-check' || f.type === 'tax-guidance'){
+      const html = f.type === 'country-products' ? countryProductsFieldHtml(item, f, itemDetailState.editMode)
+        : f.type === 'multi-check' ? multiCheckFieldHtml(item, f, itemDetailState.editMode)
+        : taxGuidanceFieldHtml(item, f, itemDetailState.editMode);
       if(html && !itemDetailState.editMode) anyFieldShown = true;
       return html;
     }
@@ -12589,7 +12596,7 @@ async function saveItemDetail(){
   schema.fields.forEach(f=>{
     const el = document.getElementById(itemDetailInputId(f.key));
     if(!el) return;
-    if(f.type === 'country-products'){
+    if(f.type === 'country-products' || f.type === 'multi-check'){
       itemDetailSetFieldValue(item, f.key, [...el.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value));
       return;
     }
@@ -13664,7 +13671,7 @@ async function fetchPlaceRows(table, columns, cacheKey){
 }
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, {sensitivity:'base'});
 async function loadCountries(){
-  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes, product_ids', 'ts-countries-cache');
+  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes, product_ids, tax_types, tax_guidance, tax_guidance_updated_at, tax_guidance_updated_by', 'ts-countries-cache');
   if(!rows){
     const names = Array.from(new Set((PORTS || []).map(p => (p.country || '').trim()).filter(Boolean)));
     rows = names.map(n => ({ id: '', name: n, slug: '', iso2: '', aliases: [], notes: '' }));
@@ -13672,6 +13679,8 @@ async function loadCountries(){
   COUNTRIES = rows.map(r => ({
     id: r.id, name: r.name, slug: r.slug || '', iso2: r.iso2 || '', aliases: r.aliases || [],
     aliasesText: (r.aliases || []).join(', '), notes: r.notes || '', productIds: r.product_ids || [],
+    taxTypes: r.tax_types || [], taxGuidance: r.tax_guidance || '',
+    taxGuidanceUpdatedAt: r.tax_guidance_updated_at || '', taxGuidanceUpdatedBy: r.tax_guidance_updated_by || '',
     _savedName: r.name, _savedSlug: r.slug || ''
   })).sort(byName);
 }
@@ -13867,6 +13876,57 @@ function countryProductsFieldHtml(item, f, editMode){
     }).join('')}</div>
   </div>`;
 }
+// Fuel tax treatments a country can offer - more than one can apply. The
+// database only accepts these exact values (countries_tax_types_valid).
+const FUEL_TAX_TYPES = ['Tax Free', 'Tax Paid', 'Duty Free', 'Duty Paid', 'Duty and VAT Free',
+  'Duty and VAT Paid', 'Duty Free and VAT Paid', 'Duty Paid and VAT Free'];
+// A fixed list of options, several of which can be ticked; shown as chips.
+function multiCheckFieldHtml(item, f, editMode){
+  const chosen = new Set(Array.isArray(item[f.key]) ? item[f.key] : []);
+  if(editMode){
+    const fid = itemDetailInputId(f.key);
+    return `<div class="item-detail-field">
+      <span class="item-detail-label">${escHtml(f.label)}</span>
+      <div id="${fid}" class="country-products-edit">${f.options.map(o =>
+        `<label class="opt-inline"><input type="checkbox" value="${escAttr(o)}" ${chosen.has(o) ? 'checked' : ''}> ${escHtml(o)}</label>`).join('')}</div>
+    </div>`;
+  }
+  const shown = f.options.filter(o => chosen.has(o));
+  if(!shown.length) return '';
+  return `<div class="item-detail-field">
+    <span class="item-detail-label">${escHtml(f.viewLabel || f.label)}</span>
+    <div class="country-products">${shown.map(o => `<span class="country-product-chip">${escHtml(o)}</span>`).join('')}</div>
+  </div>`;
+}
+function taxGuidanceUpdatedText(item){
+  if(!item.taxGuidanceUpdatedAt) return '';
+  const d = new Date(item.taxGuidanceUpdatedAt);
+  if(isNaN(d)) return '';
+  const when = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const email = (item.taxGuidanceUpdatedBy || '').toLowerCase();
+  const who = BROKER_NAMES_BY_EMAIL[email] || item.taxGuidanceUpdatedBy || '';
+  return 'Last updated ' + when + (who ? ' by ' + who : '');
+}
+// Long free-text guidance with the date it was last changed (stamped by the
+// database whenever the text changes - see countries_tax_guidance_stamp).
+function taxGuidanceFieldHtml(item, f, editMode){
+  const text = item.taxGuidance || '';
+  const updated = taxGuidanceUpdatedText(item);
+  if(editMode){
+    const fid = itemDetailInputId(f.key);
+    return `<div class="item-detail-field">
+      <label class="item-detail-label" for="${fid}">${escHtml(f.label)}</label>
+      <textarea id="${fid}" rows="10" class="tax-guidance-input">${escHtml(text)}</textarea>
+      <div class="hint">${updated ? escHtml(updated) + '. ' : ''}The date updates automatically when this text is changed and saved.</div>
+    </div>`;
+  }
+  if(!text.trim()) return '';
+  return `<div class="item-detail-field">
+    <span class="item-detail-label">${escHtml(f.viewLabel || f.label)}</span>
+    <div class="item-detail-value tax-guidance-text">${escHtml(text)}</div>
+    ${updated ? `<div class="hint tax-guidance-updated">${escHtml(updated)}</div>` : ''}
+  </div>`;
+}
 async function saveCountryRemote(item){
   item.iso2 = (item.iso2 || '').trim().toUpperCase();
   if(item.iso2 && !/^[A-Z]{2}$/.test(item.iso2)){
@@ -13875,20 +13935,26 @@ async function saveCountryRemote(item){
   }
   item.aliases = parseAliases(item.aliasesText);
   const row = { name: item.name, iso2: item.iso2 || null, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null,
-    product_ids: Array.isArray(item.productIds) ? item.productIds : [] };
+    product_ids: Array.isArray(item.productIds) ? item.productIds : [],
+    tax_types: Array.isArray(item.taxTypes) ? item.taxTypes : [], tax_guidance: (item.taxGuidance || '').trim() || null };
   const oldName = item._savedName;
   if(!window.TS || !window.TS.getClient) return;
   try{
     const client = window.TS.getClient();
     const res = isRealUuid(item.id)
-      ? await client.from('countries').update(row).eq('id', item.id).select('id, slug, aliases').single()
-      : await client.from('countries').insert(row).select('id, slug, aliases').single();
+      ? await client.from('countries').update(row).eq('id', item.id).select('id, slug, aliases, tax_guidance_updated_at, tax_guidance_updated_by').single()
+      : await client.from('countries').insert(row).select('id, slug, aliases, tax_guidance_updated_at, tax_guidance_updated_by').single();
     if(res.error) throw res.error;
     item.id = res.data.id;
     item.slug = res.data.slug || ''; item._savedSlug = item.slug;
     // A rename keeps the old name as an alias (done by the database).
     item.aliases = res.data.aliases || item.aliases;
     item.aliasesText = item.aliases.join(', ');
+    // The database stamps the guidance's last-updated date itself.
+    if('tax_guidance_updated_at' in res.data){
+      item.taxGuidanceUpdatedAt = res.data.tax_guidance_updated_at || '';
+      item.taxGuidanceUpdatedBy = res.data.tax_guidance_updated_by || '';
+    }
     // The database has already moved this country's ports to the new name.
     if(oldName && oldName !== item.name){
       (PORTS || []).forEach(p => { if((p.country || '').trim() === oldName) p.country = item.name; });
@@ -13896,7 +13962,8 @@ async function saveCountryRemote(item){
     }
     item._savedName = item.name;
     COUNTRIES.sort(byName);
-    writePlaceCache('ts-countries-cache', COUNTRIES, c => ({id:c.id, name:c.name, slug:c.slug, iso2:c.iso2, aliases:c.aliases, notes:c.notes, product_ids:c.productIds || []}));
+    writePlaceCache('ts-countries-cache', COUNTRIES, c => ({id:c.id, name:c.name, slug:c.slug, iso2:c.iso2, aliases:c.aliases, notes:c.notes, product_ids:c.productIds || [],
+      tax_types:c.taxTypes || [], tax_guidance:c.taxGuidance || null, tax_guidance_updated_at:c.taxGuidanceUpdatedAt || null, tax_guidance_updated_by:c.taxGuidanceUpdatedBy || null}));
   }catch(e){
     placeSaveError(e, 'name, ISO code or web address', item.name);
     item.slug = item._savedSlug || '';
