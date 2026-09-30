@@ -13453,7 +13453,6 @@ function fitPortMap(bounds){
   // quick succession would leave the map showing the first result's area.
   portMapInstance.fitBounds(bounds, { padding:[40, 40], maxZoom:11, animate:false });
 }
-// Returns how many of the filtered ports were placed on the map.
 // Base map for every Leaflet map in the app: OpenStreetMap streets with the
 // OpenSeaMap sea-marks overlay (buoys, lights, harbour marks) on top.
 // A small switch in the corner turns the sea marks off/on.
@@ -13469,6 +13468,7 @@ function addMapTiles(map){
   return seamarks;
 }
 
+// Returns how many of the filtered ports were placed on the map.
 function renderPortMap(filtered, q){
   const canvas = document.getElementById('portMapCanvas');
   const legend = document.getElementById('portMapLegend');
