@@ -12130,9 +12130,7 @@ function renderVesselMap(item, containerId){
   const lat = Number(pos.latitude), lon = Number(pos.longitude);
   const map = L.map('itemDetailVesselMapCanvas', { zoomControl: true, scrollWheelZoom: false }).setView([lat, lon], 10);
   itemDetailMapInstance = map;
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
-  }).addTo(map);
+  addMapTiles(map);
   L.marker([lat, lon], { icon: L.divIcon({ className: 'item-detail-yacht-marker', html: YACHT_MARKER_SVG, iconSize: [34, 40], iconAnchor: [17, 36] }) }).addTo(map);
 }
 // Length/beam/draught/gross tonnage/year built as one compact line rather
@@ -12656,9 +12654,7 @@ function renderItemDetailMap(item){
     (itemDetailState.editMode ? '<div class="item-detail-map-hint">Drag or scroll the map so the yacht marks the right spot \u2014 it stays fixed in the centre.</div>' : '');
   const map = L.map('itemDetailMapCanvas', { zoomControl: true, scrollWheelZoom: false }).setView([lat, lon], hasCoords ? 12 : 4);
   itemDetailMapInstance = map;
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
-  }).addTo(map);
+  addMapTiles(map);
   if(itemDetailState.editMode){
     const pin = document.createElement('div');
     pin.className = 'item-detail-map-centerpin';
@@ -13458,6 +13454,21 @@ function fitPortMap(bounds){
   portMapInstance.fitBounds(bounds, { padding:[40, 40], maxZoom:11, animate:false });
 }
 // Returns how many of the filtered ports were placed on the map.
+// Base map for every Leaflet map in the app: OpenStreetMap streets with the
+// OpenSeaMap sea-marks overlay (buoys, lights, harbour marks) on top.
+// A small switch in the corner turns the sea marks off/on.
+function addMapTiles(map){
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
+  }).addTo(map);
+  const seamarks = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
+    attribution: 'Sea marks &copy; <a href="https://www.openseamap.org" target="_blank" rel="noopener">OpenSeaMap</a> contributors',
+    maxZoom: 18, opacity: 1
+  }).addTo(map);
+  L.control.layers(null, { 'Sea marks': seamarks }, { position: 'topright', collapsed: false }).addTo(map);
+  return seamarks;
+}
+
 function renderPortMap(filtered, q){
   const canvas = document.getElementById('portMapCanvas');
   const legend = document.getElementById('portMapLegend');
@@ -13469,9 +13480,7 @@ function renderPortMap(filtered, q){
   ensurePortPinDefs();
   if(!portMapInstance){
     portMapInstance = L.map('portMapCanvas', { zoomControl:true, scrollWheelZoom:true, worldCopyJump:true, minZoom:2 }).setView([30, 10], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
-    }).addTo(portMapInstance);
+    addMapTiles(portMapInstance);
     portMapLayer = L.layerGroup().addTo(portMapInstance);
     // The map is often (re)shown after being hidden - switching tab, coming
     // back from a port's detail page - and Leaflet needs telling its size
@@ -13798,9 +13807,7 @@ function renderPlacePorts(ports){
   ensurePortPinDefs();
   if(placeMapInstance){ placeMapInstance.remove(); placeMapInstance = null; }
   placeMapInstance = L.map(mapEl, { zoomControl:true, scrollWheelZoom:false, worldCopyJump:true, minZoom:2 }).setView([30, 10], 2);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
-  }).addTo(placeMapInstance);
+  addMapTiles(placeMapInstance);
   const points = [];
   const typeCounts = {};
   ports.forEach(p => {
