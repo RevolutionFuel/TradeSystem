@@ -11773,6 +11773,7 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'iso2', label:'ISO code (2 letters, e.g. GR)', type:'text'},
       {key:'aliasesText', label:'Other names it goes by (comma-separated)', type:'text'},
       {key:'productIds', label:'Products available', type:'country-products'},
+      {key:'deliveryMethods', label:'Delivery methods', type:'multi-check', get options(){ return DELIVERY_METHODS; }},
       {key:'taxTypes', label:'Fuel tax treatments available', type:'multi-check', get options(){ return FUEL_TAX_TYPES; }},
       {key:'taxGuidance', label:'Tax guidance', type:'tax-guidance'},
       {key:'slug', viewLabel:'Web address', label:'Web address (slug) — stays fixed if renamed; clear it to regenerate', type:'text'},
@@ -13671,7 +13672,7 @@ async function fetchPlaceRows(table, columns, cacheKey){
 }
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, {sensitivity:'base'});
 async function loadCountries(){
-  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes, product_ids, tax_types, tax_guidance, tax_guidance_updated_at, tax_guidance_updated_by', 'ts-countries-cache');
+  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes, product_ids, delivery_methods, tax_types, tax_guidance, tax_guidance_updated_at, tax_guidance_updated_by', 'ts-countries-cache');
   if(!rows){
     const names = Array.from(new Set((PORTS || []).map(p => (p.country || '').trim()).filter(Boolean)));
     rows = names.map(n => ({ id: '', name: n, slug: '', iso2: '', aliases: [], notes: '' }));
@@ -13679,6 +13680,7 @@ async function loadCountries(){
   COUNTRIES = rows.map(r => ({
     id: r.id, name: r.name, slug: r.slug || '', iso2: r.iso2 || '', aliases: r.aliases || [],
     aliasesText: (r.aliases || []).join(', '), notes: r.notes || '', productIds: r.product_ids || [],
+    deliveryMethods: r.delivery_methods || [],
     taxTypes: r.tax_types || [], taxGuidance: r.tax_guidance || '',
     taxGuidanceUpdatedAt: r.tax_guidance_updated_at || '', taxGuidanceUpdatedBy: r.tax_guidance_updated_by || '',
     _savedName: r.name, _savedSlug: r.slug || ''
@@ -13848,8 +13850,12 @@ const COUNTRY_PRODUCT_OPTIONS = [
   { id: 'c113ec83-71b4-47cb-904a-1af06e5af32b', name: 'Marine Gas Oil' },
   { id: '0de1a202-f890-403e-bb8b-ea07c29b65bd', name: 'Ultra Low Sulphur Diesel' },
   { id: 'b69ce9c6-8ad0-4c9c-a0c8-4e89745b797f', name: 'Lubricants and Greases' },
-  { id: 'bd3b42ec-fa4f-40dd-a90d-9226fcbe752c', name: 'Jet A1' }
+  { id: 'bd3b42ec-fa4f-40dd-a90d-9226fcbe752c', name: 'Jet A1' },
+  { id: '1ed82164-8bef-49db-a9b2-d63357bea232', name: 'High Sulphur Diesel' }
 ];
+// How fuel can be delivered in a country - more than one can apply. The
+// database only accepts these values (countries_delivery_methods_valid).
+const DELIVERY_METHODS = ['Truck', 'Barge', 'Pipe'];
 function countryProductLabel(opt){
   const p = (PRODUCTS || []).find(x => x.id === opt.id);
   return (p && p.name) || opt.name;
@@ -13936,6 +13942,7 @@ async function saveCountryRemote(item){
   item.aliases = parseAliases(item.aliasesText);
   const row = { name: item.name, iso2: item.iso2 || null, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null,
     product_ids: Array.isArray(item.productIds) ? item.productIds : [],
+    delivery_methods: Array.isArray(item.deliveryMethods) ? item.deliveryMethods : [],
     tax_types: Array.isArray(item.taxTypes) ? item.taxTypes : [], tax_guidance: (item.taxGuidance || '').trim() || null };
   const oldName = item._savedName;
   if(!window.TS || !window.TS.getClient) return;
@@ -13963,7 +13970,7 @@ async function saveCountryRemote(item){
     item._savedName = item.name;
     COUNTRIES.sort(byName);
     writePlaceCache('ts-countries-cache', COUNTRIES, c => ({id:c.id, name:c.name, slug:c.slug, iso2:c.iso2, aliases:c.aliases, notes:c.notes, product_ids:c.productIds || [],
-      tax_types:c.taxTypes || [], tax_guidance:c.taxGuidance || null, tax_guidance_updated_at:c.taxGuidanceUpdatedAt || null, tax_guidance_updated_by:c.taxGuidanceUpdatedBy || null}));
+      delivery_methods:c.deliveryMethods || [], tax_types:c.taxTypes || [], tax_guidance:c.taxGuidance || null, tax_guidance_updated_at:c.taxGuidanceUpdatedAt || null, tax_guidance_updated_by:c.taxGuidanceUpdatedBy || null}));
   }catch(e){
     placeSaveError(e, 'name, ISO code or web address', item.name);
     item.slug = item._savedSlug || '';
