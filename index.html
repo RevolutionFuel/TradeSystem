@@ -16,6 +16,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Trade System">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://api.maptiler.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <!-- Leaflet: powers the port location map on the item detail page (view +
      pan-to-set-location edit mode). Needs the end user's own internet
@@ -13470,8 +13471,9 @@ function addMapTiles(map){
     attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
   });
   // 512px tiles (zoomOffset -1) = a quarter of the requests of 256px tiles,
-  // which keeps us well inside the plan's monthly allowance.
-  const ocean = L.tileLayer('https://api.maptiler.com/maps/ocean-v4/{z}/{x}/{y}.png?key=' + MAPTILER_KEY, {
+  // which keeps us well inside the plan's monthly allowance. WebP rather than
+  // PNG: the depth shading compresses far better, so tiles arrive much faster.
+  const ocean = L.tileLayer('https://api.maptiler.com/maps/ocean-v4/{z}/{x}/{y}.webp?key=' + MAPTILER_KEY, {
     tileSize: 512, zoomOffset: -1, maxZoom: 18, crossOrigin: true,
     attribution: '<a href="https://www.maptiler.com/copyright/" target="_blank" rel="noopener">&copy; MapTiler</a> <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">&copy; OpenStreetMap contributors</a>'
   });
