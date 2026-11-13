@@ -2212,7 +2212,7 @@ async function resolveSelectedContactEmails(page){
   const resolve = (selected) => {
     const emails = [];
     selected.forEach(sel=>{
-      const match = all.find(c=>c.name===sel.name && c.jobTitle===sel.jobTitle);
+      const match = (sel.contactId && all.find(c=>c.id===sel.contactId)) || all.find(c=>c.name===sel.name && c.jobTitle===sel.jobTitle);
       if(match && match.email) emails.push(match.email);
     });
     return emails;
@@ -2331,6 +2331,7 @@ async function draftInOutlookGeneric(opts){
   const originalLabel = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Drafting...'; }
   try{
+    await refreshOrderFromRecords(); // latest vessel/contact details into the email and its PDF
     const token = await getGraphToken();
     const { toEmails, ccEmails: pickedCcEmails } = await resolveSelectedContactEmails(opts.page);
     if(!toEmails.length){
@@ -4234,7 +4235,7 @@ async function loadContactPicker(page){
   // pre-selected here, not just the first.
   if(!contactsListForPage(page).length){
     const primaries = [...result.vesselContacts, ...result.orgContacts].filter(c=>c.isPrimary);
-    primaries.forEach(primary => toggleContactSelection(page, {name:primary.name, jobTitle:primary.jobTitle, alias:primary.alias||''}, true));
+    primaries.forEach(primary => toggleContactSelection(page, {name:primary.name, jobTitle:primary.jobTitle, alias:primary.alias||'', contactId:primary.id}, true));
   }
   renderContactPicker(page, result);
 }
@@ -4343,6 +4344,9 @@ async function saveContactPickerEdit(page, targetKind, contactId){
     flashSaveError();
     return;
   }
+  // A contact edited from the order's own picker shows on it straight away
+  // (and on its next document, even after one has been generated).
+  if(contactId) refreshOrderFromRecords();
   contactPickerEditingKey = null;
   // A brand-new contact (no id) belongs on this correspondence — that's why
   // it was just added — so it's auto-selected into the "to" list. Editing
@@ -4362,7 +4366,11 @@ function toggleContactSelection(page, contact, checked, targetKind, listKind){
   const otherKind = listKind === 'to' ? 'cc' : 'to';
   let list = contactsListForPage(page, listKind);
   if(checked){
-    if(!list.some(s => s.name === contact.name && s.jobTitle === contact.jobTitle)) list.push(contact);
+    if(!list.some(s => s.name === contact.name && s.jobTitle === contact.jobTitle)){
+      const entry = Object.assign({}, contact);
+      if(entry.id && !entry.contactId) entry.contactId = entry.id;
+      list.push(entry);
+    }
     const otherList = contactsListForPage(page, otherKind).filter(s => !(s.name === contact.name && s.jobTitle === contact.jobTitle));
     setContactsListForPage(page, otherList, otherKind);
     // Picking someone for correspondence is also the natural moment to make
@@ -4401,7 +4409,140 @@ function syncSupContactsFromEnquiry(){
   }
 }
 
+// ===== Order <- vessel/contact records =====
+// An order copies the vessel's details (IMO, flag, owner, fuel fitting) and
+// its picked contacts when they're chosen, and every document is built from
+// those copies. John's rule (13 Nov): until a confirmation or invoice has
+// been generated the order follows the live records; generating one (or
+// drafting its email) pulls in the latest first; after that the order keeps
+// what was sent, until the next generation pulls in the latest again.
+//
+// A vessel field typed into the order by hand is that order's own value and
+// is never overwritten ("default, then diverge"). Orders saved before this
+// existed have no record of hand edits, so for them only blank fields are
+// filled.
+const VESSEL_SNAPSHOT_FIELDS = [
+  ['imo', 'vIMO', 'IMO'], ['flag', 'vFlag', 'flag'], ['owner', 'vOwner', 'owner'], ['fitting', 'vFitting', 'fuel fitting']
+];
+// key -> true once typed by hand on this order; null = order saved before
+// this was tracked (legacy: fill blanks only).
+let vesselFieldsManuallySet = {};
+document.addEventListener('input', e => {
+  const f = e.target && VESSEL_SNAPSHOT_FIELDS.find(x => x[1] === e.target.id);
+  if(!f) return;
+  if(vesselFieldsManuallySet === null) vesselFieldsManuallySet = {};
+  vesselFieldsManuallySet[f[0]] = true;
+}, true);
+function hasGeneratedDocuments(){
+  return Object.values(lastStoredPdfPaths || {}).some(Boolean);
+}
+// Re-points one picked-contacts list at the current contact records: by
+// record id, else exact name + job title, else - for a contact renamed in
+// place, like GO's Captain (Peter Lewis -> Mial Gardner) - the one record
+// with the same job title. Anyone not found is left exactly as picked.
+function remapPickedContacts(list, candidates){
+  const used = new Set();
+  let changed = false;
+  const out = list.map(sel => {
+    let c = (sel.contactId && candidates.find(x => x.id === sel.contactId))
+      || candidates.find(x => x.name === sel.name && (x.jobTitle || '') === (sel.jobTitle || ''));
+    if(!c && sel.jobTitle){
+      const same = candidates.filter(x => (x.jobTitle || '') === sel.jobTitle && !used.has(x.id)
+        && !list.some(o => o !== sel && o.name === x.name && (o.jobTitle || '') === (x.jobTitle || '')));
+      if(same.length === 1) c = same[0];
+    }
+    if(!c) return sel;
+    used.add(c.id);
+    const next = { name: c.name, jobTitle: c.jobTitle || '', alias: c.alias || '', contactId: c.id };
+    if(next.name !== sel.name || next.jobTitle !== (sel.jobTitle || '') || next.alias !== (sel.alias || '') || sel.contactId !== c.id) changed = true;
+    return next;
+  });
+  return { list: out, changed };
+}
+function refreshPickedContactsForPage(page, candidates){
+  let changed = false;
+  const oldTo = contactsListForPage(page, 'to').slice();
+  ['to', 'cc'].forEach(kind => {
+    const r = remapPickedContacts(contactsListForPage(page, kind), candidates);
+    if(r.changed){ setContactsListForPage(page, r.list, kind); changed = true; }
+  });
+  if(changed){
+    // Greeting follows only if it's still the automatic one for the old names.
+    const el = document.getElementById(CONTACT_PICKER_PAGES[page].greetingId);
+    if(el && el.value === buildGreetingFromContacts(oldTo)){
+      const g = buildGreetingFromContacts(contactsListForPage(page, 'to'));
+      if(g) el.value = g;
+    }
+  }
+  return changed;
+}
+// Pulls the vessel's current details and the picked contacts' current
+// names/titles into the order. Returns the list of what changed. Never
+// throws - documents still generate from what's on screen if offline.
+async function refreshOrderFromRecords(){
+  const changed = [];
+  try{
+    if(!window.TS || !window.TS.getClient) return changed;
+    const t = orderLoadSeq;
+    const vesselId = (selectedVessel && isRealUuid(selectedVessel.id) && selectedVessel.id) || currentVesselAndOwnerIds().vesselId;
+    let ownerOrgId = null;
+    if(vesselId && isRealUuid(vesselId)){
+      const { data: v, error } = await window.TS.getClient().from('vessels')
+        .select('id, imo, flag, fitting, customer_org_id, organizations(name)').eq('id', vesselId).single();
+      if(t !== orderLoadSeq) return changed;
+      if(!error && v){
+        ownerOrgId = v.customer_org_id || null;
+        const rec = { imo: v.imo || '', flag: v.flag || '', owner: (v.organizations && v.organizations.name) || '', fitting: v.fitting || '' };
+        const mem = (VESSELS || []).find(x => x.id === v.id);
+        if(mem){ mem.imo = rec.imo; mem.flag = rec.flag; mem.fitting = rec.fitting; mem.ownerId = ownerOrgId || ''; if(rec.owner) mem.owner = rec.owner; }
+        VESSEL_SNAPSHOT_FIELDS.forEach(([key, id, label]) => {
+          const el = document.getElementById(id);
+          if(!el) return;
+          const cur = el.value.trim(), next = rec[key].trim();
+          if(cur === next) return;
+          if(vesselFieldsManuallySet && vesselFieldsManuallySet[key]) return;
+          if(vesselFieldsManuallySet === null && cur) return;
+          if(key === 'owner' && !next) return; // never blank an owner (see syncOwnerFromVesselIfBlank)
+          el.value = next;
+          changed.push(label);
+        });
+      }
+      if(window.TS.fetchContacts && (vesselId || ownerOrgId)){
+        const res = await window.TS.fetchContacts(vesselId, ownerOrgId);
+        if(t !== orderLoadSeq) return changed;
+        const cands = [...(res.vesselContacts || []), ...(res.orgContacts || [])];
+        let cc = false;
+        ['quote', 'customer'].forEach(page => { if(refreshPickedContactsForPage(page, cands)) cc = true; });
+        if(cc) changed.push('vessel contacts');
+      }
+    }
+    const supId = currentSupplierIdForPage('enquire');
+    if(supId && window.TS.fetchContacts){
+      const res = await window.TS.fetchContacts(null, supId);
+      if(t !== orderLoadSeq) return changed;
+      const cands = res.orgContacts || [];
+      let sc = refreshPickedContactsForPage('enquire', cands);
+      if(!multiSupplierMode && refreshPickedContactsForPage('supply', cands)) sc = true;
+      if(sc) changed.push('supplier contacts');
+    }
+    if(changed.length){
+      render(); renderCustomer(); renderEnquiry(); renderSupply();
+      if(typeof renderInvoicePreviewOnly === 'function') renderInvoicePreviewOnly();
+    }
+  }catch(e){
+    console.warn('TS: refreshOrderFromRecords failed - using the details on screen', e);
+  }
+  return changed;
+}
+// While nothing has been generated yet, the order follows the records.
+function refreshOrderIfLive(){
+  if(!appStartupComplete || hasGeneratedDocuments()) return;
+  if(!fv('vessel') && !fv('vesselOrder') && !fv('supplierName')) return;
+  refreshOrderFromRecords();
+}
+
 function pickVessel(v){
+  vesselFieldsManuallySet = {};
   document.getElementById('vessel').value = v.name;
   const vesselOrderEl = document.getElementById('vesselOrder');
   if(vesselOrderEl) vesselOrderEl.value = v.name;
@@ -8794,6 +8935,7 @@ async function openInvoicePdf(btnEl){
   const originalLabel = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF...'; }
   try{
+    await refreshOrderFromRecords(); // latest vessel/contact details into this invoice
     const html = buildInvoicePdfHtml();
     const result = await generatePdfViaBackend('invoice', html);
     const blob = base64ToBlob(result.pdfBase64, 'application/pdf');
@@ -9264,6 +9406,7 @@ async function openPdfQuotation(docType, btnEl){
   const originalLabel = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF...'; }
   try{
+    await refreshOrderFromRecords(); // latest vessel/contact details into this document
     const html = buildPdfQuotationHtml(docType);
     const result = await generatePdfViaBackend(docType, html);
     const blob = base64ToBlob(result.pdfBase64, 'application/pdf');
@@ -11042,6 +11185,7 @@ async function clearOrder(){
   try{ localStorage.removeItem('ts-order-draft'); }catch(e){ /* private browsing or similar - fine to skip */ }
   orderNumberPendingAssignment = false;
   orderCurrencyManuallySet = false;
+  vesselFieldsManuallySet = {};
   clearOrderNumberPendingPlaceholder();
   lastStoredPdfPaths = { quotation:null, supplier:null, customer:null, invoice:null, proforma:null, commission:null };
   // Contact selections (both "to" and "cc") — previously missing from this
@@ -11425,6 +11569,7 @@ window.addEventListener('resize', scheduleStickyOffsetUpdate);
 let userNavigatedDuringStartup = false;
 function switchView(v){
   if(!appStartupComplete && !startupRestoring) userNavigatedDuringStartup = true;
+  if(v === 'build') setTimeout(refreshOrderIfLive, 0);
   // An item detail page (opened from Manage Lists, or from a link on the
   // Summary tab) sits outside the four views this function otherwise
   // manages. An explicit top-level tab click always wins over it — without
@@ -12138,6 +12283,8 @@ function closeItemDetail(){
   document.getElementById('viewItemDetail').classList.remove('active');
   const returnViewId = itemDetailState.returnViewId || 'viewManage';
   document.getElementById(returnViewId).classList.add('active');
+  // Back on the order after editing a vessel/contact record from it.
+  if(returnViewId === 'viewBuild') setTimeout(refreshOrderIfLive, 0);
   itemDetailState = { kind:null, id:null, editMode:false, returnViewId:null, isNew:false };
   itemDetailContactEditingId = null;
   if(itemDetailMapInstance){ itemDetailMapInstance.remove(); itemDetailMapInstance = null; }
@@ -14576,6 +14723,7 @@ function collectQuoteState(){
     openingLineText: getOpeningLine(),
     vessel: {
       name: fv('vessel'), imo: fv('vIMO'), flag: fv('vFlag'), owner: fv('vOwner'), fitting: fv('vFitting'),
+      fieldsManuallySet: vesselFieldsManuallySet ? Object.assign({}, vesselFieldsManuallySet) : null,
       showSpecifics: document.getElementById('showVesselSpecifics').checked
     },
     port: fv('port'),
@@ -14682,6 +14830,9 @@ async function applyQuoteState(data){
   document.getElementById('vFlag').value = v.flag || '';
   document.getElementById('vOwner').value = v.owner || '';
   document.getElementById('vFitting').value = v.fitting || '';
+  // Absent on orders saved before hand edits were tracked (see
+  // VESSEL_SNAPSHOT_FIELDS) - null means "fill blanks only".
+  vesselFieldsManuallySet = (v.fieldsManuallySet && typeof v.fieldsManuallySet === 'object') ? Object.assign({}, v.fieldsManuallySet) : (v.name ? null : {});
   document.getElementById('showVesselSpecifics').checked = !!v.showSpecifics;
   // Fixes a specific historic gap: an order started before its vessel had
   // an owner linked would have saved an empty owner snapshot - if that
@@ -15037,6 +15188,7 @@ async function checkSystemAlerts(){
     }
     if(lastView === 'build'){
       await restoreOrderDraftFromLocalStorage();
+      if(!hasGeneratedDocuments()) setTimeout(() => { if(appStartupComplete) refreshOrderIfLive(); }, 0);
       const lastOrderPage = localStorage.getItem('ts-last-order-page');
       if(['order','enquire','quote','supply','customer','invoice','summary'].includes(lastOrderPage)) switchOrderPage(lastOrderPage);
     }
