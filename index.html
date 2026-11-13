@@ -3119,27 +3119,34 @@ document.addEventListener('visibilitychange', () => { if(!document.hidden) check
 
 /* ===================== INIT ===================== */
 async function init(){
-  document.getElementById('versionBadge').textContent = 'v' + currentVersion();
   // Fetched first, before the signature radio groups are built below, so
   // the per-person default (see USER_SIGNATURE_DEFAULTS) is already correct
   // on first render - loadFormattingPrefs() then overrides this afterward
   // if the person has ever actually changed their signature choice before.
-  if(window.TS && window.TS.getClient){
+  // All fetched at once rather than one after another: each request to the
+  // Paris database is a full round trip, which from Australia is 0.3-1.5s,
+  // so the old sequential chain of ~16 requests took ~11s there. Only the
+  // places (countries/islands/web addresses) need PORTS first.
+  const userEmailP = (async () => {
+    if(!(window.TS && window.TS.getClient)) return;
     try{
       const { data } = await window.TS.getClient().auth.getUser();
       currentUserEmail = (data && data.user && data.user.email) || '';
     }catch(e){ console.warn('TS: could not fetch current user email for signature defaults', e); }
-  }
-  VESSELS = await loadList('ql-vessels', VESSELS_SEED);
-  PORTS = await loadList('ql-ports', PORTS_SEED);
-  await loadPlaces();
-  PRODUCTS = await loadList('ql-products', PRODUCTS_SEED);
-  NOTES = await loadList('ql-notes', NOTES_SEED);
-  SUPPLY_NOTES = await loadList('ql-supply-notes', SUPPLY_NOTES_SEED);
-  CONDITIONS_OF_SALE = await loadList('ql-conditions-of-sale', CONDITIONS_OF_SALE_SEED);
-  REGISTERED_OWNERS = await loadList('ql-registered-owners', REGISTERED_OWNERS_SEED);
-  SUPPLIERS = await loadList('ql-suppliers', SUPPLIERS_SEED);
-  AGENTS = await loadList('ql-agents', []);
+  })();
+  const quoteRefP = generateQuoteReference();
+  [VESSELS, PRODUCTS, NOTES, SUPPLY_NOTES, CONDITIONS_OF_SALE, REGISTERED_OWNERS, SUPPLIERS, AGENTS] = await Promise.all([
+    loadList('ql-vessels', VESSELS_SEED),
+    loadList('ql-products', PRODUCTS_SEED),
+    loadList('ql-notes', NOTES_SEED),
+    loadList('ql-supply-notes', SUPPLY_NOTES_SEED),
+    loadList('ql-conditions-of-sale', CONDITIONS_OF_SALE_SEED),
+    loadList('ql-registered-owners', REGISTERED_OWNERS_SEED),
+    loadList('ql-suppliers', SUPPLIERS_SEED),
+    loadList('ql-agents', []),
+    (async () => { PORTS = await loadList('ql-ports', PORTS_SEED); await loadPlaces(); })(),
+    userEmailP
+  ]);
   {
     // Vessel data saved before the registered-owners table existed won't have
     // an ownerId — backfill it by matching the vessel's old free-text owner
@@ -3159,7 +3166,7 @@ async function init(){
   refreshOwnerDropdown();
   NOTES = await reconcileNotes(NOTES);
 
-  document.getElementById('quoteRef').value = await generateQuoteReference();
+  document.getElementById('quoteRef').value = await quoteRefP;
   document.getElementById('quoteDate').value = new Date().toISOString().slice(0,10);
 
   buildRadioGroup('openingGroup', 'opening', OPENING_OPTIONS.map((t,i)=>({value:'o'+i, label:t})).concat([{value:'custom', label:'Custom:', custom:true, customId:'openingCustom'}]), 'o0');
@@ -3196,7 +3203,8 @@ async function init(){
   render();
   updatePanelHeightLock();
   checkDirtyState();
-  loadDashboardData();
+  // The order list is loaded by start() once the last-open order has been
+  // restored, so nothing in it can be clicked while that restore is pending.
 }
 
 /* ===================== GENERIC RADIO GROUP BUILDER ===================== */
@@ -3611,10 +3619,10 @@ function onDraftOptionChange(){
 // cascade order (enquire first) so a page-specific past divergence (e.g.
 // Invoice set differently from everything before it) still ends up correct
 // even though restoring Enquire's value first would otherwise cascade over it.
-async function loadFormattingPrefs(){
+async function loadFormattingPrefs(prefetched){
   if(!window.TS || !window.TS.fetchUserPreferences) return;
   let prefs;
-  try{ prefs = await window.TS.fetchUserPreferences(); }catch(e){ console.warn('TS: fetchUserPreferences failed', e); return; }
+  try{ prefs = await (prefetched || window.TS.fetchUserPreferences()); }catch(e){ console.warn('TS: fetchUserPreferences failed', e); return; }
   if(!prefs) return;
   restoringFormattingPrefs = true;
   try{
@@ -4491,6 +4499,7 @@ function hasAnyOrderContent(){
 // there's "no order content", and delete the draft it was about to be
 // restored from, before restoreOrderDraftFromLocalStorage() ever runs.
 let appStartupComplete = false;
+let startupRestoring = false; // true while start() itself restores the last view
 function checkDirtyState(){
   if(lastSavedStateJson === null){
     orderIsDirty = hasAnyOrderContent();
@@ -4882,15 +4891,30 @@ async function saveOrderToDatabase(){
 // Ready for the future Manage/Orders list to call — reuses applyQuoteState()
 // exactly as-is, since details was designed to be exactly what that function
 // already knows how to reconstruct from.
-async function loadOrderFromDatabase(id){
-  if(!window.TS || !window.TS.loadOrder) return;
+// Which order the screen should be showing. Every action that puts a
+// different order on screen (opening one, New order, the startup draft
+// restore) takes a ticket first, and an async load only applies its result
+// if its ticket is still the newest. Without this, two loads in flight -
+// common from Australia, where each request to the Paris database takes
+// 0.3-1.5s - land in whatever order their responses arrive, so a slower,
+// older one can put the previously opened trade back over the one just
+// clicked.
+let orderLoadSeq = 0;
+function beginOrderLoad(){ return ++orderLoadSeq; }
+function isCurrentOrderLoad(t){ return t === orderLoadSeq; }
+// Returns true only if this order actually ended up on screen.
+async function loadOrderFromDatabase(id, ticket){
+  if(!window.TS || !window.TS.loadOrder) return false;
+  const t = ticket || beginOrderLoad();
+  const row = await window.TS.loadOrder(id);
+  // Superseded while the request was in flight - leave the screen alone.
+  if(!isCurrentOrderLoad(t)) return false;
   orderNumberPendingAssignment = false;
   // Cleared rather than assumed true: a reopened order can still have its
   // port set for the first time, and the no-pricing-yet guard in
   // applyPortDefaultCurrency is what protects an order already being priced.
   orderCurrencyManuallySet = false;
   clearOrderNumberPendingPlaceholder();
-  const row = await window.TS.loadOrder(id);
   // Restored directly from the order's own dedicated columns (loadOrder()
   // already selects '*') rather than left to only ever reflect whatever
   // was generated earlier in this same browser session - otherwise a
@@ -4915,7 +4939,12 @@ async function loadOrderFromDatabase(id){
   // permanently reassign the order to them - exactly the bug this guards
   // against.
   details.broker = row.broker || details.broker || '';
+  // The order's own reference column, if details somehow lacks it - otherwise
+  // applyQuoteState would generate (and burn) a brand-new reference, and
+  // would also pause on that request mid-apply.
+  details.quoteRef = details.quoteRef || row.quote_ref || '';
   await applyQuoteState(details);
+  if(!isCurrentOrderLoad(t)) return false;
   currentOrderDbId = row.id;
   currentOrderAmountReceived = row.amount_received;
   currentOrderReceivedDate = row.received_date;
@@ -4925,6 +4954,7 @@ async function loadOrderFromDatabase(id){
   lastSavedStateJson = stateForComparison(collectQuoteState());
   orderIsDirty = false;
   updateSaveBar();
+  return true;
 }
 // Saved immediately on change (not part of the main Save flow) - see
 // updateOrderPaymentInfo in shared-js for why this is a standalone update.
@@ -5113,7 +5143,7 @@ function setDashboardSort(field){
 function dashboardSortArrow(field){
   return dashboardSort.field === field ? (dashboardSort.dir === 1 ? ' \u25b2' : ' \u25bc') : '';
 }
-async function loadDashboardData(){
+async function loadDashboardData(prefetched){
   const container = document.getElementById('dashboardListContainer');
   renderDashboardFilterBar();
   if(!window.TS || !window.TS.listOrders){
@@ -5122,7 +5152,7 @@ async function loadDashboardData(){
   }
   container.innerHTML = '<div class="hint">Loading...</div>';
   try{
-    dashboardRows = await window.TS.listOrders();
+    dashboardRows = await (prefetched || window.TS.listOrders());
   }catch(e){
     console.error('TS: listOrders failed', e);
     container.innerHTML = '<div class="hint">Could not load right now \u2014 check your connection and press Refresh.</div>';
@@ -5252,13 +5282,51 @@ function scheduleDashboardRerender(){
   });
 }
 window.addEventListener('resize', scheduleDashboardRerender);
+// Covers the app while an order is being fetched, so it's clear the click
+// registered (from Australia this can take a second or more) and the
+// previously open trade isn't mistaken for the one just clicked. Cancel
+// supersedes the load, so nothing changes if the response arrives later.
+function showOrderOpeningOverlay(label){
+  let el = document.getElementById('orderOpeningOverlay');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'orderOpeningOverlay';
+    el.style.cssText = 'position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;background:rgba(15,42,63,0.35);';
+    el.innerHTML = '<div style="background:#fff;border-radius:8px;padding:20px 24px;box-shadow:0 8px 32px rgba(0,0,0,.25);font-size:14px;text-align:center;min-width:220px;">' +
+      '<div id="orderOpeningLabel" style="margin-bottom:12px;"></div>' +
+      '<button type="button" class="btn-ghost btn-sm" id="orderOpeningCancel">Cancel</button></div>';
+    document.body.appendChild(el);
+    el.querySelector('#orderOpeningCancel').addEventListener('click', ()=>{ beginOrderLoad(); hideOrderOpeningOverlay(); });
+  }
+  el.querySelector('#orderOpeningLabel').textContent = label;
+  el.style.display = 'flex';
+}
+function hideOrderOpeningOverlay(){
+  const el = document.getElementById('orderOpeningOverlay');
+  if(el) el.style.display = 'none';
+}
 async function openOrderFromDashboard(id){
   if(orderIsDirty){
     if(!confirm('You have unsaved changes on the current order. Opening a different one will discard them unless you save first. Continue anyway?')) return;
   }
-  await loadOrderFromDatabase(id);
-  switchView('build');
-  switchOrderPage('summary');
+  const t = beginOrderLoad();
+  const r = (dashboardRows || []).find(x => x.id === id);
+  const ref = r ? (r.orderNumber || r.quoteRef || '') : '';
+  showOrderOpeningOverlay(ref ? 'Opening ' + ref + '\u2026' : 'Opening order\u2026');
+  try{
+    const opened = await loadOrderFromDatabase(id, t);
+    if(!opened) return; // superseded or cancelled - the newer action owns the screen
+    switchView('build');
+    switchOrderPage('summary');
+  }catch(e){
+    console.error('TS: openOrderFromDashboard failed', e);
+    if(isCurrentOrderLoad(t)){
+      hideOrderOpeningOverlay();
+      alert('Could not open ' + (ref || 'that order') + ' \u2014 check your connection and try again. Nothing on screen was changed.');
+    }
+  }finally{
+    if(isCurrentOrderLoad(t)) hideOrderOpeningOverlay();
+  }
 }
 
 let multiSupplierMode = false;
@@ -10957,6 +11025,10 @@ async function startNewOrderFromBar(){
   switchOrderPage('order');
 }
 async function clearOrder(){
+  // New order wins over any order still loading, and an order opened while
+  // this waits for its new reference wins over the rest of this clear.
+  const clearTicket = beginOrderLoad();
+  hideOrderOpeningOverlay();
   try{ localStorage.removeItem('ts-order-draft'); }catch(e){ /* private browsing or similar - fine to skip */ }
   orderNumberPendingAssignment = false;
   orderCurrencyManuallySet = false;
@@ -10991,7 +11063,11 @@ async function clearOrder(){
   currentSupplyViewSupplier = null;
   confirmedSupplierNames = [];
   document.getElementById('multiSupplierMode').checked = false;
-  document.getElementById('quoteRef').value = await generateQuoteReference();
+  {
+    const newRef = await generateQuoteReference();
+    if(!isCurrentOrderLoad(clearTicket)) return;
+    document.getElementById('quoteRef').value = newRef;
+  }
   document.getElementById('quoteDate').value = new Date().toISOString().slice(0,10);
   document.getElementById('orderBroker').value = defaultBrokerForCurrentUser();
   document.getElementById('greeting').value = 'Dear Captain,';
@@ -11336,7 +11412,9 @@ window.addEventListener('load', updateStickyOffsets);
 window.addEventListener('resize', scheduleStickyOffsetUpdate);
 
 
+let userNavigatedDuringStartup = false;
 function switchView(v){
+  if(!appStartupComplete && !startupRestoring) userNavigatedDuringStartup = true;
   // An item detail page (opened from Manage Lists, or from a link on the
   // Summary tab) sits outside the four views this function otherwise
   // manages. An explicit top-level tab click always wins over it — without
@@ -13758,8 +13836,8 @@ async function loadCountries(){
   })).sort(byName);
 }
 const ISLAND_SHARED_LABEL = '— shared between countries —';
-async function loadIslands(){
-  const rows = await fetchPlaceRows('islands', 'id, name, slug, country_id, aliases, notes', 'ts-islands-cache') || [];
+async function loadIslands(rowsPromise){
+  const rows = await (rowsPromise || fetchPlaceRows('islands', 'id, name, slug, country_id, aliases, notes', 'ts-islands-cache')) || [];
   ISLANDS = rows.map(r => {
     const c = COUNTRIES.find(x => x.id === r.country_id);
     return {
@@ -13777,9 +13855,11 @@ async function loadPortSlugs(){
   (PORTS || []).forEach(p => { if(map.has(p.id)){ p.slug = map.get(p.id); p._savedSlug = p.slug; } });
 }
 async function loadPlaces(){
-  await loadCountries();
-  await loadIslands();
-  await loadPortSlugs();
+  // Islands are fetched alongside countries but mapped once countries are
+  // in, since each island's country name comes from COUNTRIES.
+  const islandRowsP = fetchPlaceRows('islands', 'id, name, slug, country_id, aliases, notes', 'ts-islands-cache');
+  await Promise.all([loadCountries(), loadPortSlugs()]);
+  await loadIslands(islandRowsP);
 }
 // Finds a record by its proper name or any of its other names.
 function placeForName(list, name, extraMatch){
@@ -14772,11 +14852,20 @@ async function checkSystemAlerts(){
     window.TS.mountUserBadge('tsUserBadgeContainer');
     checkSystemAlerts(); // not awaited - shouldn't block the rest of startup
   }
-  await loadReleaseNotes();
-  await init(); // init() is itself async — must finish (including building the signature radio groups) before restoring saved preferences onto them
-  await loadFormattingPrefs();
+  // Started now, in parallel with init()'s own loads; each is applied at
+  // the point the old sequential startup applied it.
+  const prefsP = (window.TS && window.TS.fetchUserPreferences) ? window.TS.fetchUserPreferences().catch(e => { console.warn('TS: fetchUserPreferences failed', e); return null; }) : null;
+  const ordersP = (window.TS && window.TS.listOrders) ? window.TS.listOrders() : null;
+  if(ordersP) ordersP.catch(() => {}); // reported by loadDashboardData
+  await Promise.all([loadReleaseNotes(), init()]); // init() must finish (including building the signature radio groups) before restoring saved preferences onto them
+  document.getElementById('versionBadge').textContent = 'v' + currentVersion();
+  await loadFormattingPrefs(prefsP || undefined);
   initGraphAuth(); // not awaited — Outlook connect state has no bearing on the main app's own startup
-  try{
+  // Skip restoring the last view/order if the person has already moved on
+  // (switched tab, opened an order, pressed New order) while startup ran.
+  const skipRestore = userNavigatedDuringStartup || orderLoadSeq !== 0;
+  startupRestoring = true;
+  if(!skipRestore) try{
     const lastItemDetail = localStorage.getItem('ts-last-item-detail');
     const lastView = localStorage.getItem('ts-last-view');
     // Only ever restore to one of the actual top-level tabs that still
@@ -14802,7 +14891,9 @@ async function checkSystemAlerts(){
       if(validKinds.includes(kind) && id) openItemDetail(kind, id);
     }
   }catch(e){ /* private browsing or similar - default view is fine */ }
+  startupRestoring = false;
   appStartupComplete = true;
+  loadDashboardData(ordersP || undefined);
 })();
 </script>
 </body>
