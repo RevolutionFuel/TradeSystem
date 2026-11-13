@@ -12317,6 +12317,16 @@ function vesselTrackStays(positions, latest){
     if(last && distanceKm(last, p) <= VESSEL_TRACK_SAME_PLACE_KM){ last.to = p.t; last.count++; }
     else stays.push({ lat: p.lat, lon: p.lon, from: p.t, to: p.t, count: 1 });
   });
+  // The most recent stay, if it's where the vessel still is, isn't a
+  // previous position - it's the current one, there since stay.from. Drawn
+  // as a separate dot it just sits under the yacht (Adventure, moored at
+  // Toulon since 12 Oct, 13 Nov).
+  const last = stays[stays.length - 1];
+  if(last && latest && latest.latitude != null && latest.longitude != null
+     && distanceKm(last, { lat: Number(latest.latitude), lon: Number(latest.longitude) }) <= VESSEL_TRACK_SAME_PLACE_KM){
+    stays.pop();
+    stays.hereSince = last.from;
+  }
   return stays;
 }
 function vesselStayLabel(stay){
@@ -12349,9 +12359,30 @@ function addVesselMapLockControl(map){
   });
   map.addControl(new Ctl());
 }
-function vesselLatestLabel(pos){
+function vesselLatestLabel(pos, hereSince){
   const ts = pos.aisTimestamp ? new Date(pos.aisTimestamp) : null;
-  return 'Latest' + (ts && !isNaN(ts) ? ' \u00b7 ' + trackDateText(ts, ts.getFullYear() !== new Date().getFullYear()) : '');
+  const thisYear = new Date().getFullYear();
+  let text = 'Latest' + (ts && !isNaN(ts) ? ' \u00b7 ' + trackDateText(ts, ts.getFullYear() !== thisYear) : '');
+  if(hereSince) text += ' \u00b7 here since ' + trackDateText(hereSince, hereSince.getFullYear() !== thisYear);
+  return text;
+}
+// Frames the map on its track (or just the latest position). Re-measures
+// the map first: Leaflet caches the box size from when the map was drawn,
+// and if the box has grown since (page layout settling), framing against
+// the stale size leaves the map zoomed out and off-centre (Adventure,
+// 13 Nov). Padding scales with the map so a short map isn't all padding.
+function frameVesselMap(map){
+  if(itemDetailMapInstance !== map) return;
+  map.invalidateSize({ pan: false });
+  const sz = map.getSize();
+  if(!sz.x || !sz.y) return;
+  const latest = map._vesselLatestMarker && map._vesselLatestMarker.getLatLng();
+  const path = map._vesselTrackPath;
+  if(!path || path.length < 2){ if(latest) map.setView(latest, map.getZoom(), { animate:false }); return; }
+  const side = Math.min(40, sz.x * 0.1);
+  const top = Math.min(60, sz.y * 0.25);
+  const bottom = map._vesselMapFull ? Math.min(80, sz.y * 0.3) : Math.min(30, sz.y * 0.15);
+  map.fitBounds(L.latLngBounds(path), { paddingTopLeft:[side, top], paddingBottomRight:[side, bottom], maxZoom: 10, animate:false });
 }
 // Adds the history behind the latest marker once it arrives. Ignored if the
 // person has moved to another page (or the map was redrawn) meanwhile.
@@ -12362,8 +12393,12 @@ async function addVesselTrack(map, item, latestLatLng){
   catch(e){ console.warn('TS: vessel position history failed', e); return; }
   if(itemDetailMapInstance !== map) return;
   const stays = vesselTrackStays(positions, item.lastPosition);
-  if(!stays.length) return;
+  if(stays.hereSince && map._vesselLatestMarker){
+    map._vesselLatestMarker.setTooltipContent(vesselLatestLabel(item.lastPosition, stays.hereSince));
+  }
+  if(!stays.length){ frameVesselMap(map); return; }
   const path = stays.map(s => [s.lat, s.lon]).concat([latestLatLng]);
+  map._vesselTrackPath = path;
   const trackLayer = L.layerGroup().addTo(map);
   L.polyline(path, { color:'#0A4552', weight:2, opacity:0.75, dashArray:'5 6' }).addTo(trackLayer);
   const showLabels = stays.length <= VESSEL_TRACK_MAX_LABELS;
@@ -12379,7 +12414,7 @@ async function addVesselTrack(map, item, latestLatLng){
   // Frame the whole track, latest included, without zooming in past harbour
   // level - kept clear of the position box along the top and, on the
   // full-width layout, the vessel name banner along the bottom.
-  map.fitBounds(L.latLngBounds(path), { paddingTopLeft:[40, 60], paddingBottomRight:[40, map._vesselMapFull ? 80 : 30], maxZoom: 10, animate:false });
+  frameVesselMap(map);
 }
 function renderVesselMap(item, containerId){
   const container = document.getElementById(containerId || 'itemDetailVesselMapSection');
@@ -12402,6 +12437,20 @@ function renderVesselMap(item, containerId){
   map._vesselLatestMarker = latest;
   map._vesselMapFull = containerId === 'itemDetailVesselMapFullSection';
   addVesselMapLockControl(map);
+  // Keep the framing right if the map's box changes size after drawing.
+  // Once unlocked, the person's own pan/zoom is left alone.
+  if(typeof ResizeObserver !== 'undefined'){
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        if(itemDetailMapInstance !== map){ ro.disconnect(); return; }
+        if(map._vesselMapLocked) frameVesselMap(map); else map.invalidateSize({ pan: false });
+      });
+    });
+    ro.observe(map.getContainer());
+    map.on('unload', () => ro.disconnect());
+  }
   addVesselTrack(map, item, [lat, lon]);
 }
 // Length/beam/draught/gross tonnage/year built as one compact line rather
