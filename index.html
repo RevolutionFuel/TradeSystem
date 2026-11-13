@@ -496,6 +496,16 @@
   .item-detail-map-hint{font-size:12px; color:var(--ink-soft); margin-top:6px;}
   .item-detail-map-centerpin{position:absolute; top:50%; left:50%; width:34px; height:40px; margin-left:-17px; margin-top:-36px; z-index:1000; pointer-events:none; filter:drop-shadow(0 2px 3px rgba(0,0,0,0.4));}
   .item-detail-yacht-marker{filter:drop-shadow(0 2px 3px rgba(0,0,0,0.4));}
+  /* Vessel track: previous positions (teal dots, white date labels) and
+     the latest position (yacht marker, gold label), so "where it is now"
+     never gets confused with where it has been. */
+  .leaflet-tooltip.vessel-track-label{background:rgba(255,255,255,0.92); color:#0A1A3A; border:1px solid rgba(10,26,58,0.25); border-radius:4px; padding:1px 5px; font-size:10.5px; font-weight:600; box-shadow:none; white-space:nowrap;}
+  .leaflet-tooltip.vessel-track-label::before{display:none;}
+  .leaflet-tooltip.vessel-latest-label{background:#F7BF4A; color:#0A1A3A; border:1px solid #0A1A3A; border-radius:4px; padding:2px 7px; font-size:11.5px; font-weight:700; box-shadow:0 1px 4px rgba(0,0,0,0.35); white-space:nowrap;}
+  .leaflet-tooltip.vessel-latest-label::before{display:none;}
+  .vessel-map-lock-btn{background:#fff; color:#0A1A3A; border:1px solid rgba(0,0,0,0.25); border-radius:4px; padding:5px 9px; font-size:12px; font-weight:600; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,0.25); font-family:inherit;}
+  .vessel-map-lock-btn:hover{background:#F4F1EA;}
+  .vessel-map-locked .leaflet-container{cursor:default;}
   .item-detail-contact-row{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 0; border-bottom:1px solid var(--line-soft);}
   .item-detail-contact-name{font-weight:600; font-size:13.5px; color:var(--ink);}
   .item-detail-contact-primary{font-size:10px; text-transform:uppercase; letter-spacing:0.04em; color:var(--amber); font-weight:700;}
@@ -12274,6 +12284,103 @@ function vesselMapOverlayHtml(item){
   }
   return `<div class="item-detail-map-overlay">${etaLine}${coordsLine}</div>`;
 }
+// ---- Vessel position history (track) ----
+// Every position the weekly AIS run (and each on-demand refresh) has stored
+// in vessel_positions, drawn behind the latest position. Consecutive fixes
+// within VESSEL_TRACK_SAME_PLACE_KM of each other are one "stay" (one dot,
+// labelled with its date range) - a yacht sitting in a marina for weeks
+// would otherwise stack a pile of identical dots and unreadable labels.
+const VESSEL_TRACK_SAME_PLACE_KM = 2;
+// Above this many stays, date labels only show on hover/tap (too crowded).
+const VESSEL_TRACK_MAX_LABELS = 15;
+function distanceKm(a, b){
+  const R = 6371, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
+  const h = Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function trackDateText(d, withYear){
+  return d.toLocaleDateString('en-GB', withYear ? {day:'numeric', month:'short', year:'numeric'} : {day:'numeric', month:'short'});
+}
+// Oldest first. Positions at (or after) the latest position's own AIS time
+// are left out - that one is drawn as the yacht marker instead.
+function vesselTrackStays(positions, latest){
+  const latestTs = latest && latest.aisTimestamp ? new Date(latest.aisTimestamp).getTime() : Infinity;
+  const pts = (positions || [])
+    .filter(p => p && p.latitude != null && p.longitude != null && p.aisTimestamp)
+    .map(p => ({ lat: Number(p.latitude), lon: Number(p.longitude), t: new Date(p.aisTimestamp) }))
+    .filter(p => isFinite(p.lat) && isFinite(p.lon) && !isNaN(p.t) && p.t.getTime() < latestTs)
+    .sort((a, b) => a.t - b.t);
+  const stays = [];
+  pts.forEach(p => {
+    const last = stays[stays.length - 1];
+    if(last && distanceKm(last, p) <= VESSEL_TRACK_SAME_PLACE_KM){ last.to = p.t; last.count++; }
+    else stays.push({ lat: p.lat, lon: p.lon, from: p.t, to: p.t, count: 1 });
+  });
+  return stays;
+}
+function vesselStayLabel(stay){
+  const multiYear = stay.from.getFullYear() !== new Date().getFullYear() || stay.to.getFullYear() !== new Date().getFullYear();
+  const a = trackDateText(stay.from, multiYear), b = trackDateText(stay.to, multiYear);
+  return a === b ? a : a + ' \u2013 ' + b;
+}
+// The map starts locked so the page scrolls normally over it (especially on
+// a phone); Unlock turns on dragging and zooming. Tapping a dot for its
+// dates works either way.
+function setVesselMapLocked(map, locked, btn){
+  const handlers = ['dragging', 'touchZoom', 'doubleClickZoom', 'scrollWheelZoom', 'boxZoom', 'keyboard'];
+  handlers.forEach(h => { if(map[h]) locked ? map[h].disable() : map[h].enable(); });
+  if(map.zoomControl){ locked ? map.zoomControl.remove() : map.zoomControl.addTo(map); }
+  map.getContainer().classList.toggle('vessel-map-locked', locked);
+  map._vesselMapLocked = locked;
+  if(btn){ btn.textContent = locked ? 'Unlock map' : 'Lock map'; btn.title = locked ? 'Unlock to drag and zoom the map' : 'Lock the map so the page scrolls over it'; }
+}
+function addVesselMapLockControl(map){
+  const Ctl = L.Control.extend({
+    options: { position: 'topleft' },
+    onAdd(){
+      const btn = L.DomUtil.create('button', 'vessel-map-lock-btn');
+      btn.type = 'button';
+      L.DomEvent.disableClickPropagation(btn);
+      L.DomEvent.on(btn, 'click', () => setVesselMapLocked(map, !map._vesselMapLocked, btn));
+      setVesselMapLocked(map, true, btn);
+      return btn;
+    }
+  });
+  map.addControl(new Ctl());
+}
+function vesselLatestLabel(pos){
+  const ts = pos.aisTimestamp ? new Date(pos.aisTimestamp) : null;
+  return 'Latest' + (ts && !isNaN(ts) ? ' \u00b7 ' + trackDateText(ts, ts.getFullYear() !== new Date().getFullYear()) : '');
+}
+// Adds the history behind the latest marker once it arrives. Ignored if the
+// person has moved to another page (or the map was redrawn) meanwhile.
+async function addVesselTrack(map, item, latestLatLng){
+  if(!window.TS || !window.TS.getVesselPositions || !isRealUuid(item.id)) return;
+  let positions;
+  try{ positions = await window.TS.getVesselPositions(item.id, 1000); }
+  catch(e){ console.warn('TS: vessel position history failed', e); return; }
+  if(itemDetailMapInstance !== map) return;
+  const stays = vesselTrackStays(positions, item.lastPosition);
+  if(!stays.length) return;
+  const path = stays.map(s => [s.lat, s.lon]).concat([latestLatLng]);
+  const trackLayer = L.layerGroup().addTo(map);
+  L.polyline(path, { color:'#0A4552', weight:2, opacity:0.75, dashArray:'5 6' }).addTo(trackLayer);
+  const showLabels = stays.length <= VESSEL_TRACK_MAX_LABELS;
+  stays.forEach(stay => {
+    const m = L.circleMarker([stay.lat, stay.lon], { radius:5, color:'#FFFFFF', weight:1.5, fillColor:'#0A4552', fillOpacity:1 }).addTo(trackLayer);
+    const label = vesselStayLabel(stay);
+    m.bindTooltip(label, { permanent: showLabels, direction:'right', offset:[6, 0], className:'vessel-track-label' });
+    const fmt = d => d.toLocaleString('en-GB', {dateStyle:'medium', timeStyle:'short'});
+    const when = stay.count > 1 ? 'From ' + fmt(stay.from) + '<br>to ' + fmt(stay.to) + ' (' + stay.count + ' reports)' : fmt(stay.from);
+    m.bindPopup('<strong>Previous position</strong><br>' + when + '<br><span style="color:#4B6072">' + stay.lat.toFixed(4) + ', ' + stay.lon.toFixed(4) + '</span>');
+  });
+  map._vesselLatestMarker && map._vesselLatestMarker.setZIndexOffset(1000);
+  // Frame the whole track, latest included, without zooming in past harbour
+  // level - kept clear of the position box along the top and, on the
+  // full-width layout, the vessel name banner along the bottom.
+  map.fitBounds(L.latLngBounds(path), { paddingTopLeft:[40, 60], paddingBottomRight:[40, map._vesselMapFull ? 80 : 30], maxZoom: 10, animate:false });
+}
 function renderVesselMap(item, containerId){
   const container = document.getElementById(containerId || 'itemDetailVesselMapSection');
   if(!container) return;
@@ -12290,7 +12397,12 @@ function renderVesselMap(item, containerId){
   const map = L.map('itemDetailVesselMapCanvas', { zoomControl: true, scrollWheelZoom: false }).setView([lat, lon], 10);
   itemDetailMapInstance = map;
   addMapTiles(map);
-  L.marker([lat, lon], { icon: L.divIcon({ className: 'item-detail-yacht-marker', html: YACHT_MARKER_SVG, iconSize: [34, 40], iconAnchor: [17, 36] }) }).addTo(map);
+  const latest = L.marker([lat, lon], { zIndexOffset: 1000, icon: L.divIcon({ className: 'item-detail-yacht-marker', html: YACHT_MARKER_SVG, iconSize: [34, 40], iconAnchor: [17, 36] }) }).addTo(map);
+  latest.bindTooltip(vesselLatestLabel(pos), { permanent: true, direction:'top', offset:[0, -34], className:'vessel-latest-label' });
+  map._vesselLatestMarker = latest;
+  map._vesselMapFull = containerId === 'itemDetailVesselMapFullSection';
+  addVesselMapLockControl(map);
+  addVesselTrack(map, item, [lat, lon]);
 }
 // Length/beam/draught/gross tonnage/year built as one compact line rather
 // than five separate fields - this is registry/AIS-specs data rather than
