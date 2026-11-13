@@ -4885,6 +4885,10 @@ async function saveOrderToDatabase(){
 async function loadOrderFromDatabase(id){
   if(!window.TS || !window.TS.loadOrder) return;
   orderNumberPendingAssignment = false;
+  // Cleared rather than assumed true: a reopened order can still have its
+  // port set for the first time, and the no-pricing-yet guard in
+  // applyPortDefaultCurrency is what protects an order already being priced.
+  orderCurrencyManuallySet = false;
   clearOrderNumberPendingPlaceholder();
   const row = await window.TS.loadOrder(id);
   // Restored directly from the order's own dedicated columns (loadOrder()
@@ -5802,6 +5806,9 @@ function checkGibraltarPreset(portName){
 function pickPort(name){
   document.getElementById('port').value = name;
   hidePortList();
+  // Before the Gibraltar preset, which sets its own currency explicitly and
+  // should win where the two ever disagree.
+  applyPortDefaultCurrency(name);
   checkGibraltarPreset(name);
   render();
 }
@@ -5815,10 +5822,57 @@ async function addNewPortFromForm(){
 }
 
 /* ===================== PRODUCT BLOCKS ===================== */
+// The three currencies an order can be priced in. Single source of truth for
+// the per-product dropdowns and for the country default-currency picker in
+// Manage Lists, so the two can't drift apart.
+const ORDER_CURRENCIES = ['USD','EUR','GBP'];
 function seasonalDefaultCurrency(){
   // Nov–Apr -> USD, May–Oct -> EUR
+  // Only the starting point for a brand new product when no port has been
+  // chosen yet — once a port is known, its country's default currency takes
+  // over (see applyPortDefaultCurrency and addProductBlock).
   const month = new Date().getMonth() + 1; // 1-12
   return (month >= 5 && month <= 10) ? 'EUR' : 'USD';
+}
+// Set as soon as the broker picks a currency by hand on this order, which
+// stops the port-based default from overwriting their choice — the same
+// "default, then diverge" rule used for payment terms and signatures.
+let orderCurrencyManuallySet = false;
+// Each country carries a default trading currency, maintained in
+// Manage Lists > Countries. Returns null when the port isn't a known one
+// (freely typed text) or its country isn't loaded, so callers leave the
+// current currency alone rather than guessing at it.
+function defaultCurrencyForPortName(portName){
+  const name = (portName || '').trim().toLowerCase();
+  if(!name) return null;
+  const port = (PORTS || []).find(p => (p.name || '').trim().toLowerCase() === name);
+  if(!port) return null;
+  const country = countryForName(port.country);
+  if(!country) return null;
+  return ORDER_CURRENCIES.includes(country.defaultCurrency) ? country.defaultCurrency : 'USD';
+}
+// True once any price has been typed on the order. Prices and currency are
+// read together as one figure, so once pricing has started the currency is
+// live commercial data and is never silently rewritten by a port change.
+function orderHasPricingEntered(){
+  return productBlocks.some(b => String(b.sellingPrice || '').trim() || String(b.costPrice || '').trim());
+}
+// Applies the selected port's country default to every product on the order.
+// Purchase currency follows the selling currency only where it was already
+// tracking it, matching how the Gibraltar preset and the quote reset behave.
+function applyPortDefaultCurrency(portName){
+  if(orderCurrencyManuallySet || orderHasPricingEntered()) return;
+  const cur = defaultCurrencyForPortName(portName);
+  if(!cur) return;
+  let changed = false;
+  productBlocks.forEach(b=>{
+    if(b.currency === cur) return;
+    const old = b.currency;
+    b.currency = cur;
+    if(b.costCurrency === old) b.costCurrency = cur;
+    changed = true;
+  });
+  if(changed) renderProductBlocks();
 }
 
 /* ===================== FUEL PRESETS ===================== */
@@ -5901,7 +5955,14 @@ async function saveCustomOtherProductToList(blockId){
 
 function addProductBlock(kind){
   const id = 'pb'+(pbCounter++);
-  const prevCurrency = productBlocks.length ? productBlocks[productBlocks.length-1].currency : seasonalDefaultCurrency();
+  // A second or later product follows the one before it. The first product
+  // takes the selected port's country default — the port is normally chosen
+  // before any product is added, so without this the country rule would
+  // almost never get a chance to apply. Seasonal guess only as a last
+  // resort, when no port has been picked yet.
+  const prevCurrency = productBlocks.length
+    ? productBlocks[productBlocks.length-1].currency
+    : (defaultCurrencyForPortName(fv('port')) || seasonalDefaultCurrency());
   const block = {
     id, kind, // 'fuel' | 'other'
     grade: '', otherFuel: '',
@@ -5982,6 +6043,10 @@ function updateBlock(id, field, value){
   if(!b) return;
   const oldValue = b[field];
   b[field] = value;
+  // A hand-picked currency stops the port's country default from touching
+  // this order again. Only reached from the dropdowns' onchange, so code
+  // setting b.currency directly (presets, the quote reset) doesn't trip it.
+  if(field === 'currency' || field === 'costCurrency') orderCurrencyManuallySet = true;
   if(field === 'grade'){
     if(value==='Auto Gas Oil') b.sulphur = '0.001% maximum guaranteed';
     else if(value==='Marine Gas Oil') b.sulphur = '0.10% maximum guaranteed';
@@ -6555,7 +6620,7 @@ function fuelBlockPriceHTML(b, idx){
     <div class="row">
       <div class="field"><label>Currency</label>
         <select data-field="currency" data-block-id="${b.id}" onchange="updateBlock('${b.id}','currency',this.value)">
-          ${['USD','EUR','GBP'].map(c=>`<option ${b.currency===c?'selected':''}>${c}</option>`).join('')}
+          ${ORDER_CURRENCIES.map(c=>`<option ${b.currency===c?'selected':''}>${c}</option>`).join('')}
         </select>
       </div>
       <div class="field"><label>Price per unit</label><input type="text" inputmode="decimal" data-field="sellingPrice" data-block-id="${b.id}" value="${escAttr(b.sellingPrice)}" oninput="sanitizeDecimal(this); updateBlock('${b.id}','sellingPrice',this.value)"></div>
@@ -6588,7 +6653,7 @@ function otherBlockPriceHTML(b, idx){
     <div class="row">
       <div class="field"><label>Currency</label>
         <select data-field="currency" data-block-id="${b.id}" onchange="updateBlock('${b.id}','currency',this.value)">
-          ${['USD','EUR','GBP'].map(c=>`<option ${b.currency===c?'selected':''}>${c}</option>`).join('')}
+          ${ORDER_CURRENCIES.map(c=>`<option ${b.currency===c?'selected':''}>${c}</option>`).join('')}
         </select>
       </div>
       <div class="field"><label>Price</label><input type="text" inputmode="decimal" data-field="sellingPrice" data-block-id="${b.id}" value="${escAttr(b.sellingPrice)}" oninput="sanitizeDecimal(this); updateBlock('${b.id}','sellingPrice',this.value)"></div>
@@ -6633,7 +6698,7 @@ function quotePurchasePriceSectionHTML(b){
       <div class="row">
         <div class="field"><label>Currency</label>
           <select data-field="costCurrency" data-block-id="${b.id}" onchange="updateBlock('${b.id}','costCurrency',this.value)">
-            ${['USD','EUR','GBP'].map(c=>`<option ${(b.costCurrency||b.currency)===c?'selected':''}>${c}</option>`).join('')}
+            ${ORDER_CURRENCIES.map(c=>`<option ${(b.costCurrency||b.currency)===c?'selected':''}>${c}</option>`).join('')}
           </select>
         </div>
         <div class="field"><label>Buy price per unit</label><input type="text" inputmode="decimal" data-field="costPrice" data-block-id="${b.id}" value="${escAttr(b.costPrice)}" oninput="sanitizeDecimal(this); updateBlock('${b.id}','costPrice',this.value)"></div>
@@ -6662,7 +6727,7 @@ function productBlockCostHTML(b, idx){
     <div class="row">
       <div class="field"><label>Currency</label>
         <select data-field="costCurrency" data-block-id="${b.id}" onchange="updateBlock('${b.id}','costCurrency',this.value)">
-          ${['USD','EUR','GBP'].map(c=>`<option ${(b.costCurrency||b.currency)===c?'selected':''}>${c}</option>`).join('')}
+          ${ORDER_CURRENCIES.map(c=>`<option ${(b.costCurrency||b.currency)===c?'selected':''}>${c}</option>`).join('')}
         </select>
       </div>
       <div class="field"><label>Buy price per unit</label><input type="text" inputmode="decimal" data-field="costPrice" data-block-id="${b.id}" value="${escAttr(b.costPrice)}" oninput="sanitizeDecimal(this); updateBlock('${b.id}','costPrice',this.value)"></div>
@@ -6699,7 +6764,7 @@ function productBlockCustomerHTML(b, idx){
     <div class="row">
       <div class="field"><label>Currency</label>
         <select data-field="currency" data-block-id="${b.id}" onchange="updateBlock('${b.id}','currency',this.value)">
-          ${['USD','EUR','GBP'].map(c=>`<option ${b.currency===c?'selected':''}>${c}</option>`).join('')}
+          ${ORDER_CURRENCIES.map(c=>`<option ${b.currency===c?'selected':''}>${c}</option>`).join('')}
         </select>
       </div>
       <div class="field"><label>Price per unit</label><input type="text" inputmode="decimal" data-field="sellingPrice" data-block-id="${b.id}" value="${escAttr(b.sellingPrice)}" oninput="sanitizeDecimal(this); updateBlock('${b.id}','sellingPrice',this.value)"></div>
@@ -10894,6 +10959,7 @@ async function startNewOrderFromBar(){
 async function clearOrder(){
   try{ localStorage.removeItem('ts-order-draft'); }catch(e){ /* private browsing or similar - fine to skip */ }
   orderNumberPendingAssignment = false;
+  orderCurrencyManuallySet = false;
   clearOrderNumberPendingPlaceholder();
   lastStoredPdfPaths = { quotation:null, supplier:null, customer:null, invoice:null, proforma:null, commission:null };
   // Contact selections (both "to" and "cc") — previously missing from this
@@ -11771,6 +11837,7 @@ const ITEM_DETAIL_SCHEMAS = {
     fields: [
       {key:'name', label:'Name', type:'text'},
       {key:'iso2', label:'ISO code (2 letters, e.g. GR)', type:'text'},
+      {key:'defaultCurrency', label:'Default currency for orders in this country', type:'select', get options(){ return ORDER_CURRENCIES.slice(); }},
       {key:'aliasesText', label:'Other names it goes by (comma-separated)', type:'text'},
       {key:'productIds', label:'Products available', type:'country-products'},
       {key:'deliveryMethods', label:'Delivery methods', type:'multi-check', get options(){ return DELIVERY_METHODS; }},
@@ -13672,13 +13739,17 @@ async function fetchPlaceRows(table, columns, cacheKey){
 }
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, {sensitivity:'base'});
 async function loadCountries(){
-  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes, product_ids, delivery_methods, tax_types, tax_guidance, tax_guidance_updated_at, tax_guidance_updated_by', 'ts-countries-cache');
+  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes, product_ids, delivery_methods, tax_types, tax_guidance, tax_guidance_updated_at, tax_guidance_updated_by, default_currency', 'ts-countries-cache');
   if(!rows){
     const names = Array.from(new Set((PORTS || []).map(p => (p.country || '').trim()).filter(Boolean)));
     rows = names.map(n => ({ id: '', name: n, slug: '', iso2: '', aliases: [], notes: '' }));
   }
   COUNTRIES = rows.map(r => ({
     id: r.id, name: r.name, slug: r.slug || '', iso2: r.iso2 || '', aliases: r.aliases || [],
+    // Drives the order currency preset when a port in this country is
+    // picked. Falls back to USD both for a country saved before this
+    // field existed and for the offline/no-rows path above.
+    defaultCurrency: r.default_currency || 'USD',
     aliasesText: (r.aliases || []).join(', '), notes: r.notes || '', productIds: r.product_ids || [],
     deliveryMethods: r.delivery_methods || [],
     taxTypes: r.tax_types || [], taxGuidance: r.tax_guidance || '',
@@ -13941,6 +14012,7 @@ async function saveCountryRemote(item){
   }
   item.aliases = parseAliases(item.aliasesText);
   const row = { name: item.name, iso2: item.iso2 || null, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null,
+    default_currency: ORDER_CURRENCIES.includes(item.defaultCurrency) ? item.defaultCurrency : 'USD',
     product_ids: Array.isArray(item.productIds) ? item.productIds : [],
     delivery_methods: Array.isArray(item.deliveryMethods) ? item.deliveryMethods : [],
     tax_types: Array.isArray(item.taxTypes) ? item.taxTypes : [], tax_guidance: (item.taxGuidance || '').trim() || null };
