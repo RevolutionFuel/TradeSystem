@@ -2745,6 +2745,13 @@ function getTaxStatusForInvoice(){
   if(includeEl && !includeEl.checked) return '';
   return fv('taxStatus');
 }
+// Payment tracking (amount received, customer/supplier paid dates, the
+// Customer Paid / Supplier Paid / Fully Settled statuses and the Unpaid
+// filters) is switched off: John tracks payments in his own spreadsheet
+// for now (16 Nov 2026). Nothing was ever recorded in these fields. Set to
+// true to bring everything back - the columns, code and statuses are kept.
+const PAYMENT_TRACKING_ENABLED = false;
+const PAYMENT_STATUSES = ['Customer Paid', 'Supplier Paid', 'Fully Settled'];
 const STATUS_LIST = [
   'Enquiry', 'Enquiry Received', 'Awaiting Prices', 'Quoted', 'Unconfirmed', 'Supplier Confirmed', 'Customer Confirmed', 'Fully Confirmed',
   'Invoiced', 'Customer Paid', 'Supplier Paid', 'Fully Settled', 'Cancelled'
@@ -2761,8 +2768,8 @@ const STATUS_RANK = {
 // unlike a customer who might pay in instalments. Fully Settled once both
 // sides are paid, mirroring how Fully Confirmed already works for the two
 // confirmation flags.
-function isCustomerPaid(){ return currentOrderAmountReceived != null && !!currentOrderReceivedDate; }
-function isSupplierPaid(){ return !!currentOrderSupplierPaidDate; }
+function isCustomerPaid(){ return PAYMENT_TRACKING_ENABLED && currentOrderAmountReceived != null && !!currentOrderReceivedDate; }
+function isSupplierPaid(){ return PAYMENT_TRACKING_ENABLED && !!currentOrderSupplierPaidDate; }
 function getAutoDerivedStatus(){
   if(isCustomerPaid() && isSupplierPaid()) return 'Fully Settled';
   if(isSupplierPaid()) return 'Supplier Paid';
@@ -5168,7 +5175,7 @@ const DASHBOARD_FILTERS = [
   { key:'all_orders', label:'All orders', test:r => !!r.orderNumber },
   { key:'all_enquiries', label:'All enquiries', test:r => !r.orderNumber },
   { key:'all', label:'All', test:r => true }
-];
+].filter(f => PAYMENT_TRACKING_ENABLED || !['unpaid_suppliers', 'unpaid_customers', 'all_unpaid'].includes(f.key));
 // Deliberately a custom modal rather than a plain confirm() - deleting an
 // order is real business history, not a master-list record, so this
 // warrants a visually stronger warning that names the specific order and
@@ -9714,7 +9721,7 @@ function renderTradeSummaryBar(){
   // way to correct a status that advanced further than it should have, or to
   // park an order as Dead/Cancelled, or to set a later-lifecycle status that
   // will normally arrive from the separate order management system.
-  const menuItems = STATUS_LIST.map(s =>
+  const menuItems = STATUS_LIST.filter(s => PAYMENT_TRACKING_ENABLED || !PAYMENT_STATUSES.includes(s) || s === status).map(s =>
     `<div class="status-picker-item ${s===status?'current':''}" onclick="pickManualStatus('${escAttr(s)}')">
       <span class="status-picker-dot" style="background:${getOrderStatusColor(s)};"></span>${escHtml(s)}
     </div>`
@@ -11907,7 +11914,7 @@ async function renderSummary(){
     // Payment tracking - editable only once the order has actually been
     // invoiced (before that there's nothing to have been paid yet) and
     // only once it has a real saved id to update against.
-    if(started && isRealUuid(currentOrderDbId)){
+    if(PAYMENT_TRACKING_ENABLED && started && isRealUuid(currentOrderDbId)){
       body += `<div class="item-detail-field">
         <span class="item-detail-label">Amount received</span>
         <input type="number" step="0.01" id="summaryAmountReceived" value="${currentOrderAmountReceived != null ? escAttr(String(currentOrderAmountReceived)) : ''}" onchange="saveOrderPaymentInfo()" style="max-width:180px;">
