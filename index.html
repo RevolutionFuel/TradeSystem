@@ -8385,30 +8385,30 @@ const SPREADSHEET_COLUMN_META = [
   {align:'left',   bg:'#DCE6F1'}, // A - Order Number
   {align:'left',   bg:'#DCE6F1'}, // B - Order Part
   {align:'left',   bg:'#DCE6F1'}, // C - Reference
-  {align:'right',  bg:'#DCE6F1'}, // D - Order Date
-  {align:'right',  bg:'#DCE6F1'}, // E - Del Date
+  {align:'right',  bg:'#DCE6F1', date:true}, // D - Order Date
+  {align:'right',  bg:'#DCE6F1', date:true}, // E - Del Date
   {align:'center', bg:'#DCE6F1'}, // F - Vessel
   {align:'center', bg:'#DCE6F1'}, // G - Port
   {align:'center', bg:'#DCE6F1', number:true}, // H - Total Volume
   {align:'center', bg:'#DCE6F1', doubleRightBorder:true}, // I - Broker
   {align:'center', bg:'#FCE4D6', doubleRightBorder:true}, // J - Status (left blank, see buildSpreadsheetRow)
-  {align:'right',  bg:'#FFF3FF'}, // K - Inv Date
+  {align:'right',  bg:'#FFF3FF', date:true}, // K - Inv Date
   {align:'left',   bg:'#FFF3FF'}, // L - Customer
   {align:'center', bg:'#FFF3FF'}, // M - CUR (sales)
   {align:'right',  bg:'#FFF3FF', number:true}, // N - Sales Total
-  {align:'right',  bg:'#FFF3FF'}, // O - Due Date (customer)
+  {align:'right',  bg:'#FFF3FF', date:true}, // O - Due Date (customer)
   {align:'right',  bg:'#FFF3FF', number:true}, // P - Amount Received
   // Deliberately uncoloured, matching the sheet - given an explicit white
   // background rather than none at all, since leaving bg unset let some
   // clients (Excel included) fall back to a stray pale-blue shade on paste
   // instead of genuinely blank/white.
-  {align:'right',  bg:'#FFFFFF', doubleRightBorder:true}, // Q - Rcvd Date
+  {align:'right',  bg:'#FFFFFF', doubleRightBorder:true, date:true}, // Q - Rcvd Date
   {align:'left',   bg:'#FCE4D6'}, // R - Supplier
   {align:'center', bg:'#FCE4D6'}, // S - Invoice No
   {align:'center', bg:'#FCE4D6'}, // T - CUR (purchase)
   {align:'right',  bg:'#FCE4D6', number:true}, // U - Purchase Total
-  {align:'right',  bg:'#FCE4D6'}, // V - Due Date (supplier)
-  {align:'right',  bg:'#FFFFFF', doubleRightBorder:true}  // W - Paid Date
+  {align:'right',  bg:'#FCE4D6', date:true}, // V - Due Date (supplier)
+  {align:'right',  bg:'#FFFFFF', doubleRightBorder:true, date:true}  // W - Paid Date
 ];
 // 2 decimal places, comma thousands separator - applied to every numeric
 // column regardless of what it represents (volume, totals, amount
@@ -8452,9 +8452,20 @@ async function copyOrderRowForSpreadsheet(includeInvoiceFields, color, btnEl){
     const displayValue = meta.number ? formatSpreadsheetNumber(v) : v;
     const bgStyle = meta.bg ? `background-color:${meta.bg};` : '';
     const rightBorder = meta.doubleRightBorder ? RIGHT_BORDER_DOUBLE : RIGHT_BORDER_DEFAULT;
-    return `<td style="font-family:Calibri, sans-serif; font-size:12pt; text-align:${meta.align}; ${bgStyle} border-left:${LEFT_BORDER}; border-right:${rightBorder};">${escHtml(String(displayValue))}</td>`;
+    // An empty number/date cell (e.g. Amount Received, Rcvd/Paid Date - not
+    // known yet) carries no value for Excel to infer a format from, so it
+    // pasted as General and whatever was typed in later came out
+    // unformatted (John, 16 Nov). The format is stated explicitly instead,
+    // via Excel's own mso-number-format (see the <style> block below).
+    // Filled cells are left exactly as before.
+    const fmtClass = (String(v) === '' && (meta.number || meta.date)) ? ` class="${meta.number ? 'ts-num' : 'ts-date'}"` : '';
+    return `<td${fmtClass} style="font-family:Calibri, sans-serif; font-size:12pt; text-align:${meta.align}; ${bgStyle} border-left:${LEFT_BORDER}; border-right:${rightBorder};">${escHtml(String(displayValue))}</td>`;
   }).join('');
-  const html = `<table style="border-collapse:collapse;"><tr style="color:${color}; font-family:Calibri, sans-serif; font-size:12pt;">${cellsHtml}</tr></table>`;
+  // mso-number-format is how Excel's own HTML export carries a cell's number
+  // format; Excel reads it back on paste. "Short Date" is Excel's built-in
+  // date format (dd/mm/yyyy on a UK setup), the same one it gives a date
+  // typed into a General cell; #,##0.00 matches formatSpreadsheetNumber.
+  const html = `<style>.ts-num{mso-number-format:"\\#\\,\\#\\#0\\.00";} .ts-date{mso-number-format:"Short Date";}</style><table style="border-collapse:collapse;"><tr style="color:${color}; font-family:Calibri, sans-serif; font-size:12pt;">${cellsHtml}</tr></table>`;
   try{
     if(navigator.clipboard && window.ClipboardItem){
       await navigator.clipboard.write([
