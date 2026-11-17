@@ -12279,6 +12279,8 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'name', label:'Name', type:'text'},
       {key:'iso2', label:'ISO code (2 letters, e.g. GR)', type:'text'},
       {key:'defaultCurrency', label:'Default currency for orders in this country', type:'select', get options(){ return ORDER_CURRENCIES.slice(); }},
+      {key:'fallbackCountryName', viewLabel:'When blank, uses details from', label:'When products, delivery methods or tax fields below are blank, use this country\u2019s', type:'select',
+        get options(){ return [NO_FALLBACK_LABEL, ...COUNTRIES.filter(c => isRealUuid(c.id) && c.id !== itemDetailState.id).map(c => c.name)]; }},
       {key:'aliasesText', label:'Other names it goes by (comma-separated)', type:'text'},
       ...placeSupplyFields(),
       {key:'slug', viewLabel:'Web address', label:'Web address (slug) — stays fixed if renamed; clear it to regenerate', type:'text'},
@@ -12953,6 +12955,7 @@ function renderItemDetail(){
       // figures in view mode only, so the stored value itself stays exact
       // and fully editable.
       if(f.format === 'sigfig3' && displayValue && !isNaN(Number(displayValue))) displayValue = roundToSigFigs(Number(displayValue), 3);
+      if(f.key === 'fallbackCountryName' && displayValue === NO_FALLBACK_LABEL) displayValue = '';
       // View mode only shows fields that actually have something in them —
       // edit mode (below) always shows every field, including empty ones,
       // since that's where you'd fill them in.
@@ -14387,7 +14390,7 @@ async function fetchPlaceRows(table, columns, cacheKey){
 }
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, {sensitivity:'base'});
 async function loadCountries(){
-  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes, product_ids, delivery_methods, tax_types, tax_guidance, tax_guidance_updated_at, tax_guidance_updated_by, default_currency', 'ts-countries-cache');
+  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes, product_ids, delivery_methods, tax_types, tax_guidance, tax_guidance_updated_at, tax_guidance_updated_by, default_currency, fallback_country_id', 'ts-countries-cache');
   if(!rows){
     const names = Array.from(new Set((PORTS || []).map(p => (p.country || '').trim()).filter(Boolean)));
     rows = names.map(n => ({ id: '', name: n, slug: '', iso2: '', aliases: [], notes: '' }));
@@ -14402,10 +14405,13 @@ async function loadCountries(){
     deliveryMethods: r.delivery_methods || [],
     taxTypes: r.tax_types || [], taxGuidance: r.tax_guidance || '',
     taxGuidanceUpdatedAt: r.tax_guidance_updated_at || '', taxGuidanceUpdatedBy: r.tax_guidance_updated_by || '',
+    fallbackCountryId: r.fallback_country_id || '',
     _savedName: r.name, _savedSlug: r.slug || ''
   })).sort(byName);
+  COUNTRIES.forEach(c => { const f = c.fallbackCountryId && COUNTRIES.find(x => x.id === c.fallbackCountryId); c.fallbackCountryName = f ? f.name : NO_FALLBACK_LABEL; });
 }
 const ISLAND_SHARED_LABEL = '— shared between countries —';
+const NO_FALLBACK_LABEL = '— none —';
 async function loadIslands(rowsPromise){
   const rows = await (rowsPromise || fetchPlaceRows('islands', 'id, name, slug, country_id, aliases, notes, ' + PLACE_SUPPLY_COLUMNS, 'ts-islands-cache')) || [];
   ISLANDS = rows.map(r => {
@@ -14790,17 +14796,28 @@ function placeFieldIsBlank(item, key){
   const v = item ? item[key] : null;
   return Array.isArray(v) ? v.length === 0 : !String(v || '').trim();
 }
-// The levels above this place, nearest first.
+// The levels above this place, nearest first. A country can name another
+// country to use when its own fields are blank (Monaco -> France), so a
+// country is followed by its fallback chain (guarded against loops).
+function countryWithFallbacks(c){
+  const out = []; const seen = new Set();
+  while(c && !seen.has(c.id) && out.length < 5){
+    out.push({ kind:'country', item: c }); seen.add(c.id);
+    c = c.fallbackCountryId ? COUNTRIES.find(x => x.id === c.fallbackCountryId) : null;
+  }
+  return out;
+}
 function placeParents(kind, item){
   if(kind === 'port'){
     const isl = (item.island || '').trim() ? islandForPort(item) : null;
-    return [isl && { kind:'island', item: isl }, { kind:'region', item: regionForPort(item) }, { kind:'country', item: countryForName(item.country) }]
-      .filter(x => x && x.item);
+    return [isl && { kind:'island', item: isl }, { kind:'region', item: regionForPort(item) }]
+      .filter(x => x && x.item).concat(countryWithFallbacks(countryForName(item.country)));
   }
   if(kind === 'island'){
     const c = item.countryId ? COUNTRIES.find(x => x.id === item.countryId) : null;
-    return c ? [{ kind:'country', item: c }] : [];
+    return countryWithFallbacks(c);
   }
+  if(kind === 'country') return countryWithFallbacks(item).slice(1);
   return [];
 }
 // Where a blank field's value comes from: the nearest level that has one.
@@ -14825,7 +14842,8 @@ function insertBeforeLastDiv(html, extra){
   return i === -1 ? html + extra : html.slice(0, i) + extra + html.slice(i);
 }
 function inheritedPlaceFieldHtml(kind, item, f, editMode, draw){
-  if(!['port','island','region'].includes(kind) || !placeFieldIsBlank(item, f.key)) return draw(item, editMode);
+  if(!['port','island','region','country'].includes(kind) || !placeFieldIsBlank(item, f.key)) return draw(item, editMode);
+  if(kind === 'country' && !placeParents(kind, item).length) return draw(item, editMode); // no fallback: as before
   const src = inheritedPlaceSource(kind, item, f.key);
   if(editMode){
     const own = draw(item, true);
@@ -14868,6 +14886,10 @@ async function saveCountryRemote(item){
     product_ids: Array.isArray(item.productIds) ? item.productIds : [],
     delivery_methods: Array.isArray(item.deliveryMethods) ? item.deliveryMethods : [],
     tax_types: Array.isArray(item.taxTypes) ? item.taxTypes : [], tax_guidance: (item.taxGuidance || '').trim() || null };
+  const fb = COUNTRIES.find(c => c.name === item.fallbackCountryName && c.id !== item.id && isRealUuid(c.id));
+  item.fallbackCountryId = fb ? fb.id : '';
+  if(!fb) item.fallbackCountryName = NO_FALLBACK_LABEL;
+  row.fallback_country_id = item.fallbackCountryId || null;
   const oldName = item._savedName;
   if(!window.TS || !window.TS.getClient) return;
   try{
@@ -14894,7 +14916,8 @@ async function saveCountryRemote(item){
     item._savedName = item.name;
     COUNTRIES.sort(byName);
     writePlaceCache('ts-countries-cache', COUNTRIES, c => ({id:c.id, name:c.name, slug:c.slug, iso2:c.iso2, aliases:c.aliases, notes:c.notes, product_ids:c.productIds || [],
-      delivery_methods:c.deliveryMethods || [], tax_types:c.taxTypes || [], tax_guidance:c.taxGuidance || null, tax_guidance_updated_at:c.taxGuidanceUpdatedAt || null, tax_guidance_updated_by:c.taxGuidanceUpdatedBy || null}));
+      delivery_methods:c.deliveryMethods || [], tax_types:c.taxTypes || [], tax_guidance:c.taxGuidance || null, tax_guidance_updated_at:c.taxGuidanceUpdatedAt || null, tax_guidance_updated_by:c.taxGuidanceUpdatedBy || null,
+      default_currency:c.defaultCurrency || 'USD', fallback_country_id:c.fallbackCountryId || null}));
   }catch(e){
     placeSaveError(e, 'name, ISO code or web address', item.name);
     item.slug = item._savedSlug || '';
