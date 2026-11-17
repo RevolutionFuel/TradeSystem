@@ -352,6 +352,8 @@
   .ac-item .ac-name{font-weight:600;}
   .ac-item .ac-meta{font-size:11px; color:var(--ink-soft); font-family:var(--mono);}
   .ac-item.ac-new{color:var(--teal-dark); font-weight:600;}
+  .ac-head{padding:7px 10px; font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:var(--ink-soft); background:var(--line-soft); border-bottom:1px solid var(--line); position:sticky; top:0;}
+  .ac-head .ac-head-note{display:block; font-weight:400; text-transform:none; letter-spacing:0;}
   .vessel-meta-line{font-size:11.5px; color:var(--ink-soft); margin-top:5px; font-family:var(--mono);}
   .product-block{border:1.5px solid var(--line); border-radius:10px; padding:14px; margin-bottom:14px; position:relative; background:#FCFAF5;}
   .product-block .pb-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}
@@ -650,24 +652,13 @@ button.country-product-chip:hover{border-color:#F7BF4A;}
           <div class="panel-body scroll-col" id="orderFormCol">
 
             <fieldset>
-              <legend>Vessel &amp; Supplier <span style="font-weight:400; text-transform:none; color:var(--ink-soft);">(optional)</span></legend>
+              <legend>Delivery details</legend>
               <div class="field autocomplete">
-                <label for="vesselOrder">Vessel</label>
+                <label for="vesselOrder">Vessel <span style="font-weight:400; text-transform:none; color:var(--ink-soft);">(optional)</span></label>
                 <input type="text" id="vesselOrder" placeholder="Start typing a vessel name..." autocomplete="off"
                   oninput="onVesselInput('vesselOrder','vesselListOrder')" onfocus="onVesselInput('vesselOrder','vesselListOrder')" onkeydown="handleAutocompleteKeydown(event,'vesselListOrder')" onblur="setTimeout(hideVesselList,150)">
                 <div class="ac-list" id="vesselListOrder"></div>
               </div>
-              <div class="field autocomplete">
-                <label for="supplierNameOrder">Supplier</label>
-                <input type="text" id="supplierNameOrder" placeholder="Start typing a supplier name..." autocomplete="off"
-                  oninput="onSupplierInput('supplierNameOrder','supplierListOrder')" onfocus="onSupplierInput('supplierNameOrder','supplierListOrder')" onkeydown="handleAutocompleteKeydown(event,'supplierListOrder')" onblur="setTimeout(hideSupplierList,150)">
-                <div class="ac-list" id="supplierListOrder"></div>
-              </div>
-              <div class="hint">Not required here — but if set, this pre-fills the vessel on the Quote page and the supplier on the Supply Confirmation page.</div>
-            </fieldset>
-
-            <fieldset>
-              <legend>Delivery details</legend>
               <div class="row">
                 <div class="field autocomplete">
                   <label for="port">Port</label>
@@ -685,6 +676,13 @@ button.country-product-chip:hover{border-color:#F7BF4A;}
               </div>
               <div class="field"><label for="portLocation">Location within port <span style="font-weight:400; text-transform:none; color:var(--ink-soft);">(optional)</span></label><input type="text" id="portLocation" placeholder="e.g. Number 1 East Dock" oninput="render()"></div>
               <div class="field"><label for="deliveryTime">Time of delivery</label><input type="text" id="deliveryTime" placeholder="e.g. 14:00 local" oninput="render()"></div>
+              <div class="field autocomplete">
+                <label for="supplierNameOrder">Supplier <span style="font-weight:400; text-transform:none; color:var(--ink-soft);">(optional)</span></label>
+                <input type="text" id="supplierNameOrder" placeholder="Click to see suppliers in the port's country, or start typing..." autocomplete="off"
+                  oninput="onSupplierInput('supplierNameOrder','supplierListOrder')" onfocus="onSupplierFocus('supplierNameOrder','supplierListOrder')" onkeydown="handleAutocompleteKeydown(event,'supplierListOrder')" onblur="setTimeout(hideSupplierList,150)">
+                <div class="ac-list" id="supplierListOrder"></div>
+              </div>
+              <div class="hint">Vessel and supplier aren't required here — but if set, they pre-fill the vessel on the Quote page and the supplier on the Nominate page.</div>
             </fieldset>
 
             <fieldset>
@@ -1073,7 +1071,7 @@ button.country-product-chip:hover{border-color:#F7BF4A;}
               <div class="field autocomplete">
                 <label for="supplierName">Supplier</label>
                 <input type="text" id="supplierName" placeholder="Start typing a supplier name..." autocomplete="off"
-                  oninput="onSupplierInput()" onfocus="onSupplierInput()" onkeydown="handleAutocompleteKeydown(event,'supplierList')" onblur="setTimeout(hideSupplierList,150)">
+                  oninput="onSupplierInput()" onfocus="onSupplierFocus()" onkeydown="handleAutocompleteKeydown(event,'supplierList')" onblur="setTimeout(hideSupplierList,150)">
                 <div class="ac-list" id="supplierList"></div>
               </div>
               <label class="opt-inline" style="margin-top:8px; color:#B3492E; font-weight:600;">
@@ -5556,6 +5554,49 @@ function onSupplierInput(inputId, listId){
   renderSupply();
   renderOrderSummaryPreview();
   renderEnquiry();
+}
+// The country of the port typed on the Details page, if it's a known port
+// with a country — used to offer that country's suppliers first.
+function supplierListCountryForPort(){
+  const portEl = document.getElementById('port');
+  const name = (portEl ? portEl.value : '').trim().toLowerCase();
+  if(!name) return null;
+  const port = (PORTS || []).find(p => (p.name || '').trim().toLowerCase() === name);
+  if(!port || !(port.country || '').trim()) return null;
+  return countryForName(port.country) || { id: '', name: port.country.trim(), aliases: [] };
+}
+// Clicking into a supplier box: when nothing has been typed yet (empty, or
+// still showing the supplier already picked) and a port is set, list every
+// supplier based in that port's country. As soon as anything is typed,
+// oninput takes over with the normal search across all suppliers.
+function onSupplierFocus(inputId, listId){
+  inputId = inputId || 'supplierName';
+  listId = listId || 'supplierList';
+  const inputEl = document.getElementById(inputId);
+  const v = inputEl.value.trim();
+  const untouched = !v || (selectedSupplier && v === selectedSupplier.name);
+  const country = untouched ? supplierListCountryForPort() : null;
+  if(!country){ onSupplierInput(inputId, listId); return; }
+  if(!v) onSupplierInput(inputId, listId); // keeps the existing "empty box clears the supplier" behaviour
+  const list = document.getElementById(listId);
+  list.innerHTML = '';
+  const inCountry = suppliersInCountry(country);
+  const head = document.createElement('div');
+  head.className = 'ac-head';
+  head.innerHTML = inCountry.length
+    ? `Suppliers in ${escHtml(country.name)} (${inCountry.length})<span class="ac-head-note">Start typing to search all suppliers</span>`
+    : `No suppliers on file in ${escHtml(country.name)}<span class="ac-head-note">Start typing to search all suppliers</span>`;
+  list.appendChild(head);
+  inCountry.forEach(s => {
+    const a = normalizeAddress(s.address);
+    const where = a.city || a.line2 || '';
+    const item = document.createElement('div');
+    item.className = 'ac-item';
+    item.innerHTML = `<div class="ac-name">${escHtml(s.name)}</div><div class="ac-meta">${escHtml([where, s.contactName].filter(Boolean).join(' \u00b7 '))}</div>`;
+    item.onclick = () => pickSupplier(s);
+    list.appendChild(item);
+  });
+  list.classList.add('show');
 }
 async function addNewSupplierFromForm(inputId){
   const name = document.getElementById(inputId || 'supplierName').value.trim();
