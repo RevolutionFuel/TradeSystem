@@ -1611,7 +1611,7 @@ button.country-product-chip:hover{border-color:#F7BF4A;}
         <div class="mgmt-add-row">
           <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('supplier')">+ Add new supplier</button>
         </div>
-        <div class="mgmt-search"><input type="text" id="supplierSearch" placeholder="Search suppliers..." oninput="renderSupplierTable()"></div>
+        <div class="mgmt-search"><input type="text" id="supplierSearch" placeholder="Search suppliers or countries..." oninput="renderSupplierTable()"></div>
         <div class="mgmt-count" id="supplierCount"></div>
         <div class="table-wrap">
           <table class="mgmt-table mgmt-mergeable">
@@ -12013,7 +12013,7 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'address.line2', label:'Address line 2', type:'text'},
       {key:'address.city', label:'City', type:'text'},
       {key:'address.postalCode', label:'Postal code', type:'text'},
-      {key:'address.country', label:'Country', type:'text'},
+      {key:'address.country', label:'Country', type:'country-select'},
       {key:'vatNumber', label:'VAT number', type:'text'},
       {key:'uboNationality', label:'UBO nationality', type:'text'},
       {key:'notes', label:'Notes', type:'textarea'}
@@ -12031,7 +12031,7 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'address.line2', label:'Address line 2', type:'text'},
       {key:'address.city', label:'City', type:'text'},
       {key:'address.postalCode', label:'Postal code', type:'text'},
-      {key:'address.country', label:'Country', type:'text'},
+      {key:'address.country', label:'Country', type:'country-select'},
       {key:'vatNumber', label:'VAT number', type:'text'},
       {key:'notes', label:'Notes', type:'textarea'}
     ],
@@ -12760,6 +12760,8 @@ function renderItemDetail(){
       inputHtml = `<select id="${fid}">${f.options.map(o=>`<option ${o===value?'selected':''}>${escHtml(o)}</option>`).join('')}</select>`;
     } else if(f.type === 'owner-select'){
       inputHtml = `<select id="${fid}">${ownerOptionsHtml(value)}</select>`;
+    } else if(f.type === 'country-select'){
+      inputHtml = `<select id="${fid}">${countryOptionsHtml(value)}</select>`;
     } else if(f.type === 'checkbox'){
       return `<div class="item-detail-field">
         <label class="opt-inline"><input type="checkbox" id="${fid}" ${value?'checked':''}> ${escHtml(f.label)}</label>
@@ -13331,6 +13333,20 @@ function formatAddressLines(addr){
   return [a.line1, a.line2, cityPostal, a.country].filter(Boolean);
 }
 
+// Country dropdown for organisation addresses (suppliers, owners). Saves the
+// country's proper name as the address country text; the database trigger
+// organizations_sync_country links it to countries.country_id from that.
+// A value that isn't one of the countries (older free-typed text) stays
+// selectable, marked, so opening and saving a record never silently loses it.
+function countryOptionsHtml(selected){
+  const cur = (selected || '').trim();
+  const match = cur ? countryForName(cur) : null;
+  const sel = match ? match.name : cur;
+  let html = `<option value="" ${sel ? '' : 'selected'}>\u2014 Not set \u2014</option>`;
+  if(sel && !match) html += `<option value="${escAttr(sel)}" selected>${escHtml(sel)} (not in the country list)</option>`;
+  html += COUNTRIES.map(c => `<option value="${escAttr(c.name)}" ${c.name === sel ? 'selected' : ''}>${escHtml(c.name)}</option>`).join('');
+  return html;
+}
 function ownerName(ownerId){
   const o = REGISTERED_OWNERS.find(o=>o.id===ownerId);
   return o ? o.name : '';
@@ -13533,10 +13549,15 @@ function renderSupplierTable(){
   const tbody = document.getElementById('supplierTableBody');
   tbody.innerHTML = '';
   document.getElementById('supplierTableHead').innerHTML = '<tr>' +
-    mgmtSortTh('suppliers','name','Name','renderSupplierTable') + mgmtSortTh('suppliers','contactName','Contact','renderSupplierTable', 'mgmt-wide-col') +
+    mgmtSortTh('suppliers','name','Name','renderSupplierTable') + mgmtSortTh('suppliers','country','Country','renderSupplierTable') +
+    mgmtSortTh('suppliers','contactName','Contact','renderSupplierTable', 'mgmt-wide-col') +
     '<th class="mgmt-wide-col">Address</th><th class="mgmt-wide-col">Roles</th><th class="mgmt-compact-col">Details</th></tr>';
-  let filtered = SUPPLIERS.map((s,i)=>({s,i})).filter(({s})=> !q || s.name.toLowerCase().includes(q));
-  filtered = mgmtSortPairs(filtered, 'suppliers', p=>p.s[mgmtSort.suppliers.field]);
+  const supCountry = s => normalizeAddress(s.address).country || '';
+  let filtered = SUPPLIERS.map((s,i)=>({s,i})).filter(({s})=> !q || s.name.toLowerCase().includes(q) || supCountry(s).toLowerCase().includes(q));
+  const sortField = mgmtSort.suppliers.field;
+  // Country sort keeps suppliers alphabetical by name within each country.
+  if(sortField === 'country') filtered = mgmtSortPairs(filtered.slice().sort((a,b)=>(a.s.name||'').localeCompare(b.s.name||'', undefined, {sensitivity:'base'})), 'suppliers', p=>supCountry(p.s));
+  else filtered = mgmtSortPairs(filtered, 'suppliers', p=>p.s[sortField]);
   document.getElementById('supplierCount').textContent = `${filtered.length} of ${SUPPLIERS.length} suppliers`;
   filtered.forEach(({s,i})=>{
     const tr = document.createElement('tr');
@@ -13546,6 +13567,7 @@ function renderSupplierTable(){
     const compactLines = [s.contactName, addrSummary].filter(Boolean).join(' \u00b7 ');
     tr.innerHTML = `
       <td class="mgmt-item-name">${escHtml(s.name)}</td>
+      <td>${escHtml(addr.country || '\u2014')}</td>
       <td class="mgmt-wide-col">${escHtml(s.contactName || '\u2014')}</td>
       <td class="mgmt-wide-col">${escHtml(addrSummary || '\u2014')}</td>
       <td class="mgmt-wide-col">${rolesSummaryHtml(s)}</td>
