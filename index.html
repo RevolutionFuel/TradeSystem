@@ -1557,6 +1557,7 @@ button.country-product-chip:hover{border-color:#F7BF4A;}
       <button id="mgmtTabPorts" onclick="switchMgmt('ports')">Ports</button>
       <button id="mgmtTabCountries" onclick="switchMgmt('countries')">Countries</button>
       <button id="mgmtTabIslands" onclick="switchMgmt('islands')">Islands</button>
+      <button id="mgmtTabRegions" onclick="switchMgmt('regions')">Local regions</button>
       <button id="mgmtTabProducts" onclick="switchMgmt('products')">Products</button>
       <button id="mgmtTabNotes" onclick="switchMgmt('notes')">Operational notes</button>
     </div>
@@ -1568,6 +1569,7 @@ button.country-product-chip:hover{border-color:#F7BF4A;}
       <option value="ports">Ports</option>
       <option value="countries">Countries</option>
       <option value="islands">Islands</option>
+      <option value="regions">Local regions</option>
       <option value="products">Products</option>
       <option value="notes">Operational notes</option>
     </select>
@@ -1694,6 +1696,22 @@ button.country-product-chip:hover{border-color:#F7BF4A;}
           <table class="mgmt-table">
             <thead id="islandTableHead"></thead>
             <tbody id="islandTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="mgmtPanelRegions" style="display:none;">
+      <div class="panel-body">
+        <div class="mgmt-add-row">
+          <button class="btn-primary btn-sm" onclick="addNewItemAndOpen('region')">+ Add new local region</button>
+        </div>
+        <div class="mgmt-search"><input type="text" id="regionSearch" placeholder="Search local regions or countries..." oninput="renderRegionTable()" aria-label="Search local regions"></div>
+        <div class="mgmt-count" id="regionCount"></div>
+        <div class="table-wrap">
+          <table class="mgmt-table">
+            <thead id="regionTableHead"></thead>
+            <tbody id="regionTableBody"></tbody>
           </table>
         </div>
       </div>
@@ -2579,6 +2597,7 @@ function flagName(code){
 let VESSELS = [];
 let PORTS = [];
 let COUNTRIES = []; // countries table - each port links to one (see loadCountries)
+let LOCAL_REGIONS = []; // local_regions table - ports link to one (see loadRegions)
 let ISLANDS = [];   // islands table - ports on an island link to one (see loadIslands)
 let PRODUCTS = [];
 let NOTES = [];
@@ -11730,7 +11749,7 @@ function switchOrderPage(page){
   window.scrollTo(0, 0);
 }
 function switchMgmt(which){
-  ['vessels','registeredowners','suppliers','agents','ports','countries','islands','products','notes'].forEach(w=>{
+  ['vessels','registeredowners','suppliers','agents','ports','countries','islands','regions','products','notes'].forEach(w=>{
     document.getElementById('mgmtPanel'+cap(w)).style.display = (w===which)?'block':'none';
     document.getElementById('mgmtTab'+cap(w)).classList.toggle('active', w===which);
   });
@@ -11738,6 +11757,7 @@ function switchMgmt(which){
   if(which==='ports') renderPortTable();
   if(which==='countries') renderCountryTable();
   if(which==='islands') renderIslandTable();
+  if(which==='regions') renderRegionTable();
   if(which==='registeredowners') renderOwnerTable();
   if(which==='suppliers') renderSupplierTable();
   if(which==='agents') renderAgentTable();
@@ -12160,7 +12180,7 @@ const ITEM_DETAIL_SCHEMAS = {
     ],
     heroSubtitleFields: [{key:'iso2'}],
     afterSave: async (item) => { await saveCountryRemote(item); },
-    onSaved: () => { renderCountryTable(); renderIslandTable(); renderPortTable(); }
+    onSaved: () => { renderCountryTable(); renderIslandTable(); renderRegionTable(); renderPortTable(); }
   },
   // An island page: like a country page - its delivery locations first, then
   // details. An island shared between countries (Saint Martin) has no single
@@ -12177,6 +12197,19 @@ const ITEM_DETAIL_SCHEMAS = {
     heroSubtitleFields: [{key:'countryName'}],
     afterSave: async (item) => { await saveIslandRemote(item); },
     onSaved: () => { renderIslandTable(); renderCountryTable(); renderPortTable(); }
+  },
+  // A local region page (French Riviera, Adriatic Sea...): like an island
+  // page, but a region can span several countries, so it lists them.
+  region: {
+    kindLabel: 'Local region', listKey: 'ql-local-regions', getList: () => LOCAL_REGIONS,
+    fields: [
+      {key:'name', label:'Name', type:'text'},
+      {key:'aliasesText', label:'Other names it goes by (comma-separated)', type:'text'},
+      {key:'slug', viewLabel:'Web address', label:'Web address (slug) — stays fixed if renamed; clear it to regenerate', type:'text'},
+      {key:'notes', label:'Notes', type:'textarea'}
+    ],
+    afterSave: async (item) => { await saveRegionRemote(item); },
+    onSaved: () => { renderRegionTable(); renderPortTable(); }
   },
   product: {
     kindLabel: 'Product', listKey: 'ql-products', getList: () => PRODUCTS,
@@ -12914,7 +12947,7 @@ function renderItemDetail(){
   // page, since that's what the page is for; details follow. A country page
   // also lists its islands. Ports and islands link up to their island and
   // country pages.
-  const isPlacePage = (itemDetailState.kind === 'country' || itemDetailState.kind === 'island') && !itemDetailState.editMode;
+  const isPlacePage = (itemDetailState.kind === 'country' || itemDetailState.kind === 'island' || itemDetailState.kind === 'region') && !itemDetailState.editMode;
   const countryIslands = (isPlacePage && itemDetailState.kind === 'country') ? islandsInCountry(item) : [];
   const countryIslandsHtml = countryIslands.length ? `<div class="item-detail-field">
       <span class="item-detail-label">Islands (${countryIslands.length})</span>
@@ -12925,13 +12958,16 @@ function renderItemDetail(){
       <div id="placePortsMap" class="ports-map-canvas country-ports-map"></div>
       <div class="ports-map-legend" id="placePortsLegend"></div>
       <div id="placePortsList" style="margin-top:12px;"></div>
-    </div>` + countryIslandsHtml + (itemDetailState.kind === 'country' ? countrySuppliersHtml(item) + countryAlsoSuppliedByHtml(item) : '') : '';
+    </div>` + countryIslandsHtml + (itemDetailState.kind === 'country' ? placeChipLinksHtml('Local regions', 'region', regionsInCountry(item)) + countrySuppliersHtml(item) + countryAlsoSuppliedByHtml(item) : '')
+      + (itemDetailState.kind === 'region' ? placeChipLinksHtml('Countries', 'country', countriesInRegion(item)) : '') : '';
   let portCountryLinkHtml = '';
   if(!itemDetailState.editMode && itemDetailState.kind === 'port'){
     const pc = countryForName(item.country);
     const pi = (item.island || '').trim() ? islandForPort(item) : null;
+    const pr = regionForPort(item);
     portCountryLinkHtml = placeLinkButtonsHtml([
       pi && { kind:'island', item: pi, label: `View ${pi.name} page` },
+      pr && { kind:'region', item: pr, label: `View ${pr.name} page` },
       pc && { kind:'country', item: pc, label: `View ${pc.name} page` }
     ]);
   } else if(!itemDetailState.editMode && itemDetailState.kind === 'island' && item.countryId){
@@ -12948,7 +12984,7 @@ function renderItemDetail(){
   if(itemDetailState.kind === 'vessel') renderVesselDocuments(item);
   if(itemDetailState.kind === 'vessel') renderVesselDealsHistory(item);
   if(itemDetailState.kind === 'supplier') renderSupplierDealsHistory(item);
-  if(isPlacePage) renderPlacePorts(itemDetailState.kind === 'country' ? portsInCountry(item) : portsOnIsland(item));
+  if(isPlacePage) renderPlacePorts(itemDetailState.kind === 'country' ? portsInCountry(item) : itemDetailState.kind === 'region' ? portsInRegion(item) : portsOnIsland(item));
 }
 // Most-recent-first list of every spec sheet ever attached to a product
 // this supplier has supplied, across all past deals - lets a broker
@@ -13436,6 +13472,7 @@ function ownerOptionsHtml(selectedId){
 // direction; clicking a different header switches to that column,
 // ascending — the "first forwards then reversed" behaviour asked for.
 const mgmtSort = {
+  regions: {field:'name', dir:1},
   vessels: {field:'name', dir:1}, owners: {field:'name', dir:1}, suppliers: {field:'name', dir:1},
   agents: {field:'name', dir:1}, ports: {field:'name', dir:1}, products: {field:'name', dir:1},
   countries: {field:'name', dir:1}, islands: {field:'name', dir:1}
@@ -14012,6 +14049,8 @@ function portPopupHtml(p){
   const popupCountry = (c && isRealUuid(c.id) && !(itemDetailState.kind === 'country' && itemDetailState.id === c.id)) ? c : null;
   const pi = (p.island || '').trim() ? islandForPort(p) : null;
   const popupIsland = (pi && isRealUuid(pi.id) && !(itemDetailState.kind === 'island' && itemDetailState.id === pi.id)) ? pi : null;
+  const pr = regionForPort(p);
+  const popupRegion = (pr && isRealUuid(pr.id) && !(itemDetailState.kind === 'region' && itemDetailState.id === pr.id)) ? pr : null;
   const typeCountry = [p.locationType, p.country].filter(Boolean).join(' · ');
   const regions = [p.localRegion, p.oceanographicRegion, p.geographicRegion].filter(Boolean).join(' · ');
   return `<div class="port-popup"><div class="port-popup-name">${escHtml(p.name)}</div>` +
@@ -14019,6 +14058,7 @@ function portPopupHtml(p){
     (regions ? `<div class="port-popup-meta">${escHtml(regions)}</div>` : '') +
     (isRealUuid(p.id) ? `<button type="button" class="btn-primary btn-sm" onclick="openItemDetail('port','${p.id}')">Open details</button>` : '') +
     (popupIsland ? ` <button type="button" class="btn-ghost btn-sm" onclick="openItemDetail('island','${popupIsland.id}')">${escHtml(popupIsland.name)} page</button>` : '') +
+    (popupRegion ? ` <button type="button" class="btn-ghost btn-sm" onclick="openItemDetail('region','${popupRegion.id}')">${escHtml(popupRegion.name)} page</button>` : '') +
     (popupCountry ? ` <button type="button" class="btn-ghost btn-sm" onclick="openItemDetail('country','${popupCountry.id}')">${escHtml(popupCountry.name)} page</button>` : '') +
     `</div>`;
 }
@@ -14276,7 +14316,7 @@ async function loadPlaces(){
   // Islands are fetched alongside countries but mapped once countries are
   // in, since each island's country name comes from COUNTRIES.
   const islandRowsP = fetchPlaceRows('islands', 'id, name, slug, country_id, aliases, notes', 'ts-islands-cache');
-  await Promise.all([loadCountries(), loadPortSlugs()]);
+  await Promise.all([loadCountries(), loadPortSlugs(), loadRegions()]);
   await loadIslands(islandRowsP);
 }
 // Finds a record by its proper name or any of its other names.
@@ -14327,6 +14367,11 @@ async function afterPortSavePlaces(port){
     if(!i){ await loadIslands(); i = islandForPort(port); }
     if(i) port.island = i.name;
   }
+  if((port.localRegion || '').trim()){
+    let r = regionForPort(port);
+    if(!r){ await loadRegions(); r = regionForPort(port); }
+    if(r) port.localRegion = r.name;
+  }
   if(window.TS && window.TS.getClient && isRealUuid(port.id)){
     try{
       const client = window.TS.getClient();
@@ -14340,6 +14385,7 @@ async function afterPortSavePlaces(port){
   }
   renderCountryTable();
   renderIslandTable();
+  renderRegionTable();
 }
 function placeSaveError(e, what, value){
   console.error('TS: save failed', e);
@@ -14409,6 +14455,103 @@ function renderIslandTable(){
   });
 }
 function parseAliases(text){ return (text || '').split(',').map(x => x.trim()).filter(Boolean); }
+
+/* ===================== MANAGE: LOCAL REGIONS ===================== */
+// Local regions (French Riviera, Adriatic Sea, Florida...) are their own
+// records (local_regions table), like countries and islands. Ports link to
+// one via ports.local_region_id, kept in step with the ports' local_region
+// text by the ports_sync_local_region trigger: a typed name or other name is
+// filed under the proper region, an unknown name creates a new one, and a
+// rename is pushed onto the ports (the old name kept as another name). A
+// region can span countries, so it has no country of its own.
+async function loadRegions(){
+  const rows = await fetchPlaceRows('local_regions', 'id, name, slug, aliases, notes', 'ts-local-regions-cache') || [];
+  LOCAL_REGIONS = rows.map(r => ({ id: r.id, name: r.name, slug: r.slug || '', aliases: r.aliases || [],
+    aliasesText: (r.aliases || []).join(', '), notes: r.notes || '', _savedName: r.name, _savedSlug: r.slug || '' })).sort(byName);
+}
+function regionForPort(port){ return (port && (port.localRegion || '').trim()) ? placeForName(LOCAL_REGIONS, port.localRegion) : null; }
+function portsInRegion(region){ return (PORTS || []).filter(p => { const r = regionForPort(p); return r && r.id === region.id; }); }
+function countriesInRegion(region){
+  const ids = new Set();
+  portsInRegion(region).forEach(p => { const c = countryForName(p.country); if(c) ids.add(c.id); });
+  return COUNTRIES.filter(c => ids.has(c.id)).sort(byName);
+}
+function regionsInCountry(country){
+  const ids = new Set();
+  portsInCountry(country).forEach(p => { const r = regionForPort(p); if(r) ids.add(r.id); });
+  return LOCAL_REGIONS.filter(r => ids.has(r.id)).sort(byName);
+}
+function placeChipLinksHtml(label, kind, items){
+  if(!items.length) return '';
+  return `<div class="item-detail-field">
+      <span class="item-detail-label">${escHtml(label)} (${items.length})</span>
+      <div class="place-links">${items.map(x => isRealUuid(x.id)
+        ? `<button type="button" class="btn-ghost btn-sm" onclick="openItemDetail('${kind}','${x.id}')">${escHtml(x.name)}</button>`
+        : `<span class="btn-ghost btn-sm">${escHtml(x.name)}</span>`).join(' ')}</div>
+    </div>`;
+}
+function renderRegionTable(){
+  const tbody = document.getElementById('regionTableBody');
+  if(!tbody) return;
+  const q = (document.getElementById('regionSearch').value || '').toLowerCase();
+  const counts = new Map();
+  const countryNames = new Map();
+  (PORTS || []).forEach(p => {
+    const r = regionForPort(p); if(!r) return;
+    counts.set(r.id, (counts.get(r.id) || 0) + 1);
+    if(!countryNames.has(r.id)) countryNames.set(r.id, new Set());
+    if((p.country || '').trim()) countryNames.get(r.id).add(p.country.trim());
+  });
+  document.getElementById('regionTableHead').innerHTML = '<tr>' +
+    mgmtSortTh('regions','name','Local region','renderRegionTable') +
+    mgmtSortTh('regions','countriesText','Countries','renderRegionTable') +
+    mgmtSortTh('regions','portCount','Delivery locations','renderRegionTable') +
+    mgmtSortTh('regions','slug','Web address','renderRegionTable', 'mgmt-wide-col') + '</tr>';
+  let rows = LOCAL_REGIONS.map(r => ({ r, portCount: counts.get(r.id) || 0,
+      countriesText: Array.from(countryNames.get(r.id) || []).sort((a, b) => a.localeCompare(b)).join(', ') }))
+    .filter(({r, countriesText}) => !q || [r.name, r.slug, countriesText, ...(r.aliases || [])].some(x => (x || '').toLowerCase().includes(q)));
+  const s = mgmtSort.regions;
+  if(s.field === 'portCount') rows.sort((a, b) => (a.portCount - b.portCount) * s.dir || byName(a.r, b.r));
+  else if(s.field === 'countriesText') rows = mgmtSortPairs(rows, 'regions', x => x.countriesText);
+  else rows = mgmtSortPairs(rows, 'regions', x => x.r[s.field]);
+  document.getElementById('regionCount').textContent = `${rows.length} of ${LOCAL_REGIONS.length} local regions`;
+  tbody.innerHTML = '';
+  rows.forEach(({r, portCount, countriesText}) => {
+    const tr = document.createElement('tr');
+    tr.onclick = () => openItemDetail('region', r.id);
+    tr.innerHTML = `<td class="mgmt-item-name">${escHtml(r.name)}</td><td>${escHtml(countriesText || '—')}</td><td>${portCount}</td>` +
+      `<td class="mgmt-wide-col place-slug">${escHtml(r.slug || '—')}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+async function saveRegionRemote(item){
+  item.aliases = parseAliases(item.aliasesText);
+  const row = { name: item.name, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null };
+  const oldName = item._savedName;
+  if(!window.TS || !window.TS.getClient) return;
+  try{
+    const client = window.TS.getClient();
+    const res = isRealUuid(item.id)
+      ? await client.from('local_regions').update(row).eq('id', item.id).select('id, slug, aliases').single()
+      : await client.from('local_regions').insert(row).select('id, slug, aliases').single();
+    if(res.error) throw res.error;
+    item.id = res.data.id;
+    item.slug = res.data.slug || ''; item._savedSlug = item.slug;
+    // A rename keeps the old name as another name (done by the database),
+    // and the database has already moved this region's ports to the new name.
+    item.aliases = res.data.aliases || item.aliases;
+    item.aliasesText = item.aliases.join(', ');
+    if(oldName && oldName !== item.name){
+      (PORTS || []).forEach(p => { if((p.localRegion || '').trim().toLowerCase() === oldName.toLowerCase()) p.localRegion = item.name; });
+    }
+    item._savedName = item.name;
+    LOCAL_REGIONS.sort(byName);
+    writePlaceCache('ts-local-regions-cache', LOCAL_REGIONS, r => ({id:r.id, name:r.name, slug:r.slug, aliases:r.aliases, notes:r.notes}));
+  }catch(e){
+    placeSaveError(e, 'local region name or web address', item.name);
+    item.slug = item._savedSlug || '';
+  }
+}
 // The fixed set of products a country can be marked as offering (John,
 // 30 Sep). Stored on the country as product ids (countries.product_ids) so
 // each links to its product page; the label shown is the product's current
@@ -14591,9 +14734,12 @@ function renderPlacePorts(ports){
     listEl.innerHTML = '<div class="hint">No delivery locations here yet.</div>';
     return;
   }
-  const showIsland = itemDetailState.kind === 'country';
-  listEl.innerHTML = `<div class="table-wrap"><table class="mgmt-table"><thead><tr><th>Location</th><th>Type</th><th>Local region</th>${showIsland ? '<th>Island</th>' : ''}</tr></thead><tbody>` +
-    ports.map(p => `<tr data-port-id="${portAttr(p.id)}"><td class="mgmt-item-name">${escHtml(p.name)}</td><td>${escHtml(p.locationType || '—')}</td><td>${escHtml(p.localRegion || '—')}</td>${showIsland ? `<td>${escHtml(p.island || '—')}</td>` : ''}</tr>`).join('') +
+  const showIsland = itemDetailState.kind === 'country' || itemDetailState.kind === 'region';
+  // On a region's own page the region column would repeat itself - show the country instead.
+  const midLabel = itemDetailState.kind === 'region' ? 'Country' : 'Local region';
+  const midVal = p => itemDetailState.kind === 'region' ? p.country : p.localRegion;
+  listEl.innerHTML = `<div class="table-wrap"><table class="mgmt-table"><thead><tr><th>Location</th><th>Type</th><th>${midLabel}</th>${showIsland ? '<th>Island</th>' : ''}</tr></thead><tbody>` +
+    ports.map(p => `<tr data-port-id="${portAttr(p.id)}"><td class="mgmt-item-name">${escHtml(p.name)}</td><td>${escHtml(p.locationType || '—')}</td><td>${escHtml(midVal(p) || '—')}</td>${showIsland ? `<td>${escHtml(p.island || '—')}</td>` : ''}</tr>`).join('') +
     `</tbody></table></div>`;
   listEl.querySelectorAll('tr[data-port-id]').forEach(tr => { tr.onclick = () => openItemDetail('port', tr.dataset.portId); });
   if(typeof L === 'undefined'){
@@ -15432,13 +15578,13 @@ async function checkSystemAlerts(){
     }
     if(lastView === 'manage'){
       const lastMgmtTab = localStorage.getItem('ts-last-mgmt-tab');
-      if(['vessels','registeredowners','suppliers','agents','ports','countries','islands','products','notes'].includes(lastMgmtTab)) switchMgmt(lastMgmtTab);
+      if(['vessels','registeredowners','suppliers','agents','ports','countries','islands','regions','products','notes'].includes(lastMgmtTab)) switchMgmt(lastMgmtTab);
     }
     // An open item detail page takes priority over everything above - it
     // was the actual page being looked at, so it's what should come back.
     if(lastItemDetail){
       const { kind, id } = JSON.parse(lastItemDetail);
-      const validKinds = ['vessel','owner','supplier','agent','port','product','country','island'];
+      const validKinds = ['vessel','owner','supplier','agent','port','product','country','island','region'];
       if(validKinds.includes(kind) && id) openItemDetail(kind, id);
     }
   }catch(e){ /* private browsing or similar - default view is fine */ }
