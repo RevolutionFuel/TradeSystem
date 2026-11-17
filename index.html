@@ -11699,6 +11699,7 @@ function switchView(v){
   updatePanelHeightLock();
   scheduleStickyOffsetUpdate();
   window.scrollTo(0, 0); // see the matching comment in switchOrderPage() - same stuck-scroll risk when switching into a locked page
+  navRecord();
 }
 // Only acts while the adjustment amount is still empty - once something's
 // actually been typed, whatever currency is showing is treated as a
@@ -11749,6 +11750,7 @@ function switchOrderPage(page){
   // up without a refresh. Resetting to the top on every page switch avoids
   // that regardless of which page it's switching to or from.
   window.scrollTo(0, 0);
+  navRecord();
 }
 function switchMgmt(which){
   ['vessels','registeredowners','suppliers','agents','ports','countries','islands','regions','products','notes'].forEach(w=>{
@@ -11765,8 +11767,112 @@ function switchMgmt(which){
   if(which==='agents') renderAgentTable();
   try{ localStorage.setItem('ts-last-mgmt-tab', which); }catch(e){ /* private browsing or similar - fine to skip */ }
   updatePanelHeightLock();
+  navRecord();
 }
 function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+
+/* ============ BROWSER BACK / FORWARD ============
+   The app is one page, so without this the browser's Back button (and the
+   Android back gesture in the installed app) left the trade system
+   entirely. Every screen change - main tab, deal page, Data tab, item page -
+   now adds a browser history entry holding a snapshot of where you are, and
+   Back/Forward put that screen back. Changes made in one go (e.g. a link
+   that switches tab and then page) are merged into a single entry. */
+let navApplying = false;   // true while Back/Forward is restoring a screen
+let navStarted = false;    // history is only written once startup has settled
+let navPending = false;
+const NAV_ORDER_PAGES = ['order','enquire','quote','supply','customer','invoice','summary'];
+const NAV_VIEW_BY_ID = { viewDashboard: 'dashboard', viewBuild: 'build', viewManage: 'manage' };
+function navSnapshot(){
+  const active = document.querySelector('.view.active');
+  const detailOpen = !!(active && active.id === 'viewItemDetail' && itemDetailState.kind);
+  const baseId = detailOpen ? (itemDetailState.returnViewId || 'viewManage') : (active ? active.id : 'viewDashboard');
+  const op = NAV_ORDER_PAGES.find(p => { const el = document.getElementById('orderPage' + cap(p)); return el && el.classList.contains('active'); }) || 'order';
+  const sel = document.getElementById('mgmtTabsSelect');
+  return {
+    ts: 1, v: NAV_VIEW_BY_ID[baseId] || 'dashboard', op, mt: (sel && sel.value) || 'vessels',
+    d: detailOpen ? { kind: itemDetailState.kind, id: itemDetailState.id, returnViewId: itemDetailState.returnViewId,
+      stack: itemDetailStack.map(x => ({ kind: x.kind, id: x.id, returnViewId: x.returnViewId })) } : null
+  };
+}
+function navKey(st){
+  if(!st) return '';
+  return [st.v, st.v === 'build' ? st.op : '', st.v === 'manage' ? st.mt : '', st.d ? st.d.kind + ':' + st.d.id : ''].join('|');
+}
+function navRecord(){
+  if(!navStarted || navApplying || startupRestoring || navPending) return;
+  navPending = true;
+  Promise.resolve().then(() => {
+    navPending = false;
+    if(navApplying) return;
+    const st = navSnapshot();
+    try{
+      if(navKey(st) === navKey(history.state)) history.replaceState(st, '');
+      else history.pushState(st, '');
+    }catch(e){ /* history unavailable (e.g. sandboxed frame) - Back just behaves as before */ }
+  });
+}
+function navStart(){
+  navStarted = true;
+  try{ history.replaceState(navSnapshot(), ''); }catch(e){ /* fine */ }
+}
+function navApply(st){
+  navApplying = true;
+  try{
+    if(st.d){
+      const schema = ITEM_DETAIL_SCHEMAS[st.d.kind];
+      if(schema && schema.getList().some(x => x.id === st.d.id)){
+        // Put the screen underneath back first, then the item page over it.
+        if(navSnapshot().v !== st.v){ discardUnsavedNewItem(); switchView(st.v); }
+        if(st.v === 'build') switchOrderPage(st.op);
+        if(st.v === 'manage') switchMgmt(st.mt);
+        const keep = (st.d.stack || []).filter(x => ITEM_DETAIL_SCHEMAS[x.kind] && ITEM_DETAIL_SCHEMAS[x.kind].getList().some(y => y.id === x.id));
+        if(!(itemDetailState.kind === st.d.kind && itemDetailState.id === st.d.id)){
+          discardUnsavedNewItem();
+          if(placeMapInstance){ placeMapInstance.remove(); placeMapInstance = null; }
+          if(itemDetailMapInstance){ itemDetailMapInstance.remove(); itemDetailMapInstance = null; }
+          document.querySelectorAll('.view.active').forEach(el => el.classList.remove('active'));
+          document.getElementById('viewItemDetail').classList.add('active');
+          itemDetailState = { kind: st.d.kind, id: st.d.id, editMode:false, returnViewId: st.d.returnViewId || ('view' + cap(st.v)), isNew:false };
+          itemDetailContactEditingId = null;
+          itemDetailStack = keep;
+          const backBtn = document.getElementById('itemDetailBackBtn');
+          if(backBtn) backBtn.textContent = itemDetailBackLabel();
+          renderItemDetail();
+          updatePanelHeightLock();
+          scheduleStickyOffsetUpdate();
+          if(st.d.kind === 'vessel') refreshVesselPositionIfStale(st.d.id);
+          try{ localStorage.setItem('ts-last-item-detail', JSON.stringify({kind: st.d.kind, id: st.d.id, returnViewId: itemDetailState.returnViewId})); }catch(e){ /* fine */ }
+          window.scrollTo(0, 0);
+        } else {
+          itemDetailStack = keep;
+        }
+        return;
+      }
+      // The item has gone (deleted, or a new one never saved): fall through to the screen under it.
+    }
+    const active = document.querySelector('.view.active');
+    const detailOpen = active && active.id === 'viewItemDetail';
+    if(detailOpen) discardUnsavedNewItem();
+    if(detailOpen || !active || NAV_VIEW_BY_ID[active.id] !== st.v) switchView(st.v);
+    if(st.v === 'build') switchOrderPage(st.op);
+    if(st.v === 'manage') switchMgmt(st.mt);
+  } finally {
+    navApplying = false;
+  }
+}
+window.addEventListener('popstate', ev => {
+  const st = ev.state;
+  if(!st || st.ts !== 1 || !navStarted) return;
+  // Leaving an item page that's being edited would lose the edits.
+  if(itemDetailState.editMode && document.getElementById('viewItemDetail').classList.contains('active')){
+    if(!confirm('You are editing this page and haven\u2019t saved. Leave without saving?')){
+      try{ history.pushState(navSnapshot(), ''); }catch(e){ /* fine */ }
+      return;
+    }
+  }
+  navApply(st);
+});
 
 // ============ SUMMARY TAB ============
 // First pass, deliberately: mirrors each page's key identifying fields
@@ -12289,6 +12395,7 @@ function openItemDetail(kind, id){
   scheduleStickyOffsetUpdate();
   if(kind === 'vessel') refreshVesselPositionIfStale(id);
   try{ localStorage.setItem('ts-last-item-detail', JSON.stringify({kind, id, returnViewId})); }catch(e){ /* private browsing or similar - fine to skip */ }
+  navRecord();
 }
 // Called whenever a vessel is viewed — the edge function itself decides
 // whether a real VesselAPI call is needed (only if the cached position is
@@ -12390,6 +12497,7 @@ function closeItemDetail(){
       renderItemDetail();
       try{ localStorage.setItem('ts-last-item-detail', JSON.stringify({kind: prev.kind, id: prev.id, returnViewId: prev.returnViewId})); }catch(e){ /* fine to skip */ }
       window.scrollTo(0, 0);
+      navRecord();
       return;
     }
     itemDetailStack = [];
@@ -12405,6 +12513,7 @@ function closeItemDetail(){
   try{ localStorage.removeItem('ts-last-item-detail'); }catch(e){ /* private browsing or similar - fine to skip */ }
   updatePanelHeightLock();
   scheduleStickyOffsetUpdate();
+  navRecord();
 }
 function toggleItemDetailEdit(){
   itemDetailState.editMode = true;
@@ -15693,6 +15802,7 @@ async function checkSystemAlerts(){
   }catch(e){ /* private browsing or similar - default view is fine */ }
   startupRestoring = false;
   appStartupComplete = true;
+  navStart();
   loadDashboardData(ordersP || undefined);
 })();
 </script>
