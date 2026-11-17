@@ -354,6 +354,7 @@
   .ac-item.ac-new{color:var(--teal-dark); font-weight:600;}
   .ac-head{padding:7px 10px; font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:var(--ink-soft); background:var(--line-soft); border-bottom:1px solid var(--line); position:sticky; top:0;}
   .ac-head .ac-head-note{display:block; font-weight:400; text-transform:none; letter-spacing:0;}
+  .ac-head.ac-subhead{position:static; background:#fff; border-top:1px solid var(--line);}
   .vessel-meta-line{font-size:11.5px; color:var(--ink-soft); margin-top:5px; font-family:var(--mono);}
   .product-block{border:1.5px solid var(--line); border-radius:10px; padding:14px; margin-bottom:14px; position:relative; background:#FCFAF5;}
   .product-block .pb-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}
@@ -573,6 +574,9 @@
 .country-product-chip{display:inline-block;padding:5px 12px;border-radius:999px;border:1px solid var(--line, #d9dce6);background:var(--surface, #fff);color:var(--ink, #1c1b3a);font:inherit;font-size:13px;font-weight:600;cursor:default;}
 button.country-product-chip{cursor:pointer;}
 button.country-product-chip:hover{border-color:#F7BF4A;}
+.supply-country-chip{display:inline-flex;align-items:center;gap:6px;}
+.supply-country-remove{border:none;background:none;padding:0 2px;font-size:15px;line-height:1;cursor:pointer;color:var(--ink-soft, #667);}
+.supply-country-remove:hover{color:#B3492E;}
 .country-products-edit{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 16px;margin-top:4px;}
 .tax-guidance-text{white-space:pre-wrap;line-height:1.5;}
 .tax-guidance-updated{margin-top:4px;}
@@ -3161,6 +3165,7 @@ async function init(){
     loadList('ql-suppliers', SUPPLIERS_SEED),
     loadList('ql-agents', []),
     (async () => { PORTS = await loadList('ql-ports', PORTS_SEED); await loadPlaces(); })(),
+    loadSupplierSupplyCountries(),
     userEmailP
   ]);
   {
@@ -5581,21 +5586,35 @@ function onSupplierFocus(inputId, listId){
   const list = document.getElementById(listId);
   list.innerHTML = '';
   const inCountry = suppliersInCountry(country);
+  const alsoSupply = suppliersAlsoSupplyingCountry(country);
+  const total = inCountry.length + alsoSupply.length;
   const head = document.createElement('div');
   head.className = 'ac-head';
-  head.innerHTML = inCountry.length
-    ? `Suppliers in ${escHtml(country.name)} (${inCountry.length})<span class="ac-head-note">Start typing to search all suppliers</span>`
+  head.innerHTML = total
+    ? `Suppliers in ${escHtml(country.name)} (${total})<span class="ac-head-note">Start typing to search all suppliers</span>`
     : `No suppliers on file in ${escHtml(country.name)}<span class="ac-head-note">Start typing to search all suppliers</span>`;
   list.appendChild(head);
-  inCountry.forEach(s => {
-    const a = normalizeAddress(s.address);
-    const where = a.city || a.line2 || '';
+  const addItem = (s, meta) => {
     const item = document.createElement('div');
     item.className = 'ac-item';
-    item.innerHTML = `<div class="ac-name">${escHtml(s.name)}</div><div class="ac-meta">${escHtml([where, s.contactName].filter(Boolean).join(' \u00b7 '))}</div>`;
+    item.innerHTML = `<div class="ac-name">${escHtml(s.name)}</div><div class="ac-meta">${escHtml(meta)}</div>`;
     item.onclick = () => pickSupplier(s);
     list.appendChild(item);
+  };
+  inCountry.forEach(s => {
+    const a = normalizeAddress(s.address);
+    addItem(s, [a.city || a.line2 || '', s.contactName].filter(Boolean).join(' \u00b7 '));
   });
+  if(alsoSupply.length){
+    const sub = document.createElement('div');
+    sub.className = 'ac-head ac-subhead';
+    sub.textContent = `Also supply ${country.name} (${alsoSupply.length})`;
+    list.appendChild(sub);
+    alsoSupply.forEach(s => {
+      const b = supplierBaseCountry(s);
+      addItem(s, ['Based in ' + (b ? b.name : (normalizeAddress(s.address).country || 'unknown')), s.contactName].filter(Boolean).join(' \u00b7 '));
+    });
+  }
   list.classList.add('show');
 }
 async function addNewSupplierFromForm(inputId){
@@ -12073,10 +12092,11 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'address.city', label:'City', type:'text'},
       {key:'address.postalCode', label:'Postal code', type:'text'},
       {key:'address.country', label:'Country', type:'country-select'},
+      {key:'supplyCountryIds', label:'Also supplies in', type:'supply-countries'},
       {key:'vatNumber', label:'VAT number', type:'text'},
       {key:'notes', label:'Notes', type:'textarea'}
     ],
-    afterSave: async (item) => { await saveReferenceItemRemote('supplier', item); },
+    afterSave: async (item) => { await saveReferenceItemRemote('supplier', item); await saveSupplierSupplyCountries(item); },
     onSaved: () => { renderSupplierTable(); },
     roleListName: 'SUPPLIERS',
     contactsFor: (item) => ({ organizationId: item.id }),
@@ -12758,6 +12778,11 @@ function renderItemDetail(){
   deleteBtn.style.display = (deletableKinds.includes(itemDetailState.kind) && !itemDetailState.editMode && !itemDetailState.isNew && isRealUuid(item.id)) ? '' : 'none';
   let anyFieldShown = false;
   const renderOneField = f=>{
+    if(f.type === 'supply-countries'){
+      const html = supplyCountriesFieldHtml(item, f, itemDetailState.editMode);
+      if(html && !itemDetailState.editMode) anyFieldShown = true;
+      return html;
+    }
     if(f.type === 'country-products' || f.type === 'multi-check' || f.type === 'tax-guidance'){
       const html = f.type === 'country-products' ? countryProductsFieldHtml(item, f, itemDetailState.editMode)
         : f.type === 'multi-check' ? multiCheckFieldHtml(item, f, itemDetailState.editMode)
@@ -12900,7 +12925,7 @@ function renderItemDetail(){
       <div id="placePortsMap" class="ports-map-canvas country-ports-map"></div>
       <div class="ports-map-legend" id="placePortsLegend"></div>
       <div id="placePortsList" style="margin-top:12px;"></div>
-    </div>` + countryIslandsHtml + (itemDetailState.kind === 'country' ? countrySuppliersHtml(item) : '') : '';
+    </div>` + countryIslandsHtml + (itemDetailState.kind === 'country' ? countrySuppliersHtml(item) + countryAlsoSuppliedByHtml(item) : '') : '';
   let portCountryLinkHtml = '';
   if(!itemDetailState.editMode && itemDetailState.kind === 'port'){
     const pc = countryForName(item.country);
@@ -13113,6 +13138,10 @@ async function saveItemDetail(){
     if(!el) return;
     if(f.type === 'country-products' || f.type === 'multi-check'){
       itemDetailSetFieldValue(item, f.key, [...el.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value));
+      return;
+    }
+    if(f.type === 'supply-countries'){
+      try{ item.supplyCountryIds = JSON.parse(el.dataset.ids || '[]'); }catch(e){ item.supplyCountryIds = []; }
       return;
     }
     const raw = f.type === 'checkbox' ? el.checked : el.value;
@@ -14611,6 +14640,111 @@ function countrySuppliersHtml(country){
         const a = normalizeAddress(sp.address);
         const where = [a.line1, a.line2, [a.city, a.postalCode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
         return `<tr style="cursor:pointer;" onclick="openItemDetail('supplier','${portAttr(sp.id)}')"><td class="mgmt-item-name">${escHtml(sp.name)}</td><td>${escHtml(where || '\u2014')}</td></tr>`;
+      }).join('') +
+      `</tbody></table></div>
+    </div>`;
+}
+/* ---- Extra countries a supplier supplies in (organization_supply_countries) ----
+   Held in one map (supplier id -> country ids) rather than on the SUPPLIERS
+   objects, because SUPPLIERS is rebuilt from shared-js (which doesn't know
+   about this table) every time the organisation lists reload. */
+let SUPPLY_COUNTRY_MAP = new Map();
+const SUPPLY_COUNTRIES_CACHE_KEY = 'ts-supply-countries-cache';
+async function loadSupplierSupplyCountries(){
+  let rows = null;
+  try{
+    if(window.TS && window.TS.getClient && navigator.onLine){
+      const { data, error } = await window.TS.getClient().from('organization_supply_countries').select('organization_id, country_id');
+      if(error) throw error;
+      rows = data;
+      try{ localStorage.setItem(SUPPLY_COUNTRIES_CACHE_KEY, JSON.stringify(rows)); }catch(e){ /* fine */ }
+    }
+  }catch(e){ console.warn('TS: supply countries fetch failed - using cache', e); }
+  if(!rows){ try{ rows = JSON.parse(localStorage.getItem(SUPPLY_COUNTRIES_CACHE_KEY) || '[]'); }catch(e){ rows = []; } }
+  const m = new Map();
+  (rows || []).forEach(r => { if(!m.has(r.organization_id)) m.set(r.organization_id, []); m.get(r.organization_id).push(r.country_id); });
+  SUPPLY_COUNTRY_MAP = m;
+}
+function supplierSupplyCountryIds(s){ return (s && SUPPLY_COUNTRY_MAP.get(s.id)) || []; }
+function supplierBaseCountry(s){ return s ? countryForName(normalizeAddress(s.address).country) : null; }
+// Suppliers not based in this country but marked as also supplying it.
+function suppliersAlsoSupplyingCountry(country){
+  if(!country || !isRealUuid(country.id)) return [];
+  return (SUPPLIERS || []).filter(s => {
+    if(!supplierSupplyCountryIds(s).includes(country.id)) return false;
+    const base = supplierBaseCountry(s);
+    return !(base && (base === country || base.id === country.id));
+  }).sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, {sensitivity:'base'}));
+}
+async function saveSupplierSupplyCountries(item){
+  if(!Array.isArray(item.supplyCountryIds)) return; // field not edited this time
+  const ids = Array.from(new Set(item.supplyCountryIds.filter(isRealUuid)));
+  delete item.supplyCountryIds;
+  if(!isRealUuid(item.id)) return;
+  const before = supplierSupplyCountryIds(item);
+  if(before.length === ids.length && ids.every(id => before.includes(id))) return;
+  if(!window.TS || !window.TS.getClient) return;
+  try{
+    const { error } = await window.TS.getClient().rpc('set_organization_supply_countries', { p_org: item.id, p_country_ids: ids });
+    if(error) throw error;
+    if(ids.length) SUPPLY_COUNTRY_MAP.set(item.id, ids); else SUPPLY_COUNTRY_MAP.delete(item.id);
+    const rows = [];
+    SUPPLY_COUNTRY_MAP.forEach((cids, oid) => cids.forEach(cid => rows.push({ organization_id: oid, country_id: cid })));
+    try{ localStorage.setItem(SUPPLY_COUNTRIES_CACHE_KEY, JSON.stringify(rows)); }catch(e){ /* fine */ }
+  }catch(e){
+    console.error('TS: could not save supply countries', e);
+    flashSaveError();
+  }
+}
+function supplyCountriesEditorInnerHtml(fid, ids, baseId){
+  const chosen = ids.map(id => COUNTRIES.find(c => c.id === id)).filter(Boolean).sort(byName);
+  const chips = chosen.length
+    ? chosen.map(c => `<span class="country-product-chip supply-country-chip">${escHtml(c.name)} <button type="button" class="supply-country-remove" title="Remove ${escAttr(c.name)}" onclick="supplyCountriesEdit('${fid}','remove','${c.id}')">\u00d7</button></span>`).join('')
+    : '<span class="hint">None added.</span>';
+  const options = COUNTRIES.filter(c => isRealUuid(c.id) && c.id !== baseId && !ids.includes(c.id))
+    .map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+  return `<div class="country-products">${chips}</div>
+    <select style="margin-top:8px; max-width:320px;" onchange="supplyCountriesEdit('${fid}','add',this.value)" aria-label="Add a country this supplier also supplies">
+      <option value="">+ Add a country\u2026</option>${options}
+    </select>`;
+}
+function supplyCountriesEdit(fid, action, countryId){
+  const el = document.getElementById(fid);
+  if(!el || !countryId) return;
+  let ids = [];
+  try{ ids = JSON.parse(el.dataset.ids || '[]'); }catch(e){ ids = []; }
+  if(action === 'add' && !ids.includes(countryId)) ids.push(countryId);
+  if(action === 'remove') ids = ids.filter(x => x !== countryId);
+  el.dataset.ids = JSON.stringify(ids);
+  el.innerHTML = supplyCountriesEditorInnerHtml(fid, ids, el.dataset.base || '');
+}
+function supplyCountriesFieldHtml(item, f, editMode){
+  const ids = supplierSupplyCountryIds(item);
+  const base = supplierBaseCountry(item);
+  if(editMode){
+    const fid = itemDetailInputId(f.key);
+    return `<div class="item-detail-field">
+      <span class="item-detail-label">${escHtml(f.label)}</span>
+      <div id="${fid}" data-ids="${escAttr(JSON.stringify(ids))}" data-base="${base ? escAttr(base.id) : ''}">${supplyCountriesEditorInnerHtml(fid, ids, base ? base.id : '')}</div>
+      <div class="hint">Countries this supplier can deliver in besides the one it's based in. It's offered for orders in these countries and listed on their country pages.</div>
+    </div>`;
+  }
+  const chosen = ids.map(id => COUNTRIES.find(c => c.id === id)).filter(Boolean).sort(byName);
+  if(!chosen.length) return '';
+  return `<div class="item-detail-field">
+    <span class="item-detail-label">${escHtml(f.viewLabel || f.label)}</span>
+    <div class="country-products">${chosen.map(c => `<button type="button" class="country-product-chip" onclick="openItemDetail('country','${c.id}')">${escHtml(c.name)}</button>`).join('')}</div>
+  </div>`;
+}
+function countryAlsoSuppliedByHtml(country){
+  const list = suppliersAlsoSupplyingCountry(country);
+  if(!list.length) return '';
+  return `<div class="item-detail-field">
+      <span class="item-detail-label">Also supplied by (${list.length})</span>
+      <div class="table-wrap"><table class="mgmt-table" id="placeAlsoSuppliersList"><thead><tr><th>Supplier</th><th>Based in</th></tr></thead><tbody>` +
+      list.map(sp => {
+        const b = supplierBaseCountry(sp);
+        return `<tr style="cursor:pointer;" onclick="openItemDetail('supplier','${portAttr(sp.id)}')"><td class="mgmt-item-name">${escHtml(sp.name)}</td><td>${escHtml(b ? b.name : (normalizeAddress(sp.address).country || '\u2014'))}</td></tr>`;
       }).join('') +
       `</tbody></table></div>
     </div>`;
