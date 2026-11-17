@@ -12859,7 +12859,7 @@ function renderItemDetail(){
       <div id="placePortsMap" class="ports-map-canvas country-ports-map"></div>
       <div class="ports-map-legend" id="placePortsLegend"></div>
       <div id="placePortsList" style="margin-top:12px;"></div>
-    </div>` + countryIslandsHtml : '';
+    </div>` + countryIslandsHtml + (itemDetailState.kind === 'country' ? countrySuppliersHtml(item) : '') : '';
   let portCountryLinkHtml = '';
   if(!itemDetailState.editMode && itemDetailState.kind === 'port'){
     const pc = countryForName(item.country);
@@ -14550,6 +14550,29 @@ function renderPlacePorts(ports){
     placeMapInstance.invalidateSize();
     placeMapInstance.fitBounds(L.latLngBounds(points), { padding:[40, 40], maxZoom:11, animate:false });
   }
+}
+// Country page: suppliers whose address country is this country (matched by
+// name or other name, the same way the address text is linked to
+// countries.country_id in the database), A-Z, each opening its own page.
+function suppliersInCountry(country){
+  return (SUPPLIERS || []).filter(s => {
+    const c = countryForName(normalizeAddress(s.address).country);
+    return c && (c === country || (isRealUuid(c.id) && c.id === country.id));
+  }).sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, {sensitivity:'base'}));
+}
+function countrySuppliersHtml(country){
+  const list = suppliersInCountry(country);
+  if(!list.length) return `<div class="item-detail-field"><span class="item-detail-label">Suppliers based here</span><div class="hint">No suppliers based here yet.</div></div>`;
+  return `<div class="item-detail-field">
+      <span class="item-detail-label">Suppliers based here (${list.length})</span>
+      <div class="table-wrap"><table class="mgmt-table" id="placeSuppliersList"><thead><tr><th>Supplier</th><th>Address</th></tr></thead><tbody>` +
+      list.map(sp => {
+        const a = normalizeAddress(sp.address);
+        const where = [a.line1, a.line2, [a.city, a.postalCode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+        return `<tr style="cursor:pointer;" onclick="openItemDetail('supplier','${portAttr(sp.id)}')"><td class="mgmt-item-name">${escHtml(sp.name)}</td><td>${escHtml(where || '\u2014')}</td></tr>`;
+      }).join('') +
+      `</tbody></table></div>
+    </div>`;
 }
 function placeLinkButtonsHtml(links){
   const btns = links.filter(l => l && l.item && isRealUuid(l.item.id))
