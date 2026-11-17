@@ -574,6 +574,8 @@
 .country-product-chip{display:inline-block;padding:5px 12px;border-radius:999px;border:1px solid var(--line, #d9dce6);background:var(--surface, #fff);color:var(--ink, #1c1b3a);font:inherit;font-size:13px;font-weight:600;cursor:default;}
 button.country-product-chip{cursor:pointer;}
 button.country-product-chip:hover{border-color:#F7BF4A;}
+.inherited-note{margin-top:6px;font-style:italic;}
+.link-btn{border:none;background:none;padding:0;font:inherit;font-style:normal;font-weight:600;color:var(--teal-dark, #0F5C6E);text-decoration:underline;cursor:pointer;}
 .supply-country-chip{display:inline-flex;align-items:center;gap:6px;}
 .supply-country-remove{border:none;background:none;padding:0 2px;font-size:15px;line-height:1;cursor:pointer;color:var(--ink-soft, #667);}
 .supply-country-remove:hover{color:#B3492E;}
@@ -12149,6 +12151,7 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'localRegion', label:'Local region', type:'text'},
       {key:'oceanographicRegion', label:'Oceanographic region', type:'text'},
       {key:'geographicRegion', label:'Geographic region', type:'text'},
+      ...placeSupplyFields(),
       {key:'googleMapsUrl', label:'Google Maps link (optional override)', type:'text'},
       {key:'slug', viewLabel:'Web address', label:'Web address (slug) — stays fixed if renamed; clear it to regenerate', type:'text'},
       {key:'notes', label:'Notes', type:'textarea'}
@@ -12171,10 +12174,7 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'iso2', label:'ISO code (2 letters, e.g. GR)', type:'text'},
       {key:'defaultCurrency', label:'Default currency for orders in this country', type:'select', get options(){ return ORDER_CURRENCIES.slice(); }},
       {key:'aliasesText', label:'Other names it goes by (comma-separated)', type:'text'},
-      {key:'productIds', label:'Products available', type:'country-products'},
-      {key:'deliveryMethods', label:'Delivery methods', type:'multi-check', get options(){ return DELIVERY_METHODS; }},
-      {key:'taxTypes', label:'Fuel tax treatments available', type:'multi-check', get options(){ return FUEL_TAX_TYPES; }},
-      {key:'taxGuidance', label:'Tax guidance', type:'tax-guidance'},
+      ...placeSupplyFields(),
       {key:'slug', viewLabel:'Web address', label:'Web address (slug) — stays fixed if renamed; clear it to regenerate', type:'text'},
       {key:'notes', label:'Notes', type:'textarea'}
     ],
@@ -12191,6 +12191,7 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'name', label:'Name', type:'text'},
       {key:'countryName', label:'Country', type:'select', get options(){ return [ISLAND_SHARED_LABEL, ...COUNTRIES.map(c => c.name)]; }},
       {key:'aliasesText', label:'Other names it goes by (comma-separated)', type:'text'},
+      ...placeSupplyFields(),
       {key:'slug', viewLabel:'Web address', label:'Web address (slug) — stays fixed if renamed; clear it to regenerate', type:'text'},
       {key:'notes', label:'Notes', type:'textarea'}
     ],
@@ -12205,6 +12206,7 @@ const ITEM_DETAIL_SCHEMAS = {
     fields: [
       {key:'name', label:'Name', type:'text'},
       {key:'aliasesText', label:'Other names it goes by (comma-separated)', type:'text'},
+      ...placeSupplyFields(),
       {key:'slug', viewLabel:'Web address', label:'Web address (slug) — stays fixed if renamed; clear it to regenerate', type:'text'},
       {key:'notes', label:'Notes', type:'textarea'}
     ],
@@ -12817,9 +12819,10 @@ function renderItemDetail(){
       return html;
     }
     if(f.type === 'country-products' || f.type === 'multi-check' || f.type === 'tax-guidance'){
-      const html = f.type === 'country-products' ? countryProductsFieldHtml(item, f, itemDetailState.editMode)
-        : f.type === 'multi-check' ? multiCheckFieldHtml(item, f, itemDetailState.editMode)
-        : taxGuidanceFieldHtml(item, f, itemDetailState.editMode);
+      const draw = (it, edit) => f.type === 'country-products' ? countryProductsFieldHtml(it, f, edit)
+        : f.type === 'multi-check' ? multiCheckFieldHtml(it, f, edit)
+        : taxGuidanceFieldHtml(it, f, edit);
+      const html = inheritedPlaceFieldHtml(itemDetailState.kind, item, f, itemDetailState.editMode, draw);
       if(html && !itemDetailState.editMode) anyFieldShown = true;
       return html;
     }
@@ -14295,27 +14298,32 @@ async function loadCountries(){
 }
 const ISLAND_SHARED_LABEL = '— shared between countries —';
 async function loadIslands(rowsPromise){
-  const rows = await (rowsPromise || fetchPlaceRows('islands', 'id, name, slug, country_id, aliases, notes', 'ts-islands-cache')) || [];
+  const rows = await (rowsPromise || fetchPlaceRows('islands', 'id, name, slug, country_id, aliases, notes, ' + PLACE_SUPPLY_COLUMNS, 'ts-islands-cache')) || [];
   ISLANDS = rows.map(r => {
     const c = COUNTRIES.find(x => x.id === r.country_id);
     return {
       id: r.id, name: r.name, slug: r.slug || '', countryId: r.country_id || '', countryName: c ? c.name : ISLAND_SHARED_LABEL,
       aliases: r.aliases || [], aliasesText: (r.aliases || []).join(', '), notes: r.notes || '',
-      _savedName: r.name, _savedSlug: r.slug || ''
+      ...placeSupplyFromRow(r), _savedName: r.name, _savedSlug: r.slug || ''
     };
   }).sort(byName);
 }
 // shared-js's fetchPorts doesn't return the web address, so it's fetched
 // here and merged onto PORTS by id.
 async function loadPortSlugs(){
-  const rows = await fetchPlaceRows('ports', 'id, name, slug', 'ts-port-slugs-cache') || [];
-  const map = new Map(rows.map(r => [r.id, r.slug || '']));
-  (PORTS || []).forEach(p => { if(map.has(p.id)){ p.slug = map.get(p.id); p._savedSlug = p.slug; } });
+  // ...and the port's own products / delivery methods / tax fields, likewise.
+  const rows = await fetchPlaceRows('ports', 'id, name, slug, ' + PLACE_SUPPLY_COLUMNS, 'ts-port-slugs-cache') || [];
+  const map = new Map(rows.map(r => [r.id, r]));
+  (PORTS || []).forEach(p => {
+    const r = map.get(p.id); if(!r) return;
+    p.slug = r.slug || ''; p._savedSlug = p.slug;
+    Object.assign(p, placeSupplyFromRow(r));
+  });
 }
 async function loadPlaces(){
   // Islands are fetched alongside countries but mapped once countries are
   // in, since each island's country name comes from COUNTRIES.
-  const islandRowsP = fetchPlaceRows('islands', 'id, name, slug, country_id, aliases, notes', 'ts-islands-cache');
+  const islandRowsP = fetchPlaceRows('islands', 'id, name, slug, country_id, aliases, notes, ' + PLACE_SUPPLY_COLUMNS, 'ts-islands-cache');
   await Promise.all([loadCountries(), loadPortSlugs(), loadRegions()]);
   await loadIslands(islandRowsP);
 }
@@ -14382,6 +14390,12 @@ async function afterPortSavePlaces(port){
       if(res.error) throw res.error;
       port.slug = res.data.slug || ''; port._savedSlug = port.slug;
     }catch(e){ placeSaveError(e, 'web address', port.slug); port.slug = port._savedSlug || ''; }
+    // shared-js's savePort doesn't write these, so they're saved here.
+    try{
+      const res = await window.TS.getClient().from('ports').update(placeSupplyRow(port)).eq('id', port.id).select('tax_guidance_updated_at, tax_guidance_updated_by').single();
+      if(res.error) throw res.error;
+      port.taxGuidanceUpdatedAt = res.data.tax_guidance_updated_at || ''; port.taxGuidanceUpdatedBy = res.data.tax_guidance_updated_by || '';
+    }catch(e){ console.error('TS: could not save port products/tax fields', e); flashSaveError(); }
   }
   renderCountryTable();
   renderIslandTable();
@@ -14465,9 +14479,9 @@ function parseAliases(text){ return (text || '').split(',').map(x => x.trim()).f
 // rename is pushed onto the ports (the old name kept as another name). A
 // region can span countries, so it has no country of its own.
 async function loadRegions(){
-  const rows = await fetchPlaceRows('local_regions', 'id, name, slug, aliases, notes', 'ts-local-regions-cache') || [];
+  const rows = await fetchPlaceRows('local_regions', 'id, name, slug, aliases, notes, ' + PLACE_SUPPLY_COLUMNS, 'ts-local-regions-cache') || [];
   LOCAL_REGIONS = rows.map(r => ({ id: r.id, name: r.name, slug: r.slug || '', aliases: r.aliases || [],
-    aliasesText: (r.aliases || []).join(', '), notes: r.notes || '', _savedName: r.name, _savedSlug: r.slug || '' })).sort(byName);
+    aliasesText: (r.aliases || []).join(', '), notes: r.notes || '', ...placeSupplyFromRow(r), _savedName: r.name, _savedSlug: r.slug || '' })).sort(byName);
 }
 function regionForPort(port){ return (port && (port.localRegion || '').trim()) ? placeForName(LOCAL_REGIONS, port.localRegion) : null; }
 function portsInRegion(region){ return (PORTS || []).filter(p => { const r = regionForPort(p); return r && r.id === region.id; }); }
@@ -14526,14 +14540,14 @@ function renderRegionTable(){
 }
 async function saveRegionRemote(item){
   item.aliases = parseAliases(item.aliasesText);
-  const row = { name: item.name, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null };
+  const row = { name: item.name, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null, ...placeSupplyRow(item) };
   const oldName = item._savedName;
   if(!window.TS || !window.TS.getClient) return;
   try{
     const client = window.TS.getClient();
     const res = isRealUuid(item.id)
-      ? await client.from('local_regions').update(row).eq('id', item.id).select('id, slug, aliases').single()
-      : await client.from('local_regions').insert(row).select('id, slug, aliases').single();
+      ? await client.from('local_regions').update(row).eq('id', item.id).select('id, slug, aliases, tax_guidance_updated_at, tax_guidance_updated_by').single()
+      : await client.from('local_regions').insert(row).select('id, slug, aliases, tax_guidance_updated_at, tax_guidance_updated_by').single();
     if(res.error) throw res.error;
     item.id = res.data.id;
     item.slug = res.data.slug || ''; item._savedSlug = item.slug;
@@ -14546,7 +14560,8 @@ async function saveRegionRemote(item){
     }
     item._savedName = item.name;
     LOCAL_REGIONS.sort(byName);
-    writePlaceCache('ts-local-regions-cache', LOCAL_REGIONS, r => ({id:r.id, name:r.name, slug:r.slug, aliases:r.aliases, notes:r.notes}));
+    item.taxGuidanceUpdatedAt = res.data.tax_guidance_updated_at || ''; item.taxGuidanceUpdatedBy = res.data.tax_guidance_updated_by || '';
+    writePlaceCache('ts-local-regions-cache', LOCAL_REGIONS, r => ({id:r.id, name:r.name, slug:r.slug, aliases:r.aliases, notes:r.notes, ...placeSupplyCacheShape(r)}));
   }catch(e){
     placeSaveError(e, 'local region name or web address', item.name);
     item.slug = item._savedSlug || '';
@@ -14645,6 +14660,93 @@ function taxGuidanceFieldHtml(item, f, editMode){
     ${updated ? `<div class="hint tax-guidance-updated">${escHtml(updated)}</div>` : ''}
   </div>`;
 }
+/* ---- Products / delivery methods / tax: inherited down the place chain ----
+   Countries, local regions, islands and ports all carry the same four fields.
+   A blank field (nothing ticked / no text) uses the next level up:
+     port -> its island -> its local region -> its country
+     island -> its country (a shared island has none)
+   A local region spans countries, so it has nothing above it. Each field is
+   resolved on its own, so a port can have its own tax guidance but take its
+   products from its country. */
+function placeSupplyFields(){
+  return [
+    {key:'productIds', label:'Products available', type:'country-products'},
+    {key:'deliveryMethods', label:'Delivery methods', type:'multi-check', get options(){ return DELIVERY_METHODS; }},
+    {key:'taxTypes', label:'Fuel tax treatments available', type:'multi-check', get options(){ return FUEL_TAX_TYPES; }},
+    {key:'taxGuidance', label:'Tax guidance', type:'tax-guidance'}
+  ];
+}
+const PLACE_KIND_LABELS = { port: 'delivery location', island: 'island', region: 'local region', country: 'country' };
+function placeFieldIsBlank(item, key){
+  const v = item ? item[key] : null;
+  return Array.isArray(v) ? v.length === 0 : !String(v || '').trim();
+}
+// The levels above this place, nearest first.
+function placeParents(kind, item){
+  if(kind === 'port'){
+    const isl = (item.island || '').trim() ? islandForPort(item) : null;
+    return [isl && { kind:'island', item: isl }, { kind:'region', item: regionForPort(item) }, { kind:'country', item: countryForName(item.country) }]
+      .filter(x => x && x.item);
+  }
+  if(kind === 'island'){
+    const c = item.countryId ? COUNTRIES.find(x => x.id === item.countryId) : null;
+    return c ? [{ kind:'country', item: c }] : [];
+  }
+  return [];
+}
+// Where a blank field's value comes from: the nearest level that has one.
+function inheritedPlaceSource(kind, item, key){
+  return placeParents(kind, item).find(p => !placeFieldIsBlank(p.item, key)) || null;
+}
+// The value actually in force for this place (its own, or inherited).
+function effectivePlaceValue(kind, item, key){
+  if(!placeFieldIsBlank(item, key)) return { value: item[key], from: null };
+  const src = inheritedPlaceSource(kind, item, key);
+  return src ? { value: src.item[key], from: src } : { value: Array.isArray(item[key]) ? [] : '', from: null };
+}
+function placeSourceLinkHtml(src){
+  const name = escHtml(src.item.name);
+  const what = PLACE_KIND_LABELS[src.kind] || '';
+  return isRealUuid(src.item.id)
+    ? `<button type="button" class="link-btn" onclick="openItemDetail('${src.kind}','${src.item.id}')">${name}</button> (${what})`
+    : `${name} (${what})`;
+}
+function insertBeforeLastDiv(html, extra){
+  const i = html.lastIndexOf('</div>');
+  return i === -1 ? html + extra : html.slice(0, i) + extra + html.slice(i);
+}
+function inheritedPlaceFieldHtml(kind, item, f, editMode, draw){
+  if(!['port','island','region'].includes(kind) || !placeFieldIsBlank(item, f.key)) return draw(item, editMode);
+  const src = inheritedPlaceSource(kind, item, f.key);
+  if(editMode){
+    const own = draw(item, true);
+    const note = src
+      ? `<div class="hint inherited-note">Left blank, this uses ${placeSourceLinkHtml(src)}. Fill it in here to override it for this ${PLACE_KIND_LABELS[kind]} only.</div>`
+      : `<div class="hint inherited-note">Left blank, nothing is shown${kind === 'region' ? ' (a local region doesn\u2019t inherit from a country, as it can span several)' : ''}.</div>`;
+    return insertBeforeLastDiv(own, note);
+  }
+  if(!src) return '';
+  const shown = draw(src.item, false);
+  if(!shown) return '';
+  return insertBeforeLastDiv(shown, `<div class="hint inherited-note">From ${placeSourceLinkHtml(src)}</div>`);
+}
+function placeSupplyRow(item){
+  return {
+    product_ids: Array.isArray(item.productIds) ? item.productIds : [],
+    delivery_methods: Array.isArray(item.deliveryMethods) ? item.deliveryMethods : [],
+    tax_types: Array.isArray(item.taxTypes) ? item.taxTypes : [],
+    tax_guidance: (item.taxGuidance || '').trim() || null
+  };
+}
+function placeSupplyFromRow(r){
+  return { productIds: r.product_ids || [], deliveryMethods: r.delivery_methods || [], taxTypes: r.tax_types || [],
+    taxGuidance: r.tax_guidance || '', taxGuidanceUpdatedAt: r.tax_guidance_updated_at || '', taxGuidanceUpdatedBy: r.tax_guidance_updated_by || '' };
+}
+const PLACE_SUPPLY_COLUMNS = 'product_ids, delivery_methods, tax_types, tax_guidance, tax_guidance_updated_at, tax_guidance_updated_by';
+function placeSupplyCacheShape(x){
+  return { product_ids: x.productIds || [], delivery_methods: x.deliveryMethods || [], tax_types: x.taxTypes || [], tax_guidance: x.taxGuidance || null,
+    tax_guidance_updated_at: x.taxGuidanceUpdatedAt || null, tax_guidance_updated_by: x.taxGuidanceUpdatedBy || null };
+}
 async function saveCountryRemote(item){
   item.iso2 = (item.iso2 || '').trim().toUpperCase();
   if(item.iso2 && !/^[A-Z]{2}$/.test(item.iso2)){
@@ -14694,14 +14796,14 @@ async function saveIslandRemote(item){
   const c = COUNTRIES.find(x => x.name === item.countryName);
   item.countryId = c ? c.id : '';
   if(!c) item.countryName = ISLAND_SHARED_LABEL;
-  const row = { name: item.name, country_id: item.countryId || null, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null };
+  const row = { name: item.name, country_id: item.countryId || null, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null, ...placeSupplyRow(item) };
   const oldName = item._savedName;
   if(!window.TS || !window.TS.getClient) return;
   try{
     const client = window.TS.getClient();
     const res = isRealUuid(item.id)
-      ? await client.from('islands').update(row).eq('id', item.id).select('id, slug, aliases').single()
-      : await client.from('islands').insert(row).select('id, slug, aliases').single();
+      ? await client.from('islands').update(row).eq('id', item.id).select('id, slug, aliases, tax_guidance_updated_at, tax_guidance_updated_by').single()
+      : await client.from('islands').insert(row).select('id, slug, aliases, tax_guidance_updated_at, tax_guidance_updated_by').single();
     if(res.error) throw res.error;
     item.id = res.data.id;
     item.slug = res.data.slug || ''; item._savedSlug = item.slug;
@@ -14712,7 +14814,8 @@ async function saveIslandRemote(item){
     }
     item._savedName = item.name;
     ISLANDS.sort(byName);
-    writePlaceCache('ts-islands-cache', ISLANDS, i => ({id:i.id, name:i.name, slug:i.slug, country_id:i.countryId || null, aliases:i.aliases, notes:i.notes}));
+    item.taxGuidanceUpdatedAt = res.data.tax_guidance_updated_at || ''; item.taxGuidanceUpdatedBy = res.data.tax_guidance_updated_by || '';
+    writePlaceCache('ts-islands-cache', ISLANDS, i => ({id:i.id, name:i.name, slug:i.slug, country_id:i.countryId || null, aliases:i.aliases, notes:i.notes, ...placeSupplyCacheShape(i)}));
   }catch(e){
     placeSaveError(e, 'island name (in this country) or web address', item.name);
     item.slug = item._savedSlug || '';
