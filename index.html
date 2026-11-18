@@ -575,6 +575,10 @@
 button.country-product-chip{cursor:pointer;}
 button.country-product-chip:hover{border-color:#F7BF4A;}
 .inherited-note{margin-top:6px;font-style:italic;}
+.drop-hint{font-size:11.5px;color:var(--ink-soft, #667);margin-left:4px;}
+body.file-dragging .file-drop-zone{outline:2px dashed #7FA9B3;outline-offset:4px;border-radius:8px;}
+.file-drop-zone.drop-over{outline:2px solid var(--teal-dark, #0F5C6E) !important;outline-offset:4px;background-color:rgba(15,92,110,0.06);}
+.item-detail-hero.file-drop-zone.drop-over{box-shadow:inset 0 0 0 4px rgba(247,191,74,0.9);}
 .hero-image-credit{position:absolute;right:10px;bottom:8px;font-size:11px;color:rgba(255,255,255,0.85);text-shadow:0 1px 2px rgba(0,0,0,0.6);}
 .hero-image-credit button{border:none;background:none;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer;}
 .kill-switch-box{border:1px solid #E3A796;background:#FBEDE8;color:#7A2E1B;border-radius:8px;padding:10px 12px;line-height:1.45;}
@@ -4871,10 +4875,10 @@ function specSheetFieldHTML(b){
     <a href="#" onclick="openSpecSheetLink('${b.id}', ${i}); return false;">\ud83d\udcce ${escHtml(s.displayName || 'Spec sheet')}</a>
     <button type="button" class="btn-ghost btn-sm" onclick="removeProductSpecSheet('${b.id}', ${i})">Remove</button>
   </div>`).join('');
-  return `<div style="margin:4px 0 12px 24px;">
+  return `<div style="margin:4px 0 12px 24px;" class="file-drop-zone" data-drop-input="${inputId}" data-drop-multiple="1">
     ${rows}
     <input type="file" id="${inputId}" accept=".pdf,image/*" style="display:none;" onchange="uploadProductSpecSheet('${b.id}', this)">
-    <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">+ Add spec sheet</button>
+    <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">+ Add spec sheet</button> <span class="drop-hint">or drag a file here</span>
   </div>`;
 }
 async function openSpecSheetLink(blockId, index){
@@ -9069,10 +9073,10 @@ function renderSupplierInvoiceFileSection(){
   const fileLinkHtml = hasFile
     ? `<div style="font-size:12.5px; margin-bottom:4px;"><a href="#" onclick="openSupplierInvoiceFileLink(); return false;">\ud83d\udcce View supplier's invoice</a></div>`
     : '<div class="hint" style="margin-bottom:4px;">Not attached yet.</div>';
-  container.innerHTML = `${fileLinkHtml}
+  container.innerHTML = `<div class="file-drop-zone" data-drop-input="${inputId}">${fileLinkHtml}
     <input type="file" id="${inputId}" accept=".pdf,image/*" style="display:none;" onchange="uploadSupplierInvoiceFileHandler(this)">
     <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${hasFile ? 'Replace' : 'Add'} PDF or image</button>
-    ${hasFile ? `<button type="button" class="btn-ghost btn-sm" onclick="removeSupplierInvoiceFileHandler()">Remove</button>` : ''}`;
+    ${hasFile ? `<button type="button" class="btn-ghost btn-sm" onclick="removeSupplierInvoiceFileHandler()">Remove</button>` : ''} <span class="drop-hint">or drag a file here</span></div>`;
 }
 async function openSupplierInvoiceFileLink(){
   if(!currentSupplierInvoiceFilePath || !window.TS || !window.TS.getSupplierInvoiceFileUrl) return;
@@ -11777,6 +11781,100 @@ function switchMgmt(which){
 }
 function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
 
+/* ============ DRAG AND DROP FILES ============
+   Every upload in the app is a hidden <input type=file> plus an "Add..."
+   button. Wrapping that area in an element with class file-drop-zone and
+   data-drop-input="<input id>" lets a file be dropped there too: the file is
+   put into that same input and its change event fired, so the existing
+   upload function runs exactly as if it had been chosen in the file window.
+   data-drop-multiple="1" (e.g. spec sheets) takes several files, one after
+   another. While a file is dragged over the window, every drop area gets a
+   dashed outline. A file dropped anywhere else is ignored - without this the
+   browser would open the file and leave the trade system. */
+function fileMatchesAccept(file, accept){
+  if(!accept) return true;
+  const name = (file.name || '').toLowerCase(), type = (file.type || '').toLowerCase();
+  return accept.split(',').map(a => a.trim().toLowerCase()).filter(Boolean).some(a =>
+    a.startsWith('.') ? name.endsWith(a) : a.endsWith('/*') ? type.startsWith(a.slice(0, -1)) : type === a);
+}
+function describeAccept(accept){
+  const a = (accept || '').toLowerCase();
+  if(a.includes('.pdf') && a.includes('image/')) return 'a PDF or an image';
+  if(a.includes('image/')) return 'an image';
+  if(a.includes('.pdf')) return 'a PDF';
+  return 'that kind of file';
+}
+function dragHasFiles(ev){ return !!(ev.dataTransfer && Array.from(ev.dataTransfer.types || []).includes('Files')); }
+function dropZoneFor(target){ return target && target.closest ? target.closest('.file-drop-zone[data-drop-input]') : null; }
+// Puts one file into the input and runs its upload; resolves when that
+// upload has finished (the upload functions all clear the input, or the
+// page re-renders it, when they're done).
+function feedFileToInput(inputId, file){
+  return new Promise(resolve => {
+    const input = document.getElementById(inputId);
+    if(!input){ resolve(); return; }
+    const dt = new DataTransfer(); dt.items.add(file);
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    const started = Date.now();
+    const check = () => {
+      const now = document.getElementById(inputId);
+      if(now !== input || !input.value || Date.now() - started > 120000) resolve();
+      else setTimeout(check, 150);
+    };
+    setTimeout(check, 150);
+  });
+}
+let fileDragDepth = 0;
+function clearFileDragState(){
+  fileDragDepth = 0;
+  document.body.classList.remove('file-dragging');
+  document.querySelectorAll('.file-drop-zone.drop-over').forEach(z => z.classList.remove('drop-over'));
+}
+window.addEventListener('dragenter', ev => {
+  if(!dragHasFiles(ev)) return;
+  fileDragDepth++;
+  document.body.classList.add('file-dragging');
+});
+window.addEventListener('dragleave', ev => {
+  if(!dragHasFiles(ev)) return;
+  fileDragDepth = Math.max(0, fileDragDepth - 1);
+  if(fileDragDepth === 0) clearFileDragState();
+});
+window.addEventListener('dragover', ev => {
+  if(!dragHasFiles(ev)) return;
+  ev.preventDefault(); // never let the browser open the file instead
+  const zone = dropZoneFor(ev.target);
+  document.querySelectorAll('.file-drop-zone.drop-over').forEach(z => { if(z !== zone) z.classList.remove('drop-over'); });
+  if(zone){ zone.classList.add('drop-over'); ev.dataTransfer.dropEffect = 'copy'; }
+  else ev.dataTransfer.dropEffect = 'none';
+});
+window.addEventListener('drop', async ev => {
+  if(!dragHasFiles(ev)) return;
+  ev.preventDefault();
+  const zone = dropZoneFor(ev.target);
+  clearFileDragState();
+  if(!zone) return;
+  const inputId = zone.dataset.dropInput;
+  const input = document.getElementById(inputId);
+  if(!input) return;
+  const accept = input.getAttribute('accept') || '';
+  const all = Array.from(ev.dataTransfer.files || []);
+  const usable = all.filter(f => fileMatchesAccept(f, accept));
+  if(!usable.length){
+    alert(`That file can\u2019t be added here \u2014 it needs to be ${describeAccept(accept)}.`);
+    return;
+  }
+  const multiple = zone.dataset.dropMultiple === '1';
+  const files = multiple ? usable : usable.slice(0, 1);
+  for(const f of files) await feedFileToInput(inputId, f);
+  const skipped = all.length - usable.length;
+  const notes = [];
+  if(skipped) notes.push(`${skipped} file${skipped === 1 ? ' wasn\u2019t' : 's weren\u2019t'} added because ${skipped === 1 ? 'it isn\u2019t' : 'they aren\u2019t'} ${describeAccept(accept)}.`);
+  if(!multiple && usable.length > 1) notes.push('Only the first file was added \u2014 this takes one file.');
+  if(notes.length) alert(notes.join(' '));
+});
+
 /* ============ BROWSER BACK / FORWARD ============
    The app is one page, so without this the browser's Back button (and the
    Android back gesture in the installed app) left the trade system
@@ -12574,11 +12672,12 @@ function itemDetailHeroHtml(item, schema){
   const imageButtonHtml = (schema.hasMainImage && itemDetailState.editMode)
     ? `<div style="margin-top:8px;">
         <input type="file" id="${inputId}" accept="image/*" style="display:none;" onchange="uploadItemDetailImage('main', this)">
-        <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${ownImage ? 'Replace' : 'Add'} image</button>
+        <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${ownImage ? 'Replace' : 'Add'} image</button> <span class="drop-hint">or drag an image onto the header</span>
         ${ownImage && heroImageParents(itemDetailState.kind, item).length ? `<button type="button" class="btn-ghost btn-sm" onclick="removeItemDetailMainImage()">Remove image</button>` : ''}
         ${img.from ? `<span class="hint" style="display:inline; margin-left:6px;">Showing ${borrowedFrom}\u2019s image until this ${escHtml((PLACE_KIND_LABELS[itemDetailState.kind] || schema.kindLabel).toLowerCase())} has its own.</span>` : ''}
       </div>` : '';
-  return `<div class="item-detail-hero"${bgStyle}>${itemDetailHeroNameSubtitleHtml(item, schema)}${creditHtml}</div>${imageButtonHtml}`;
+  const heroDrop = (schema.hasMainImage && itemDetailState.editMode) ? ` data-drop-input="${inputId}"` : '';
+  return `<div class="item-detail-hero${heroDrop ? ' file-drop-zone' : ''}"${heroDrop}${bgStyle}>${itemDetailHeroNameSubtitleHtml(item, schema)}${creditHtml}</div>${imageButtonHtml}`;
 }
 // Only offered where there's a parent to fall back to, so a place goes back
 // to borrowing (the file stays in storage; it's just no longer linked).
@@ -12625,11 +12724,11 @@ function itemDetailImageFieldHtml(item, kind, label){
   const previewHtml = url
     ? `<img src="${escAttr(url)}" alt="${escAttr(label)}" style="max-width:100%; max-height:180px; border-radius:8px; display:block; margin-bottom:8px; object-fit:contain; background:#F5F1E8;">`
     : `<div class="hint" style="margin-bottom:8px;">No ${escHtml(label.toLowerCase())} yet.</div>`;
-  return `<div class="item-detail-field">
+  return `<div class="item-detail-field file-drop-zone" data-drop-input="${inputId}">
     <span class="item-detail-label">${escHtml(label)}</span>
     ${previewHtml}
     <input type="file" id="${inputId}" accept="image/*" style="display:none;" onchange="uploadItemDetailImage('${kind}', this)">
-    <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${url ? 'Replace' : 'Upload'} ${escHtml(label.toLowerCase())}</button>
+    <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${url ? 'Replace' : 'Upload'} ${escHtml(label.toLowerCase())}</button> <span class="drop-hint">or drag a file here</span>
   </div>`;
 }
 async function uploadItemDetailImage(kind, inputEl){
@@ -13244,21 +13343,21 @@ async function renderVesselDocuments(item){
     const docs = await window.TS.getVesselDocuments(item.id);
     const cert = docs.find(d => d.documentType === 'certificate_of_registry');
     const additional = docs.filter(d => d.documentType === 'other');
-    const certHtml = `<div style="margin-bottom:14px;">
+    const certHtml = `<div style="margin-bottom:14px;" class="file-drop-zone" data-drop-input="vesselCertInput">
       <div style="font-weight:600; font-size:12.5px; margin-bottom:4px;">Certificate of Registration</div>
       ${cert ? `<div style="font-size:12.5px; margin-bottom:4px;"><a href="#" onclick="openVesselDocumentLink('${escAttr(cert.path)}'); return false;">\ud83d\udcce ${escHtml(cert.label)}</a></div>` : '<div class="hint" style="margin-bottom:4px;">None yet.</div>'}
       <input type="file" id="vesselCertInput" accept=".pdf,image/*" style="display:none;" onchange="uploadVesselCertOfRegistration('${item.id}', this)">
-      <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('vesselCertInput').click()">${cert ? 'Replace' : 'Add'} certificate</button>
+      <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('vesselCertInput').click()">${cert ? 'Replace' : 'Add'} certificate</button> <span class="drop-hint">or drag a file here</span>
     </div>`;
     const additionalRows = additional.map(d => `<div style="font-size:12.5px; margin-bottom:4px; display:flex; align-items:center; gap:8px;">
       <a href="#" onclick="openVesselDocumentLink('${escAttr(d.path)}'); return false;">\ud83d\udcce ${escHtml(d.label)}</a>
       <button type="button" class="btn-ghost btn-sm" onclick="removeVesselAdditionalDocument('${d.id}', '${item.id}')">Remove</button>
     </div>`).join('');
-    const additionalHtml = `<div>
+    const additionalHtml = `<div class="file-drop-zone" data-drop-input="vesselAdditionalDocInput" data-drop-multiple="1">
       <div style="font-weight:600; font-size:12.5px; margin-bottom:4px;">Additional documents</div>
       ${additionalRows || '<div class="hint" style="margin-bottom:4px;">None yet.</div>'}
       <input type="file" id="vesselAdditionalDocInput" accept=".pdf,image/*" style="display:none;" onchange="uploadVesselAdditionalDocument('${item.id}', this)">
-      <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('vesselAdditionalDocInput').click()">+ Add document</button>
+      <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('vesselAdditionalDocInput').click()">+ Add document</button> <span class="drop-hint">or drag a file here</span>
     </div>`;
     container.innerHTML = certHtml + additionalHtml;
   }catch(e){
