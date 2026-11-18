@@ -2358,12 +2358,20 @@ function draftCcAddressFor(pdfDocType){
   return BROKER_CC_MAP[senderEmail] || null;
 }
 async function draftInOutlookGeneric(opts){
-  if(!graphAccount){ alert('Connect Outlook first (button in the header) before drafting an email.'); return; }
+  if(!graphAccount){
+    await saveOrderForEmailAction();
+    alert('Connect Outlook first (button in the header) before drafting an email.');
+    return;
+  }
   const btn = document.getElementById(opts.btnId);
   const originalLabel = btn ? btn.textContent : '';
-  if(btn){ btn.disabled = true; btn.textContent = 'Drafting...'; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Saving...'; }
   try{
     await refreshOrderFromRecords(); // latest vessel/contact details into the email and its PDF
+    // Saved before drafting, so a PDF made for the draft is stored against
+    // this order and any order number waiting to be assigned is the real one.
+    await saveOrderForEmailAction();
+    if(btn){ btn.disabled = true; btn.textContent = 'Drafting...'; }
     const token = await getGraphToken();
     const { toEmails, ccEmails: pickedCcEmails } = await resolveSelectedContactEmails(opts.page);
     if(!toEmails.length){
@@ -5079,6 +5087,22 @@ async function saveOrderToDatabase(){
     if(btn) btn.disabled = false;
     updateSaveBar();
   }
+}
+// "Draft in Outlook" and "Copy for email" on every deal page also save the
+// deal (John, 18 Nov): sending something to a customer or supplier is the
+// moment it matters most that the database has it - the status those
+// buttons move the deal on to, an order number they assign, the details
+// that went into the email. Works the dirty state out fresh (the 1.5s poll
+// may not have caught up with a status change made a moment ago) and only
+// saves when there's something to save; a save already running is waited
+// for rather than doubled up. Failures report exactly as the Save button's do.
+async function saveOrderForEmailAction(){
+  if(!window.TS || !window.TS.saveOrder) return;
+  if(!hasAnyOrderContent()) return;
+  for(let i = 0; orderSaveInProgress && i < 300; i++) await new Promise(r => setTimeout(r, 100));
+  const dirty = lastSavedStateJson === null ? true : stateForComparison(collectQuoteState()) !== lastSavedStateJson;
+  if(!dirty && isRealUuid(currentOrderDbId) && !orderNumberPendingAssignment) return;
+  await saveOrderToDatabase();
 }
 // Ready for the future Manage/Orders list to call — reuses applyQuoteState()
 // exactly as-is, since details was designed to be exactly what that function
@@ -8984,12 +9008,16 @@ async function copyInvoiceEmailRich(){
     try{ await navigator.clipboard.writeText(plain); flash('invoiceCopyStatus'); }
     catch(e2){ selectInvoiceEmailForManualCopy(); }
   }
+  // Copied first (the clipboard needs the click itself), then saved.
+  await saveOrderForEmailAction();
 }
 async function copyInvoiceEmailPlain(){
   if(!validateFinalQuantitiesForInvoice()) return;
   if(getInvoiceType()==='invoice' && confirmProgressStatus('invoice')) markStatus('invoiced');
   try{ await navigator.clipboard.writeText(buildInvoiceEmailPlainText()); flash('invoiceCopyStatus'); }
   catch(e){ selectInvoiceEmailForManualCopy(); }
+  // Copied first (the clipboard needs the click itself), then saved.
+  await saveOrderForEmailAction();
 }
 function selectInvoiceEmailForManualCopy(){
   if(getInvoiceType()==='invoice' && confirmProgressStatus('invoice')) markStatus('invoiced');
@@ -10721,11 +10749,15 @@ async function copyEnquiryRich(){
     try{ await navigator.clipboard.writeText(plain); flash('enquiryCopyStatus'); }
     catch(e2){ selectEnquiryForManualCopy(); }
   }
+  // Copied first (the clipboard needs the click itself), then saved.
+  await saveOrderForEmailAction();
 }
 async function copyEnquiryPlain(){
   if(confirmProgressStatus('enquire')) markStatus('awaitingPrices');
   try{ await navigator.clipboard.writeText(buildEnquiryPlainText()); flash('enquiryCopyStatus'); }
   catch(e){ selectEnquiryForManualCopy(); }
+  // Copied first (the clipboard needs the click itself), then saved.
+  await saveOrderForEmailAction();
 }
 function selectEnquiryForManualCopy(){
   if(confirmProgressStatus('enquire')) markStatus('awaitingPrices');
@@ -11093,11 +11125,15 @@ async function copyRich(){
     try{ await navigator.clipboard.writeText(plain); flash('copyStatus'); }
     catch(e2){ selectPreviewForManualCopy(); }
   }
+  // Copied first (the clipboard needs the click itself), then saved.
+  await saveOrderForEmailAction();
 }
 async function copyPlain(){
   if(confirmProgressStatus('quote')) markStatus('quoted');
   try{ await navigator.clipboard.writeText(buildPlainText()); flash('copyStatus'); }
   catch(e){ selectPreviewForManualCopy(); }
+  // Copied first (the clipboard needs the click itself), then saved.
+  await saveOrderForEmailAction();
 }
 function flash(id){
   const el = document.getElementById(id);
@@ -11155,11 +11191,15 @@ async function copySupplyRich(){
     try{ await navigator.clipboard.writeText(plain); flash('supplyCopyStatus'); }
     catch(e2){ selectSupplyForManualCopy(); }
   }
+  // Copied first (the clipboard needs the click itself), then saved.
+  await saveOrderForEmailAction();
 }
 async function copySupplyPlain(){
   markSupplierConfirmedForCurrentView();
   try{ await navigator.clipboard.writeText(buildSupplyPlainText()); flash('supplyCopyStatus'); }
   catch(e){ selectSupplyForManualCopy(); }
+  // Copied first (the clipboard needs the click itself), then saved.
+  await saveOrderForEmailAction();
 }
 function selectSupplyForManualCopy(){
   markSupplierConfirmedForCurrentView();
@@ -11204,11 +11244,15 @@ async function copyCustomerRich(){
     try{ await navigator.clipboard.writeText(plain); flash('customerCopyStatus'); }
     catch(e2){ selectCustomerForManualCopy(); }
   }
+  // Copied first (the clipboard needs the click itself), then saved.
+  await saveOrderForEmailAction();
 }
 async function copyCustomerPlain(){
   confirmCustomerAndAssignOrderNumber();
   try{ await navigator.clipboard.writeText(buildCustomerPlainText()); flash('customerCopyStatus'); }
   catch(e){ selectCustomerForManualCopy(); }
+  // Copied first (the clipboard needs the click itself), then saved.
+  await saveOrderForEmailAction();
 }
 function selectCustomerForManualCopy(){
   confirmCustomerAndAssignOrderNumber();
