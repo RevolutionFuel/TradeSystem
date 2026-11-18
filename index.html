@@ -11859,7 +11859,14 @@ window.addEventListener('drop', async ev => {
   const input = document.getElementById(inputId);
   if(!input) return;
   const accept = input.getAttribute('accept') || '';
-  const all = Array.from(ev.dataTransfer.files || []);
+  // Some sources (an image dragged from a web page or certain Windows apps)
+  // hand over the same file more than once - count each file only once.
+  const seen = new Set();
+  const all = Array.from(ev.dataTransfer.files || []).filter(f => {
+    const key = [f.name, f.size, f.type].join('|');
+    if(seen.has(key)) return false;
+    seen.add(key); return true;
+  });
   const usable = all.filter(f => fileMatchesAccept(f, accept));
   if(!usable.length){
     alert(`That file can\u2019t be added here \u2014 it needs to be ${describeAccept(accept)}.`);
