@@ -575,6 +575,8 @@
 button.country-product-chip{cursor:pointer;}
 button.country-product-chip:hover{border-color:#F7BF4A;}
 .inherited-note{margin-top:6px;font-style:italic;}
+.hero-image-credit{position:absolute;right:10px;bottom:8px;font-size:11px;color:rgba(255,255,255,0.85);text-shadow:0 1px 2px rgba(0,0,0,0.6);}
+.hero-image-credit button{border:none;background:none;padding:0;font:inherit;color:inherit;text-decoration:underline;cursor:pointer;}
 .kill-switch-box{border:1px solid #E3A796;background:#FBEDE8;color:#7A2E1B;border-radius:8px;padding:10px 12px;line-height:1.45;}
 .kill-switch-box.kill-switch-override{border-color:#A9D3B9;background:#EEF7F1;color:#1F5A36;}
 .kill-switch-reason{margin-top:4px;font-style:italic;}
@@ -12294,7 +12296,8 @@ const ITEM_DETAIL_SCHEMAS = {
     ],
     heroSubtitleFields: [{key:'iso2'}],
     afterSave: async (item) => { await saveCountryRemote(item); },
-    onSaved: () => { renderCountryTable(); renderIslandTable(); renderRegionTable(); renderPortTable(); }
+    onSaved: () => { renderCountryTable(); renderIslandTable(); renderRegionTable(); renderPortTable(); },
+    hasMainImage: true, entityType: 'countries'
   },
   // An island page: like a country page - its delivery locations first, then
   // details. An island shared between countries (Saint Martin) has no single
@@ -12311,7 +12314,8 @@ const ITEM_DETAIL_SCHEMAS = {
     ],
     heroSubtitleFields: [{key:'countryName'}],
     afterSave: async (item) => { await saveIslandRemote(item); },
-    onSaved: () => { renderIslandTable(); renderCountryTable(); renderPortTable(); }
+    onSaved: () => { renderIslandTable(); renderCountryTable(); renderPortTable(); },
+    hasMainImage: true, entityType: 'islands'
   },
   // A local region page (French Riviera, Adriatic Sea...): like an island
   // page, but a region can span several countries, so it lists them.
@@ -12325,7 +12329,8 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'notes', label:'Notes', type:'textarea'}
     ],
     afterSave: async (item) => { await saveRegionRemote(item); },
-    onSaved: () => { renderRegionTable(); renderPortTable(); }
+    onSaved: () => { renderRegionTable(); renderPortTable(); },
+    hasMainImage: true, entityType: 'local_regions'
   },
   product: {
     kindLabel: 'Product', listKey: 'ql-products', getList: () => PRODUCTS,
@@ -12544,16 +12549,47 @@ function cancelItemDetailEdit(){
 // otherwise a plain gradient fallback keeps the header looking intentional
 // rather than broken. heroSubtitleFields (e.g. IMO/flag for vessels) is
 // optional per schema - schemas that don't define it just get a bare name.
+// Places without their own image borrow one from the next level up that has
+// one: port -> local region -> country; island -> country. (Not a country's
+// fallback country: Monaco must not show a picture of France.)
+function heroImageParents(kind, item){
+  if(kind === 'port') return [{ kind:'region', item: regionForPort(item) }, { kind:'country', item: countryForName(item.country) }].filter(x => x.item);
+  if(kind === 'island'){ const c = item.countryId ? COUNTRIES.find(x => x.id === item.countryId) : null; return c ? [{ kind:'country', item: c }] : []; }
+  return [];
+}
+function heroImageFor(kind, item){
+  if(item && item.mainImagePath) return { path: item.mainImagePath, from: null };
+  const src = heroImageParents(kind, item).find(p => p.item.mainImagePath);
+  return src ? { path: src.item.mainImagePath, from: src } : { path: '', from: null };
+}
 function itemDetailHeroHtml(item, schema){
-  const imageUrl = (schema.hasMainImage && item.mainImagePath && window.TS && window.TS.getItemImageUrl) ? window.TS.getItemImageUrl(item.mainImagePath) : null;
+  const img = schema.hasMainImage ? heroImageFor(itemDetailState.kind, item) : { path: '', from: null };
+  const imageUrl = (img.path && window.TS && window.TS.getItemImageUrl) ? window.TS.getItemImageUrl(img.path) : null;
   const bgStyle = imageUrl ? ` style="background-image:url('${escAttr(imageUrl)}');"` : '';
+  const ownImage = !!(schema.hasMainImage && item.mainImagePath);
   const inputId = 'itemDetailImageInput-main';
+  const borrowedFrom = img.from ? `${escHtml(img.from.item.name)} (${PLACE_KIND_LABELS[img.from.kind] || img.from.kind})` : '';
+  const creditHtml = img.from
+    ? `<div class="hero-image-credit">Image: ${isRealUuid(img.from.item.id) ? `<button type="button" onclick="openItemDetail('${img.from.kind}','${img.from.item.id}')">${borrowedFrom}</button>` : borrowedFrom}</div>` : '';
   const imageButtonHtml = (schema.hasMainImage && itemDetailState.editMode)
     ? `<div style="margin-top:8px;">
         <input type="file" id="${inputId}" accept="image/*" style="display:none;" onchange="uploadItemDetailImage('main', this)">
-        <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${imageUrl ? 'Replace' : 'Add'} image</button>
+        <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('${inputId}').click()">${ownImage ? 'Replace' : 'Add'} image</button>
+        ${ownImage && heroImageParents(itemDetailState.kind, item).length ? `<button type="button" class="btn-ghost btn-sm" onclick="removeItemDetailMainImage()">Remove image</button>` : ''}
+        ${img.from ? `<span class="hint" style="display:inline; margin-left:6px;">Showing ${borrowedFrom}\u2019s image until this ${escHtml((PLACE_KIND_LABELS[itemDetailState.kind] || schema.kindLabel).toLowerCase())} has its own.</span>` : ''}
       </div>` : '';
-  return `<div class="item-detail-hero"${bgStyle}>${itemDetailHeroNameSubtitleHtml(item, schema)}</div>${imageButtonHtml}`;
+  return `<div class="item-detail-hero"${bgStyle}>${itemDetailHeroNameSubtitleHtml(item, schema)}${creditHtml}</div>${imageButtonHtml}`;
+}
+// Only offered where there's a parent to fall back to, so a place goes back
+// to borrowing (the file stays in storage; it's just no longer linked).
+async function removeItemDetailMainImage(){
+  const schema = ITEM_DETAIL_SCHEMAS[itemDetailState.kind];
+  const item = schema && schema.getList().find(x => x.id === itemDetailState.id);
+  if(!item || !item.mainImagePath) return;
+  if(!confirm('Remove this image? The page will show the image from the place above it instead.')) return;
+  item.mainImagePath = '';
+  try{ await schema.afterSave(item); }catch(e){ console.error('TS: could not remove image', e); }
+  renderItemDetail();
 }
 // Shared between the image/gradient hero and the map-as-background variant
 // below, since both need the exact same name + subtitle markup, just
@@ -14413,7 +14449,7 @@ async function fetchPlaceRows(table, columns, cacheKey){
 }
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, {sensitivity:'base'});
 async function loadCountries(){
-  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes, product_ids, delivery_methods, tax_types, tax_guidance, tax_guidance_updated_at, tax_guidance_updated_by, default_currency, fallback_country_id, public_hidden, public_hidden_reason, public_hidden_at, public_hidden_by', 'ts-countries-cache');
+  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes, product_ids, delivery_methods, tax_types, tax_guidance, tax_guidance_updated_at, tax_guidance_updated_by, default_currency, fallback_country_id, public_hidden, public_hidden_reason, public_hidden_at, public_hidden_by, main_image_path', 'ts-countries-cache');
   if(!rows){
     const names = Array.from(new Set((PORTS || []).map(p => (p.country || '').trim()).filter(Boolean)));
     rows = names.map(n => ({ id: '', name: n, slug: '', iso2: '', aliases: [], notes: '' }));
@@ -14430,6 +14466,7 @@ async function loadCountries(){
     taxGuidanceUpdatedAt: r.tax_guidance_updated_at || '', taxGuidanceUpdatedBy: r.tax_guidance_updated_by || '',
     fallbackCountryId: r.fallback_country_id || '',
     publicHidden: !!r.public_hidden, publicHiddenReason: r.public_hidden_reason || '', publicHiddenAt: r.public_hidden_at || '', publicHiddenBy: r.public_hidden_by || '',
+    mainImagePath: r.main_image_path || '',
     _savedName: r.name, _savedSlug: r.slug || ''
   })).sort(byName);
   COUNTRIES.forEach(c => { const f = c.fallbackCountryId && COUNTRIES.find(x => x.id === c.fallbackCountryId); c.fallbackCountryName = f ? f.name : NO_FALLBACK_LABEL; });
@@ -14437,13 +14474,13 @@ async function loadCountries(){
 const ISLAND_SHARED_LABEL = '— shared between countries —';
 const NO_FALLBACK_LABEL = '— none —';
 async function loadIslands(rowsPromise){
-  const rows = await (rowsPromise || fetchPlaceRows('islands', 'id, name, slug, country_id, aliases, notes, ' + PLACE_SUPPLY_COLUMNS, 'ts-islands-cache')) || [];
+  const rows = await (rowsPromise || fetchPlaceRows('islands', 'id, name, slug, country_id, aliases, notes, main_image_path, ' + PLACE_SUPPLY_COLUMNS, 'ts-islands-cache')) || [];
   ISLANDS = rows.map(r => {
     const c = COUNTRIES.find(x => x.id === r.country_id);
     return {
       id: r.id, name: r.name, slug: r.slug || '', countryId: r.country_id || '', countryName: c ? c.name : ISLAND_SHARED_LABEL,
       aliases: r.aliases || [], aliasesText: (r.aliases || []).join(', '), notes: r.notes || '',
-      ...placeSupplyFromRow(r), _savedName: r.name, _savedSlug: r.slug || ''
+      ...placeSupplyFromRow(r), mainImagePath: r.main_image_path || '', _savedName: r.name, _savedSlug: r.slug || ''
     };
   }).sort(byName);
 }
@@ -14464,7 +14501,7 @@ async function loadPortSlugs(){
 async function loadPlaces(){
   // Islands are fetched alongside countries but mapped once countries are
   // in, since each island's country name comes from COUNTRIES.
-  const islandRowsP = fetchPlaceRows('islands', 'id, name, slug, country_id, aliases, notes, ' + PLACE_SUPPLY_COLUMNS, 'ts-islands-cache');
+  const islandRowsP = fetchPlaceRows('islands', 'id, name, slug, country_id, aliases, notes, main_image_path, ' + PLACE_SUPPLY_COLUMNS, 'ts-islands-cache');
   await Promise.all([loadCountries(), loadPortSlugs(), loadRegions()]);
   await loadIslands(islandRowsP);
 }
@@ -14624,9 +14661,9 @@ function parseAliases(text){ return (text || '').split(',').map(x => x.trim()).f
 // rename is pushed onto the ports (the old name kept as another name). A
 // region can span countries, so it has no country of its own.
 async function loadRegions(){
-  const rows = await fetchPlaceRows('local_regions', 'id, name, slug, aliases, notes, ' + PLACE_SUPPLY_COLUMNS, 'ts-local-regions-cache') || [];
+  const rows = await fetchPlaceRows('local_regions', 'id, name, slug, aliases, notes, main_image_path, ' + PLACE_SUPPLY_COLUMNS, 'ts-local-regions-cache') || [];
   LOCAL_REGIONS = rows.map(r => ({ id: r.id, name: r.name, slug: r.slug || '', aliases: r.aliases || [],
-    aliasesText: (r.aliases || []).join(', '), notes: r.notes || '', ...placeSupplyFromRow(r), _savedName: r.name, _savedSlug: r.slug || '' })).sort(byName);
+    aliasesText: (r.aliases || []).join(', '), notes: r.notes || '', ...placeSupplyFromRow(r), mainImagePath: r.main_image_path || '', _savedName: r.name, _savedSlug: r.slug || '' })).sort(byName);
 }
 function regionForPort(port){ return (port && (port.localRegion || '').trim()) ? placeForName(LOCAL_REGIONS, port.localRegion) : null; }
 function portsInRegion(region){ return (PORTS || []).filter(p => { const r = regionForPort(p); return r && r.id === region.id; }); }
@@ -14685,7 +14722,7 @@ function renderRegionTable(){
 }
 async function saveRegionRemote(item){
   item.aliases = parseAliases(item.aliasesText);
-  const row = { name: item.name, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null, ...placeSupplyRow(item) };
+  const row = { name: item.name, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null, ...placeSupplyRow(item), main_image_path: item.mainImagePath || null };
   const oldName = item._savedName;
   if(!window.TS || !window.TS.getClient) return;
   try{
@@ -14706,7 +14743,7 @@ async function saveRegionRemote(item){
     item._savedName = item.name;
     LOCAL_REGIONS.sort(byName);
     item.taxGuidanceUpdatedAt = res.data.tax_guidance_updated_at || ''; item.taxGuidanceUpdatedBy = res.data.tax_guidance_updated_by || '';
-    writePlaceCache('ts-local-regions-cache', LOCAL_REGIONS, r => ({id:r.id, name:r.name, slug:r.slug, aliases:r.aliases, notes:r.notes, ...placeSupplyCacheShape(r)}));
+    writePlaceCache('ts-local-regions-cache', LOCAL_REGIONS, r => ({id:r.id, name:r.name, slug:r.slug, aliases:r.aliases, notes:r.notes, main_image_path:r.mainImagePath || null, ...placeSupplyCacheShape(r)}));
   }catch(e){
     placeSaveError(e, 'local region name or web address', item.name);
     item.slug = item._savedSlug || '';
@@ -15009,6 +15046,7 @@ async function saveCountryRemote(item){
   row.fallback_country_id = item.fallbackCountryId || null;
   row.public_hidden = !!item.publicHidden;
   row.public_hidden_reason = (item.publicHiddenReason || '').trim() || null;
+  row.main_image_path = item.mainImagePath || null;
   const oldName = item._savedName;
   if(!window.TS || !window.TS.getClient) return;
   try{
@@ -15038,7 +15076,8 @@ async function saveCountryRemote(item){
     writePlaceCache('ts-countries-cache', COUNTRIES, c => ({id:c.id, name:c.name, slug:c.slug, iso2:c.iso2, aliases:c.aliases, notes:c.notes, product_ids:c.productIds || [],
       delivery_methods:c.deliveryMethods || [], tax_types:c.taxTypes || [], tax_guidance:c.taxGuidance || null, tax_guidance_updated_at:c.taxGuidanceUpdatedAt || null, tax_guidance_updated_by:c.taxGuidanceUpdatedBy || null,
       default_currency:c.defaultCurrency || 'USD', fallback_country_id:c.fallbackCountryId || null,
-      public_hidden:!!c.publicHidden, public_hidden_reason:c.publicHiddenReason || null, public_hidden_at:c.publicHiddenAt || null, public_hidden_by:c.publicHiddenBy || null}));
+      public_hidden:!!c.publicHidden, public_hidden_reason:c.publicHiddenReason || null, public_hidden_at:c.publicHiddenAt || null, public_hidden_by:c.publicHiddenBy || null,
+      main_image_path:c.mainImagePath || null}));
   }catch(e){
     placeSaveError(e, 'name, ISO code or web address', item.name);
     item.slug = item._savedSlug || '';
@@ -15049,7 +15088,7 @@ async function saveIslandRemote(item){
   const c = COUNTRIES.find(x => x.name === item.countryName);
   item.countryId = c ? c.id : '';
   if(!c) item.countryName = ISLAND_SHARED_LABEL;
-  const row = { name: item.name, country_id: item.countryId || null, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null, ...placeSupplyRow(item) };
+  const row = { name: item.name, country_id: item.countryId || null, aliases: item.aliases, notes: item.notes || null, slug: (item.slug || '').trim() || null, ...placeSupplyRow(item), main_image_path: item.mainImagePath || null };
   const oldName = item._savedName;
   if(!window.TS || !window.TS.getClient) return;
   try{
@@ -15068,7 +15107,7 @@ async function saveIslandRemote(item){
     item._savedName = item.name;
     ISLANDS.sort(byName);
     item.taxGuidanceUpdatedAt = res.data.tax_guidance_updated_at || ''; item.taxGuidanceUpdatedBy = res.data.tax_guidance_updated_by || '';
-    writePlaceCache('ts-islands-cache', ISLANDS, i => ({id:i.id, name:i.name, slug:i.slug, country_id:i.countryId || null, aliases:i.aliases, notes:i.notes, ...placeSupplyCacheShape(i)}));
+    writePlaceCache('ts-islands-cache', ISLANDS, i => ({id:i.id, name:i.name, slug:i.slug, country_id:i.countryId || null, aliases:i.aliases, notes:i.notes, main_image_path:i.mainImagePath || null, ...placeSupplyCacheShape(i)}));
   }catch(e){
     placeSaveError(e, 'island name (in this country) or web address', item.name);
     item.slug = item._savedSlug || '';
