@@ -575,6 +575,10 @@
 button.country-product-chip{cursor:pointer;}
 button.country-product-chip:hover{border-color:#F7BF4A;}
 .inherited-note{margin-top:6px;font-style:italic;}
+.kill-switch-box{border:1px solid #E3A796;background:#FBEDE8;color:#7A2E1B;border-radius:8px;padding:10px 12px;line-height:1.45;}
+.kill-switch-box.kill-switch-override{border-color:#A9D3B9;background:#EEF7F1;color:#1F5A36;}
+.kill-switch-reason{margin-top:4px;font-style:italic;}
+.kill-badge{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:10px;font-size:10.5px;font-weight:700;letter-spacing:0.02em;background:#FBEDE8;color:#B3492E;border:1px solid #E3A796;vertical-align:middle;white-space:nowrap;}
 .link-btn{border:none;background:none;padding:0;font:inherit;font-style:normal;font-weight:600;color:var(--teal-dark, #0F5C6E);text-decoration:underline;cursor:pointer;}
 .supply-country-chip{display:inline-flex;align-items:center;gap:6px;}
 .supply-country-remove{border:none;background:none;padding:0 2px;font-size:15px;line-height:1;cursor:pointer;color:var(--ink-soft, #667);}
@@ -12257,6 +12261,7 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'localRegion', label:'Local region', type:'text'},
       {key:'oceanographicRegion', label:'Oceanographic region', type:'text'},
       {key:'geographicRegion', label:'Geographic region', type:'text'},
+      {key:'publicVisibility', label:'Kill switch', type:'kill-switch'},
       ...placeSupplyFields(),
       {key:'googleMapsUrl', label:'Google Maps link (optional override)', type:'text'},
       {key:'slug', viewLabel:'Web address', label:'Web address (slug) — stays fixed if renamed; clear it to regenerate', type:'text'},
@@ -12279,6 +12284,7 @@ const ITEM_DETAIL_SCHEMAS = {
       {key:'name', label:'Name', type:'text'},
       {key:'iso2', label:'ISO code (2 letters, e.g. GR)', type:'text'},
       {key:'defaultCurrency', label:'Default currency for orders in this country', type:'select', get options(){ return ORDER_CURRENCIES.slice(); }},
+      {key:'publicHidden', label:'Kill switch', type:'kill-switch'},
       {key:'fallbackCountryName', viewLabel:'When blank, uses details from', label:'When products, delivery methods or tax fields below are blank, use this country\u2019s', type:'select',
         get options(){ return [NO_FALLBACK_LABEL, ...COUNTRIES.filter(c => isRealUuid(c.id) && c.id !== itemDetailState.id).map(c => c.name)]; }},
       {key:'aliasesText', label:'Other names it goes by (comma-separated)', type:'text'},
@@ -12924,6 +12930,11 @@ function renderItemDetail(){
   deleteBtn.style.display = (deletableKinds.includes(itemDetailState.kind) && !itemDetailState.editMode && !itemDetailState.isNew && isRealUuid(item.id)) ? '' : 'none';
   let anyFieldShown = false;
   const renderOneField = f=>{
+    if(f.type === 'kill-switch'){
+      const html = killSwitchFieldHtml(itemDetailState.kind, item, itemDetailState.editMode);
+      if(html && !itemDetailState.editMode) anyFieldShown = true;
+      return html;
+    }
     if(f.type === 'supply-countries'){
       const html = supplyCountriesFieldHtml(item, f, itemDetailState.editMode);
       if(html && !itemDetailState.editMode) anyFieldShown = true;
@@ -13293,6 +13304,18 @@ async function saveItemDetail(){
     }
     if(f.type === 'supply-countries'){
       try{ item.supplyCountryIds = JSON.parse(el.dataset.ids || '[]'); }catch(e){ item.supplyCountryIds = []; }
+      return;
+    }
+    if(f.type === 'kill-switch'){
+      if(itemDetailState.kind === 'country'){
+        const cb = el.querySelector('input[type=checkbox]');
+        item.publicHidden = !!(cb && cb.checked);
+      } else {
+        const r = el.querySelector('input[type=radio]:checked');
+        item.publicVisibility = r ? r.value : 'inherit';
+      }
+      const reason = el.querySelector('textarea');
+      item.publicHiddenReason = reason ? reason.value.trim() : '';
       return;
     }
     const raw = f.type === 'checkbox' ? el.checked : el.value;
@@ -14093,7 +14116,7 @@ function renderPortTable(){
     const compactLines = [p.locationType, p.country, p.localRegion, p.oceanographicRegion, p.geographicRegion]
       .filter(Boolean).join(' · ');
     tr.innerHTML = `
-      <td class="mgmt-item-name">${escHtml(p.name)}</td>
+      <td class="mgmt-item-name">${escHtml(p.name)}${portPublicStatus(p).hidden ? killSwitchBadgeHtml() : ''}</td>
       <td class="mgmt-wide-col">${escHtml(p.locationType || '—')}</td>
       <td class="mgmt-wide-col">${escHtml(p.country || '—')}</td>
       <td class="mgmt-wide-col">${escHtml(p.localRegion || '—')}</td>
@@ -14390,7 +14413,7 @@ async function fetchPlaceRows(table, columns, cacheKey){
 }
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, {sensitivity:'base'});
 async function loadCountries(){
-  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes, product_ids, delivery_methods, tax_types, tax_guidance, tax_guidance_updated_at, tax_guidance_updated_by, default_currency, fallback_country_id', 'ts-countries-cache');
+  let rows = await fetchPlaceRows('countries', 'id, name, slug, iso2, aliases, notes, product_ids, delivery_methods, tax_types, tax_guidance, tax_guidance_updated_at, tax_guidance_updated_by, default_currency, fallback_country_id, public_hidden, public_hidden_reason, public_hidden_at, public_hidden_by', 'ts-countries-cache');
   if(!rows){
     const names = Array.from(new Set((PORTS || []).map(p => (p.country || '').trim()).filter(Boolean)));
     rows = names.map(n => ({ id: '', name: n, slug: '', iso2: '', aliases: [], notes: '' }));
@@ -14406,6 +14429,7 @@ async function loadCountries(){
     taxTypes: r.tax_types || [], taxGuidance: r.tax_guidance || '',
     taxGuidanceUpdatedAt: r.tax_guidance_updated_at || '', taxGuidanceUpdatedBy: r.tax_guidance_updated_by || '',
     fallbackCountryId: r.fallback_country_id || '',
+    publicHidden: !!r.public_hidden, publicHiddenReason: r.public_hidden_reason || '', publicHiddenAt: r.public_hidden_at || '', publicHiddenBy: r.public_hidden_by || '',
     _savedName: r.name, _savedSlug: r.slug || ''
   })).sort(byName);
   COUNTRIES.forEach(c => { const f = c.fallbackCountryId && COUNTRIES.find(x => x.id === c.fallbackCountryId); c.fallbackCountryName = f ? f.name : NO_FALLBACK_LABEL; });
@@ -14427,12 +14451,14 @@ async function loadIslands(rowsPromise){
 // here and merged onto PORTS by id.
 async function loadPortSlugs(){
   // ...and the port's own products / delivery methods / tax fields, likewise.
-  const rows = await fetchPlaceRows('ports', 'id, name, slug, ' + PLACE_SUPPLY_COLUMNS, 'ts-port-slugs-cache') || [];
+  const rows = await fetchPlaceRows('ports', 'id, name, slug, public_visibility, public_hidden_reason, public_hidden_at, public_hidden_by, ' + PLACE_SUPPLY_COLUMNS, 'ts-port-slugs-cache') || [];
   const map = new Map(rows.map(r => [r.id, r]));
   (PORTS || []).forEach(p => {
     const r = map.get(p.id); if(!r) return;
     p.slug = r.slug || ''; p._savedSlug = p.slug;
     Object.assign(p, placeSupplyFromRow(r));
+    p.publicVisibility = r.public_visibility || 'inherit';
+    p.publicHiddenReason = r.public_hidden_reason || ''; p.publicHiddenAt = r.public_hidden_at || ''; p.publicHiddenBy = r.public_hidden_by || '';
   });
 }
 async function loadPlaces(){
@@ -14507,9 +14533,13 @@ async function afterPortSavePlaces(port){
     }catch(e){ placeSaveError(e, 'web address', port.slug); port.slug = port._savedSlug || ''; }
     // shared-js's savePort doesn't write these, so they're saved here.
     try{
-      const res = await window.TS.getClient().from('ports').update(placeSupplyRow(port)).eq('id', port.id).select('tax_guidance_updated_at, tax_guidance_updated_by').single();
+      const row = placeSupplyRow(port);
+      row.public_visibility = ['inherit','hidden','shown'].includes(port.publicVisibility) ? port.publicVisibility : 'inherit';
+      row.public_hidden_reason = (port.publicHiddenReason || '').trim() || null;
+      const res = await window.TS.getClient().from('ports').update(row).eq('id', port.id).select('tax_guidance_updated_at, tax_guidance_updated_by, public_hidden_at, public_hidden_by').single();
       if(res.error) throw res.error;
       port.taxGuidanceUpdatedAt = res.data.tax_guidance_updated_at || ''; port.taxGuidanceUpdatedBy = res.data.tax_guidance_updated_by || '';
+      port.publicHiddenAt = res.data.public_hidden_at || ''; port.publicHiddenBy = res.data.public_hidden_by || '';
     }catch(e){ console.error('TS: could not save port products/tax fields', e); flashSaveError(); }
   }
   renderCountryTable();
@@ -14552,7 +14582,7 @@ function renderCountryTable(){
   rows.forEach(({c, portCount, islandCount}) => {
     const tr = document.createElement('tr');
     tr.onclick = () => openItemDetail('country', c.id);
-    tr.innerHTML = `<td class="mgmt-item-name">${escHtml(c.name)}</td><td>${escHtml(c.iso2 || '—')}</td><td>${portCount}</td>` +
+    tr.innerHTML = `<td class="mgmt-item-name">${escHtml(c.name)}${c.publicHidden ? killSwitchBadgeHtml() : ''}</td><td>${escHtml(c.iso2 || '—')}</td><td>${portCount}</td>` +
       `<td class="mgmt-wide-col">${islandCount || '—'}</td><td class="mgmt-wide-col place-slug">${escHtml(c.slug || '—')}</td>`;
     tbody.appendChild(tr);
   });
@@ -14783,6 +14813,93 @@ function taxGuidanceFieldHtml(item, f, editMode){
    A local region spans countries, so it has nothing above it. Each field is
    resolved on its own, so a port can have its own tax guidance but take its
    products from its country. */
+/* ---- Kill switch: hide from the PUBLIC website ----
+   For places we can't supply right now (trade sanctions, storm damage...).
+   The trade system itself still shows everything; only the public website
+   leaves them out. A country's switch covers all its ports unless a port
+   says otherwise: each port is 'inherit' (follow its country), 'hidden', or
+   'shown' (on the website even while its country is hidden). It follows the
+   port's own country only, never a fallback country (Monaco -> France is
+   for products and tax, not this). The same rule is in the database view
+   port_public_status, which is what the public website should read. */
+const KILL_SWITCH_EXPLAINER = 'Hides this from the public website \u2014 for places we can\u2019t supply right now, e.g. trade sanctions or storm damage. It still shows here in the trade system.';
+function portPublicStatus(port){
+  const c = countryForName(port && port.country);
+  const v = (port && port.publicVisibility) || 'inherit';
+  if(v === 'hidden') return { hidden: true, decidedBy: 'port', country: c, source: port };
+  if(v === 'shown') return { hidden: false, decidedBy: 'port', country: c, source: port, overridesCountry: !!(c && c.publicHidden) };
+  if(c && c.publicHidden) return { hidden: true, decidedBy: 'country', country: c, source: c };
+  return { hidden: false, decidedBy: null, country: c, source: null };
+}
+function placeIsPublicHidden(kind, item){
+  if(kind === 'country') return !!item.publicHidden;
+  if(kind === 'port') return portPublicStatus(item).hidden;
+  return false;
+}
+function killSwitchStampText(src){
+  if(!src || !src.publicHiddenAt) return '';
+  const d = new Date(src.publicHiddenAt);
+  if(isNaN(d)) return '';
+  const when = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const email = (src.publicHiddenBy || '').toLowerCase();
+  const who = BROKER_NAMES_BY_EMAIL[email] || src.publicHiddenBy || '';
+  return 'Set ' + when + (who ? ' by ' + who : '');
+}
+function killSwitchBadgeHtml(){ return ' <span class="kill-badge" title="Kill switch on \u2014 not shown on the public website">Hidden from website</span>'; }
+function killSwitchFieldHtml(kind, item, editMode){
+  const fid = itemDetailInputId(kind === 'country' ? 'publicHidden' : 'publicVisibility');
+  const reason = escHtml(item.publicHiddenReason || '');
+  if(editMode){
+    if(kind === 'country'){
+      const n = isRealUuid(item.id) ? portsInCountry(item).length : 0;
+      return `<div class="item-detail-field kill-switch-field">
+        <span class="item-detail-label">Kill switch</span>
+        <div id="${fid}">
+          <label class="opt-inline"><input type="checkbox" ${item.publicHidden ? 'checked' : ''}> Hide ${escHtml(item.name || 'this country')} from the public website</label>
+          <div class="hint">${KILL_SWITCH_EXPLAINER} Applies to all ${n} of its delivery locations, except any set to show on their own page.</div>
+          <textarea rows="2" placeholder="Reason (internal only, e.g. sanctions since March 2026)" style="margin-top:6px;">${reason}</textarea>
+        </div>
+      </div>`;
+    }
+    const c = countryForName(item.country);
+    const countryState = c ? (c.publicHidden ? `${escHtml(c.name)}\u2019s kill switch is ON, so this is currently hidden` : `${escHtml(c.name)} is shown, so this is currently shown`) : 'no country set, so this is currently shown';
+    const v = item.publicVisibility || 'inherit';
+    const opt = (val, text) => `<label class="opt-inline" style="display:block;margin:3px 0;"><input type="radio" name="${fid}_r" value="${val}" ${v === val ? 'checked' : ''}> ${text}</label>`;
+    return `<div class="item-detail-field kill-switch-field">
+      <span class="item-detail-label">Kill switch</span>
+      <div id="${fid}">
+        ${opt('inherit', `Same as country <span class="hint" style="display:inline;">(${countryState})</span>`)}
+        ${opt('hidden', 'Hide this delivery location from the public website')}
+        ${opt('shown', 'Show it on the public website, even if its country is hidden')}
+        <div class="hint">${KILL_SWITCH_EXPLAINER}</div>
+        <textarea rows="2" placeholder="Reason (internal only, e.g. fuel dock damaged in storm, Oct 2026)" style="margin-top:6px;">${reason}</textarea>
+      </div>
+    </div>`;
+  }
+  let head = '', src = null, extra = '';
+  if(kind === 'country'){
+    if(!item.publicHidden) return '';
+    src = item;
+    const ps = portsInCountry(item);
+    const shownAnyway = ps.filter(p => p.publicVisibility === 'shown').length;
+    head = 'Kill switch ON \u2014 hidden from the public website';
+    extra = `Applies to ${ps.length - shownAnyway} of its ${ps.length} delivery locations` + (shownAnyway ? ` (${shownAnyway} set to show anyway)` : '') + '.';
+  } else {
+    const st = portPublicStatus(item);
+    if(st.hidden && st.decidedBy === 'port'){ head = 'Kill switch ON \u2014 hidden from the public website'; src = item; }
+    else if(st.hidden){ head = 'Hidden from the public website'; src = st.country;
+      extra = `Because ${isRealUuid(st.country.id) ? `<button type="button" class="link-btn" onclick="openItemDetail('country','${st.country.id}')">${escHtml(st.country.name)}</button>` : escHtml(st.country.name)}\u2019s kill switch is on.`; }
+    else if(st.overridesCountry){
+      const stamp = killSwitchStampText(item);
+      return `<div class="item-detail-field kill-switch-field"><span class="item-detail-label">Kill switch</span>
+        <div class="kill-switch-box kill-switch-override">Shown on the public website \u2014 overrides ${escHtml(st.country.name)}\u2019s kill switch.${item.publicHiddenReason ? `<div class="kill-switch-reason">${escHtml(item.publicHiddenReason)}</div>` : ''}${stamp ? `<div class="hint">${escHtml(stamp)}</div>` : ''}</div></div>`;
+    }
+    else return '';
+  }
+  const stamp = killSwitchStampText(src);
+  return `<div class="item-detail-field kill-switch-field"><span class="item-detail-label">Kill switch</span>
+    <div class="kill-switch-box"><strong>${head}</strong>${extra ? `<div>${extra}</div>` : ''}${src.publicHiddenReason ? `<div class="kill-switch-reason">${escHtml(src.publicHiddenReason)}</div>` : ''}${stamp ? `<div class="hint">${escHtml(stamp)}</div>` : ''}<div class="hint">Still shown here in the trade system.</div></div></div>`;
+}
 function placeSupplyFields(){
   return [
     {key:'productIds', label:'Products available', type:'country-products'},
@@ -14890,14 +15007,17 @@ async function saveCountryRemote(item){
   item.fallbackCountryId = fb ? fb.id : '';
   if(!fb) item.fallbackCountryName = NO_FALLBACK_LABEL;
   row.fallback_country_id = item.fallbackCountryId || null;
+  row.public_hidden = !!item.publicHidden;
+  row.public_hidden_reason = (item.publicHiddenReason || '').trim() || null;
   const oldName = item._savedName;
   if(!window.TS || !window.TS.getClient) return;
   try{
     const client = window.TS.getClient();
     const res = isRealUuid(item.id)
-      ? await client.from('countries').update(row).eq('id', item.id).select('id, slug, aliases, tax_guidance_updated_at, tax_guidance_updated_by').single()
-      : await client.from('countries').insert(row).select('id, slug, aliases, tax_guidance_updated_at, tax_guidance_updated_by').single();
+      ? await client.from('countries').update(row).eq('id', item.id).select('id, slug, aliases, tax_guidance_updated_at, tax_guidance_updated_by, public_hidden_at, public_hidden_by').single()
+      : await client.from('countries').insert(row).select('id, slug, aliases, tax_guidance_updated_at, tax_guidance_updated_by, public_hidden_at, public_hidden_by').single();
     if(res.error) throw res.error;
+    item.publicHiddenAt = res.data.public_hidden_at || ''; item.publicHiddenBy = res.data.public_hidden_by || '';
     item.id = res.data.id;
     item.slug = res.data.slug || ''; item._savedSlug = item.slug;
     // A rename keeps the old name as an alias (done by the database).
@@ -14917,7 +15037,8 @@ async function saveCountryRemote(item){
     COUNTRIES.sort(byName);
     writePlaceCache('ts-countries-cache', COUNTRIES, c => ({id:c.id, name:c.name, slug:c.slug, iso2:c.iso2, aliases:c.aliases, notes:c.notes, product_ids:c.productIds || [],
       delivery_methods:c.deliveryMethods || [], tax_types:c.taxTypes || [], tax_guidance:c.taxGuidance || null, tax_guidance_updated_at:c.taxGuidanceUpdatedAt || null, tax_guidance_updated_by:c.taxGuidanceUpdatedBy || null,
-      default_currency:c.defaultCurrency || 'USD', fallback_country_id:c.fallbackCountryId || null}));
+      default_currency:c.defaultCurrency || 'USD', fallback_country_id:c.fallbackCountryId || null,
+      public_hidden:!!c.publicHidden, public_hidden_reason:c.publicHiddenReason || null, public_hidden_at:c.publicHiddenAt || null, public_hidden_by:c.publicHiddenBy || null}));
   }catch(e){
     placeSaveError(e, 'name, ISO code or web address', item.name);
     item.slug = item._savedSlug || '';
@@ -14974,7 +15095,7 @@ function renderPlacePorts(ports){
   const midLabel = itemDetailState.kind === 'region' ? 'Country' : 'Local region';
   const midVal = p => itemDetailState.kind === 'region' ? p.country : p.localRegion;
   listEl.innerHTML = `<div class="table-wrap"><table class="mgmt-table"><thead><tr><th>Location</th><th>Type</th><th>${midLabel}</th>${showIsland ? '<th>Island</th>' : ''}</tr></thead><tbody>` +
-    ports.map(p => `<tr data-port-id="${portAttr(p.id)}"><td class="mgmt-item-name">${escHtml(p.name)}</td><td>${escHtml(p.locationType || '—')}</td><td>${escHtml(midVal(p) || '—')}</td>${showIsland ? `<td>${escHtml(p.island || '—')}</td>` : ''}</tr>`).join('') +
+    ports.map(p => `<tr data-port-id="${portAttr(p.id)}"><td class="mgmt-item-name">${escHtml(p.name)}${portPublicStatus(p).hidden ? killSwitchBadgeHtml() : ''}</td><td>${escHtml(p.locationType || '—')}</td><td>${escHtml(midVal(p) || '—')}</td>${showIsland ? `<td>${escHtml(p.island || '—')}</td>` : ''}</tr>`).join('') +
     `</tbody></table></div>`;
   listEl.querySelectorAll('tr[data-port-id]').forEach(tr => { tr.onclick = () => openItemDetail('port', tr.dataset.portId); });
   if(typeof L === 'undefined'){
