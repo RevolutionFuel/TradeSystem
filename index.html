@@ -2641,6 +2641,15 @@ let selectedVessel = null;
 // at all, so pressing copy on a dead enquiry doesn't quietly resurrect it.
 let orderStatusFlags = { awaitingPrices:false, quoted:false, supplierConfirmed:false, customerConfirmed:false, invoiced:false };
 let manualStatusOverride = null;
+// The day the order was confirmed: the first Nomination (supplier) or
+// Confirmation (customer) sent, whichever comes first - copied to the
+// master spreadsheet as the Order Date (John, 20 Nov 2026). The day the
+// enquiry was opened stays in quoteDate. Set once and never moved; orders
+// confirmed before this existed were backfilled from order_status_history.
+let orderConfirmedDate = '';
+function stampOrderConfirmed(){
+  if(!orderConfirmedDate) orderConfirmedDate = isoDate(new Date());
+}
 // Holds the resolved UTC instant for the scheduled reminder, computed
 // whenever the date/time or local-time toggle changes - kept separate from
 // the raw form fields since resolving it (especially for local-time mode)
@@ -5870,7 +5879,7 @@ async function ensureOrderNumberAssigned(){
   await assignNextOrderNumber();
 }
 async function confirmCustomerAndAssignOrderNumber(){
-  if(confirmProgressStatus('customer')){ markStatus('customerConfirmed'); await ensureOrderNumberAssigned(); }
+  if(confirmProgressStatus('customer')){ markStatus('customerConfirmed'); stampOrderConfirmed(); await ensureOrderNumberAssigned(); }
 }
 async function markSupplierConfirmedForCurrentView(){
   if(!multiSupplierMode){
@@ -5878,12 +5887,13 @@ async function markSupplierConfirmedForCurrentView(){
     // unaffected by the multi-supplier tracking below (which requires at
     // least one named supplier to ever complete, and shouldn't block the
     // ordinary single-supplier flow when no supplier has been named yet).
-    if(confirmProgressStatus('supply')){ markStatus('supplierConfirmed'); await ensureOrderNumberAssigned(); }
+    if(confirmProgressStatus('supply')){ markStatus('supplierConfirmed'); stampOrderConfirmed(); await ensureOrderNumberAssigned(); }
     return;
   }
   const supplierName = getCurrentSupplierName();
   if(supplierName && !confirmedSupplierNames.includes(supplierName)){
     confirmedSupplierNames.push(supplierName);
+    stampOrderConfirmed(); // first supplier's nomination counts, before all are done
   }
   const distinct = getDistinctSuppliers();
   const allDone = distinct.length > 0 && distinct.every(s => confirmedSupplierNames.includes(s));
@@ -8537,7 +8547,9 @@ function buildSpreadsheetRow(includeInvoiceFields){
   const todayIso = isoDate(new Date());
   const totals = computeOrderSaveTotals();
   return [
-    orderNumberVal || '', orderPart, reference, fv('quoteDate') || '', fv('finalETA') || fv('eta') || '',
+    // Order Date = the day the order was confirmed, not the day the enquiry
+    // was opened (John, 20 Nov). Blank until a Nomination/Confirmation is sent.
+    orderNumberVal || '', orderPart, reference, orderConfirmedDate || '', fv('finalETA') || fv('eta') || '',
     fv('vessel') || '', fv('port') || '', totals.totalVolumeLitres != null ? String(totals.totalVolumeLitres) : '',
     brokerInitials(fv('orderBroker') || currentBrokerFullName()),
     '', // Status - deliberately left blank: this cell holds the spreadsheet's own live formula (derived from Inv Date/Rcvd Date/Paid Date), so pasting a computed value here would overwrite it with static text that stops updating
@@ -11430,6 +11442,7 @@ async function clearOrder(){
   orderIsDirty = false;
   orderStatusFlags = { awaitingPrices:false, quoted:false, supplierConfirmed:false, customerConfirmed:false, invoiced:false };
   manualStatusOverride = null;
+  orderConfirmedDate = '';
   multiSupplierMode = false;
   currentSupplyViewSupplier = null;
   confirmedSupplierNames = [];
@@ -15787,6 +15800,7 @@ function collectQuoteState(){
     agentEmail: fv('agentEmailSupply') || fv('agentEmailCustomer'),
     agentNotes: fv('agentNotesSupply') || fv('agentNotesCustomer'),
     orderStatusFlags: Object.assign({}, orderStatusFlags),
+    orderConfirmedDate: orderConfirmedDate,
     manualStatusOverride: manualStatusOverride,
     checkedConditionTexts: getCheckedConditions(),
     supCheckedNoteTexts: getSupCheckedNotes(),
@@ -16046,6 +16060,7 @@ async function applyQuoteState(data){
   }
 
   orderStatusFlags = Object.assign({awaitingPrices:false, quoted:false, supplierConfirmed:false, customerConfirmed:false, invoiced:false}, data.orderStatusFlags || {});
+  orderConfirmedDate = data.orderConfirmedDate || '';
   manualStatusOverride = (data.manualStatusOverride && STATUS_LIST.includes(data.manualStatusOverride)) ? data.manualStatusOverride : null;
 
   multiSupplierMode = !!data.multiSupplierMode;
