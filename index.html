@@ -6654,17 +6654,23 @@ function updateBlock(id, field, value){
   }
   render();
 }
+// Product chooser lists are alphabetical (John, 25 Nov 2026) - PRODUCTS
+// arrives in database order. Case-insensitive, numbers in natural order
+// ("Grade 2" before "Grade 10").
+function byProductName(a, b){
+  return String(a.name || '').localeCompare(String(b.name || ''), 'en', { sensitivity:'base', numeric:true });
+}
 function fuelOptionsForDropdown(subTypeFilter){
-  return PRODUCTS.filter(p=>p.category==='Fuel' && (!subTypeFilter || p.subType===subTypeFilter));
+  return PRODUCTS.filter(p=>p.category==='Fuel' && (!subTypeFilter || p.subType===subTypeFilter)).sort(byProductName);
 }
 function otherProductOptions(subTypeFilter){
-  return PRODUCTS.filter(p=>p.category==='Other Products' && (!subTypeFilter || p.subType===subTypeFilter));
+  return PRODUCTS.filter(p=>p.category==='Other Products' && (!subTypeFilter || p.subType===subTypeFilter)).sort(byProductName);
 }
 // The list of sub-types actually present for a category, for building the
 // filter dropdown — computed fresh each time rather than hardcoded, so it
 // stays correct as the Products list is edited in Manage Lists.
 function subTypesForCategory(category){
-  return Array.from(new Set(PRODUCTS.filter(p=>p.category===category && (p.subType||'').trim()).map(p=>p.subType))).sort();
+  return Array.from(new Set(PRODUCTS.filter(p=>p.category===category && (p.subType||'').trim()).map(p=>p.subType))).sort((a,b)=>a.localeCompare(b,'en',{sensitivity:'base', numeric:true}));
 }
 // Looks up which sub-type a chosen fuel product belongs to, by name — this
 // is what decides whether Diesel-only fields (Flash Point/Sulphur/FAME) or
@@ -15119,17 +15125,21 @@ function countryProductLabel(opt){
   const p = (PRODUCTS || []).find(x => x.id === opt.id);
   return (p && p.name) || opt.name;
 }
+// Alphabetical by the label shown (the product's current name).
+function countryProductOptionsSorted(){
+  return COUNTRY_PRODUCT_OPTIONS.slice().sort((a, b) => countryProductLabel(a).localeCompare(countryProductLabel(b), 'en', { sensitivity:'base', numeric:true }));
+}
 function countryProductsFieldHtml(item, f, editMode){
   const chosen = new Set(Array.isArray(item.productIds) ? item.productIds : []);
   if(editMode){
     const fid = itemDetailInputId(f.key);
     return `<div class="item-detail-field">
       <span class="item-detail-label">${escHtml(f.label)}</span>
-      <div id="${fid}" class="country-products-edit">${COUNTRY_PRODUCT_OPTIONS.map(o =>
+      <div id="${fid}" class="country-products-edit">${countryProductOptionsSorted().map(o =>
         `<label class="opt-inline"><input type="checkbox" value="${escAttr(o.id)}" ${chosen.has(o.id) ? 'checked' : ''}> ${escHtml(countryProductLabel(o))}</label>`).join('')}</div>
     </div>`;
   }
-  const shown = COUNTRY_PRODUCT_OPTIONS.filter(o => chosen.has(o.id));
+  const shown = countryProductOptionsSorted().filter(o => chosen.has(o.id));
   if(!shown.length) return '';
   return `<div class="item-detail-field">
     <span class="item-detail-label">${escHtml(f.viewLabel || f.label)}</span>
