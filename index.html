@@ -1424,6 +1424,21 @@ body.file-dragging .file-drop-zone{outline:2px dashed #7FA9B3;outline-offset:4px
             </fieldset>
 
             <fieldset>
+              <legend>Contacts</legend>
+              <button class="btn-ghost btn-sm" type="button" onclick="loadContactPicker('invoice')">Show available contacts</button>
+              <div class="hint" style="margin-top:6px;" id="invContactsHint"></div>
+              <div id="contactPickerInvoice" style="margin-top:8px;"></div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Greeting</legend>
+              <div class="field">
+                <label for="invGreeting">Salutation</label>
+                <input type="text" id="invGreeting" oninput="onInvGreetingInput()">
+              </div>
+            </fieldset>
+
+            <fieldset>
               <legend>Final delivery</legend>
               <div class="field">
                 <label for="finalETA">Final date of delivery</label>
@@ -2565,7 +2580,7 @@ function draftInvoiceInOutlook(){
   if(getInvoiceType()==='invoice' && confirmProgressStatus('invoice')) markStatus('invoiced');
   return draftInOutlookGeneric({
     btnId: 'draftInvoiceOutlookBtn', openCheckboxId: 'openDraftToSendInvoice',
-    page: 'customer', buildHtml: buildInvoiceEmailHtml,
+    page: 'invoice', buildHtml: buildInvoiceEmailHtml,
     subject: buildDraftSubject('Fuel Invoice', true),
     pdfDocType: 'invoice', alwaysAttachPdf: true
   });
@@ -4201,6 +4216,68 @@ let supCcContacts = [];
 // the sensible starting point), until Supply's own contacts are touched
 // directly, after which it stops following.
 let supContactsManuallySet = false;
+// Invoice contacts (John, 25 Nov 2026) - "default, then diverge": until
+// they're touched, the invoice goes to whoever the Customer Confirmation
+// is addressed to (or, for a Commission Invoice, the Supply Confirmation),
+// exactly as before this existed. Picking contacts or editing the
+// salutation on the Invoice page copies that starting point and from then
+// on the invoice keeps its own list. invContactsSource records which side
+// (vesselOwner/supplier) the own list was taken from, so switching the
+// invoice type to/from Commission goes back to following the right page.
+let invSelectedContacts = [];
+let invCcContacts = [];
+let invContactsManuallySet = false;
+let invContactsSource = null;
+function invoiceContactsSource(){ return getInvoiceType() === 'commission' ? 'supplier' : 'vesselOwner'; }
+function invoiceFollowPage(){ return invoiceContactsSource() === 'supplier' ? 'supply' : 'customer'; }
+function invoiceContactsDiverged(){ return invContactsManuallySet && invContactsSource === invoiceContactsSource(); }
+function invoiceFollowGreeting(){
+  return invoiceContactsSource() === 'supplier' ? (fv('supGreeting') || 'Dear Sir/Madam,') : (fv('custGreeting') || 'Dear Captain,');
+}
+// The salutation the invoice email actually uses.
+function invoiceGreeting(){
+  return (invoiceContactsDiverged() && fv('invGreeting')) || invoiceFollowGreeting();
+}
+function divergeInvoiceContacts(){
+  if(invoiceContactsDiverged()) return;
+  const follow = invoiceFollowPage();
+  invSelectedContacts = contactsListForPage(follow, 'to').slice();
+  invCcContacts = contactsListForPage(follow, 'cc').slice();
+  invContactsManuallySet = true;
+  invContactsSource = invoiceContactsSource();
+  const el = document.getElementById('invGreeting');
+  if(el) el.value = invoiceFollowGreeting();
+}
+function resetInvoiceContacts(){
+  invSelectedContacts = []; invCcContacts = [];
+  invContactsManuallySet = false; invContactsSource = null;
+  const el = document.getElementById('invGreeting');
+  if(el) el.value = '';
+}
+function onInvGreetingInput(){
+  const el = document.getElementById('invGreeting');
+  const typed = el.value;
+  divergeInvoiceContacts();
+  el.value = typed;
+  renderInvoicePreviewOnly();
+}
+// Keeps the Invoice page's salutation box and hint showing what will
+// actually be used, and reloads its picker if the invoice type switched
+// between customer and supplier (Commission) contacts.
+let invPickerShownSource = null;
+function syncInvoiceContactsUi(){
+  const el = document.getElementById('invGreeting');
+  if(el && !invoiceContactsDiverged() && document.activeElement !== el) el.value = invoiceFollowGreeting();
+  const hint = document.getElementById('invContactsHint');
+  if(hint){
+    const pageName = invoiceFollowPage() === 'supply' ? 'Supply Confirmation' : 'Customer Confirmation';
+    hint.textContent = invoiceContactsDiverged()
+      ? 'This invoice has its own contacts. Selecting any updates the salutation below.'
+      : `Following the ${pageName}'s contacts until you pick here. Add missing emails with Edit.`;
+  }
+  const container = document.getElementById('contactPickerInvoice');
+  if(container && container.innerHTML.trim() && invPickerShownSource && invPickerShownSource !== invoiceContactsSource()) loadContactPicker('invoice');
+}
 
 // Central config for the 4 pages that address a salutation to picked
 // contacts. quote/customer pull from the order's vessel + registered
@@ -4211,13 +4288,23 @@ const CONTACT_PICKER_PAGES = {
   quote:    { containerId:'contactPickerQuote',    greetingId:'greeting',     renderFn:'render',         source:'vesselOwner' },
   customer: { containerId:'contactPickerCustomer', greetingId:'custGreeting', renderFn:'renderCustomer', source:'vesselOwner' },
   enquire:  { containerId:'contactPickerEnquire',  greetingId:'enqGreeting',  renderFn:'renderEnquiry',  source:'supplier' },
-  supply:   { containerId:'contactPickerSupply',   greetingId:'supGreeting',  renderFn:'renderSupply',   source:'supplier' }
+  supply:   { containerId:'contactPickerSupply',   greetingId:'supGreeting',  renderFn:'renderSupply',   source:'supplier' },
+  invoice:  { containerId:'contactPickerInvoice',  greetingId:'invGreeting',  renderFn:'renderInvoicePreviewOnly', get source(){ return invoiceContactsSource(); } }
 };
 function contactsListForPage(page, listKind){
+  if(page === 'invoice'){
+    if(!invoiceContactsDiverged()) return contactsListForPage(invoiceFollowPage(), listKind);
+    return listKind === 'cc' ? invCcContacts : invSelectedContacts;
+  }
   if(listKind === 'cc') return { quote:quoteCcContacts, customer:custCcContacts, enquire:enqCcContacts, supply:supCcContacts }[page];
   return { quote:quoteSelectedContacts, customer:custSelectedContacts, enquire:enqSelectedContacts, supply:supSelectedContacts }[page];
 }
 function setContactsListForPage(page, list, listKind){
+  if(page === 'invoice'){
+    divergeInvoiceContacts();
+    if(listKind === 'cc') invCcContacts = list; else invSelectedContacts = list;
+    return;
+  }
   if(listKind === 'cc'){
     if(page==='quote') quoteCcContacts = list;
     else if(page==='customer') custCcContacts = list;
@@ -4269,7 +4356,8 @@ function currentVesselAndOwnerIds(){
 // multi-supplier mode is on, since that's genuinely a different supplier
 // with its own separate contacts; enquire only ever has the one.
 function currentSupplierIdForPage(page){
-  const name = (page === 'supply' && multiSupplierMode && currentSupplyViewSupplier) ? currentSupplyViewSupplier : fv('supplierName');
+  const name = (page === 'supply' && multiSupplierMode && currentSupplyViewSupplier) ? currentSupplyViewSupplier
+    : (page === 'invoice' && multiSupplierMode && currentSupplyViewSupplier) ? currentSupplyViewSupplier : fv('supplierName');
   const rec = SUPPLIERS.find(s => s.name.trim().toLowerCase() === (name||'').trim().toLowerCase());
   return rec ? rec.id : null;
 }
@@ -4323,7 +4411,8 @@ async function loadContactPicker(page){
   // rather than the signed-in person. More than one contact can be marked
   // default (e.g. captain and chief engineer both), so all of them get
   // pre-selected here, not just the first.
-  if(!contactsListForPage(page).length){
+  if(page === 'invoice') invPickerShownSource = source;
+  if(!contactsListForPage(page).length && !(page === 'invoice' && !invoiceContactsDiverged())){
     const primaries = [...result.vesselContacts, ...result.orgContacts].filter(c=>c.isPrimary);
     primaries.forEach(primary => toggleContactSelection(page, {name:primary.name, jobTitle:primary.jobTitle, alias:primary.alias||'', contactId:primary.id}, true));
   }
@@ -4452,6 +4541,7 @@ async function saveContactPickerEdit(page, targetKind, contactId){
 // feeds the salutation; cc'd contacts are copied on the email without
 // being addressed directly.
 function toggleContactSelection(page, contact, checked, targetKind, listKind){
+  if(page === 'invoice') divergeInvoiceContacts();
   listKind = listKind === 'cc' ? 'cc' : 'to';
   const otherKind = listKind === 'to' ? 'cc' : 'to';
   let list = contactsListForPage(page, listKind);
@@ -4603,6 +4693,7 @@ async function refreshOrderFromRecords(){
         const cands = [...(res.vesselContacts || []), ...(res.orgContacts || [])];
         let cc = false;
         ['quote', 'customer'].forEach(page => { if(refreshPickedContactsForPage(page, cands)) cc = true; });
+        if(invoiceContactsDiverged() && invContactsSource === 'vesselOwner' && refreshPickedContactsForPage('invoice', cands)) cc = true;
         if(cc) changed.push('vessel contacts');
       }
     }
@@ -4613,6 +4704,7 @@ async function refreshOrderFromRecords(){
       const cands = res.orgContacts || [];
       let sc = refreshPickedContactsForPage('enquire', cands);
       if(!multiSupplierMode && refreshPickedContactsForPage('supply', cands)) sc = true;
+      if(invoiceContactsDiverged() && invContactsSource === 'supplier' && refreshPickedContactsForPage('invoice', cands)) sc = true;
       if(sc) changed.push('supplier contacts');
     }
     if(changed.length){
@@ -4650,6 +4742,7 @@ function pickVessel(v){
   custSelectedContacts = [];
   quoteCcContacts = [];
   custCcContacts = [];
+  resetInvoiceContacts();
   selectedVessel = v;
   hideVesselList();
   loadContactPicker('quote');
@@ -5744,6 +5837,7 @@ function pickSupplier(s){
   enqCcContacts = [];
   supCcContacts = [];
   supContactsManuallySet = false;
+  if(invContactsSource === 'supplier') resetInvoiceContacts();
   hideSupplierList();
   loadContactPicker('enquire');
   loadContactPicker('supply');
@@ -8943,7 +9037,7 @@ function buildInvoiceEmailHtml(){
   const blank = () => `<p style="${TXT} margin:0; mso-margin-top-alt:0; mso-margin-bottom-alt:0; line-height:1;">&nbsp;</p>`;
   const ul = (items) => items.length ? `<ul style="${TXT} margin:0; padding-left:20pt; mso-margin-top-alt:0; mso-margin-bottom-alt:0;">${items.map(li=>`<li style="margin:0; mso-margin-top-alt:0; mso-margin-bottom-alt:0; line-height:100%;">${li}</li>`).join('')}</ul>` : '';
 
-  const greeting = inv.isCommission ? (fv('supGreeting') || 'Dear Sir/Madam,') : (fv('custGreeting') || 'Dear Captain,');
+  const greeting = invoiceGreeting();
   const docNoun = inv.invType === 'proforma' ? 'proforma invoice' : inv.invType === 'commission' ? 'commission invoice' : 'invoice';
 
   const parts = [];
@@ -9003,7 +9097,7 @@ function buildInvoiceEmailHtml(){
 }
 function buildInvoiceEmailPlainText(){
   const inv = computeInvoiceData();
-  const greeting = inv.isCommission ? (fv('supGreeting') || 'Dear Sir/Madam,') : (fv('custGreeting') || 'Dear Captain,');
+  const greeting = invoiceGreeting();
   const docNoun = inv.invType === 'proforma' ? 'proforma invoice' : inv.invType === 'commission' ? 'commission invoice' : 'invoice';
 
   const lines = [];
@@ -9224,6 +9318,7 @@ async function removeSupplierInvoiceFileHandler(){
   }
 }
 function renderInvoicePreviewOnly(){
+  syncInvoiceContactsUi();
   syncTaxStatusInvoiceVisibility();
   scheduleUpdatePanelHeightLock();
   renderInvoiceEmailPreview();
@@ -11430,6 +11525,7 @@ async function clearOrder(){
   quoteCcContacts = [];
   custCcContacts = [];
   enqCcContacts = [];
+  resetInvoiceContacts();
   supCcContacts = [];
   supContactsManuallySet = false;
   currentOrderDbId = null;
@@ -11572,6 +11668,9 @@ async function clearOrder(){
   }
   if(document.getElementById('contactPickerSupply') && document.getElementById('contactPickerSupply').innerHTML.trim()){
     loadContactPicker('supply');
+  }
+  if(document.getElementById('contactPickerInvoice') && document.getElementById('contactPickerInvoice').innerHTML.trim()){
+    loadContactPicker('invoice');
   }
   render();
   renderSupply();
@@ -15758,6 +15857,11 @@ function collectQuoteState(){
     custCcContacts: custCcContacts.slice(),
     enqCcContacts: enqCcContacts.slice(),
     supCcContacts: supCcContacts.slice(),
+    invSelectedContacts: invSelectedContacts.slice(),
+    invCcContacts: invCcContacts.slice(),
+    invContactsManuallySet: invContactsManuallySet,
+    invContactsSource: invContactsSource,
+    invGreeting: fv('invGreeting'),
     checkedNoteTexts: getCheckedNotes(),
     customNotes: customNotes.slice(),
     signoffLineText: getSignoffLine(),
@@ -15894,6 +15998,11 @@ async function applyQuoteState(data){
   custCcContacts = Array.isArray(data.custCcContacts) ? data.custCcContacts : [];
   enqCcContacts = Array.isArray(data.enqCcContacts) ? data.enqCcContacts : [];
   supCcContacts = Array.isArray(data.supCcContacts) ? data.supCcContacts : [];
+  invSelectedContacts = Array.isArray(data.invSelectedContacts) ? data.invSelectedContacts : [];
+  invCcContacts = Array.isArray(data.invCcContacts) ? data.invCcContacts : [];
+  invContactsManuallySet = !!data.invContactsManuallySet;
+  invContactsSource = data.invContactsSource || null;
+  if(document.getElementById('invGreeting')) document.getElementById('invGreeting').value = data.invGreeting || '';
   // A loaded order's own supply contacts are treated as already-established
   // (equivalent to having been manually diverged) — otherwise touching
   // Enquire's contacts afterward in this same session would silently
