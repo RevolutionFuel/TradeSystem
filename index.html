@@ -7094,8 +7094,8 @@ function computeMarginAndProfit(b){
 }
 function pricingRowsHTML(b){
   const row = (labelText, value) => value ? `<div class="pb-summary-row"><span class="pb-summary-label">${labelText}:</span> ${value}</div>` : '';
-  const saleUnitLabel = singularUnit(b.sellingPriceUnit || b.unit).toLowerCase();
-  const costUnitLabel = singularUnit(b.costPriceUnit || b.unit).toLowerCase();
+  const saleUnitLabel = unitInText(b.sellingPriceUnit || b.unit);
+  const costUnitLabel = unitInText(b.costPriceUnit || b.unit);
 
   const purchaseLine = b.costPrice ? `${escHtml(b.costCurrency||'')} ${escHtml(formatNumberDisplay(b.costPrice))} per ${escHtml(costUnitLabel)}` : '';
   const saleLine = b.sellingPrice ? `${escHtml(b.currency||'')} ${escHtml(formatNumberDisplay(b.sellingPrice))} per ${escHtml(saleUnitLabel)}` : '';
@@ -7401,7 +7401,7 @@ function feeDisplayText(fee, currency){
   if(fee.unit === 'Lumpsum' || !fee.unit){
     return `Plus ${desc}: ${currency} ${amt} (lumpsum)`;
   }
-  return `Plus ${desc}: ${currency} ${amt} per ${singularUnit(fee.unit).toLowerCase()}`;
+  return `Plus ${desc}: ${currency} ${amt} per ${unitInText(fee.unit)}`;
 }
 // Purchase-side fees — same shape and mechanics as sale fees, plus the
 // diverged flag that marks a fee as no longer following its linked sale fee.
@@ -7491,7 +7491,7 @@ function conversionFactorFieldHTML(fromUnit, toUnit, currentValue, updateFn, dat
   // "litres per X" rate — the fee is charged per whole item, so ask for the
   // estimated total count of those items instead of a conversion rate.
   if(kind === 'integer'){
-    const label = singularUnit(toUnit).toLowerCase();
+    const label = unitInText(toUnit);
     return `<div class="field">
       <label>Estimated total ${escHtml(label)}s</label>
       <input type="text" inputmode="decimal" ${dataAttrs||''} value="${escAttr(currentValue||'')}" placeholder="e.g. 3" oninput="sanitizeDecimal(this); ${updateFn}">
@@ -7539,6 +7539,15 @@ function radioOpt(blockId, field, value, label, current){
 }
 
 /* ===================== UNIT SINGULARIZE (for "per litre" phrasing) ===================== */
+// A unit inside running text ("per litre", "5,000 litres"): lower case,
+// except units that contain an abbreviation, which keep their own casing -
+// "US Gallon", "MT" (John, 25 Nov: "us gallon" was appearing on the
+// invoice email and the Nominate/Confirm price lines).
+function unitInText(u){
+  const one = singularUnit(u);
+  if(!one) return one;
+  return /\b[A-Z]{2,}\b/.test(one) ? one : one.toLowerCase();
+}
 function singularUnit(u){
   if(!u) return u;
   const specialMap = {'MT':'MT','Lumpsum':'Lumpsum'};
@@ -7934,8 +7943,8 @@ function buildProfitSummaryHtml(costAdjustment){
 
     productRows.push({
       label, saleQty, buyQty, sameQty: saleQty === buyQty, unit: b.unit,
-      buyPrice: b.costPrice, buyCurrency: b.costCurrency || b.currency, buyUnit: singularUnit(b.costPriceUnit || b.unit).toLowerCase(), buyTotal: buyTotalWithFees, hasCostFees: costFeesTotal !== 0,
-      sellPrice: b.sellingPrice, sellCurrency: b.currency, sellUnit: singularUnit(b.sellingPriceUnit || b.unit).toLowerCase(), saleTotal,
+      buyPrice: b.costPrice, buyCurrency: b.costCurrency || b.currency, buyUnit: unitInText(b.costPriceUnit || b.unit), buyTotal: buyTotalWithFees, hasCostFees: costFeesTotal !== 0,
+      sellPrice: b.sellingPrice, sellCurrency: b.currency, sellUnit: unitInText(b.sellingPriceUnit || b.unit), saleTotal,
       feesTotal, costFeesTotal, margin, profit, needsExchangeRate
     });
   });
@@ -8109,7 +8118,7 @@ function buildOrderSummaryTableHtml(priceMode, plainColors, filterToSupplierView
     } else if(priceHtml && rowPriceUnit){
       // Always shown now (not just when it differs from the base unit),
       // since there's no separate Units column any more to convey this.
-      priceHtml += ` <span style="color:#4B6072; font-size:9.5pt;">per ${escHtml(singularUnit(rowPriceUnit).toLowerCase())}</span>`;
+      priceHtml += ` <span style="color:#4B6072; font-size:9.5pt;">per ${escHtml(unitInText(rowPriceUnit))}</span>`;
     }
     // A range quantity means the line total is itself a range (min qty x
     // price to max qty x price), not a single figure calculated off the
@@ -8166,7 +8175,7 @@ function buildCommissionSummaryTableHtml(filterToSupplierView, tightLayout){
   rows.forEach(r=>{
     const labelHtml = `<b style="color:${labelColor};">${escHtml(r.label)} Commission</b>`;
     const qtyHtml = r.quantity ? `${escHtml(formatNumberDisplay(r.quantity))}${r.unit ? ' '+escHtml(r.unit) : ''}` : '';
-    const perUnitHtml = `${escHtml(r.currency)} ${escHtml(formatNumberDisplay(r.margin.toFixed(4).replace(/\.?0+$/,'')))} per ${escHtml(singularUnit(r.unit).toLowerCase())}`;
+    const perUnitHtml = `${escHtml(r.currency)} ${escHtml(formatNumberDisplay(r.margin.toFixed(4).replace(/\.?0+$/,'')))} per ${escHtml(unitInText(r.unit))}`;
     // A range quantity means the commission total is itself a range (min
     // qty's commission to max qty's commission), not a single figure
     // calculated off the minimum alone - matching how the main Order
@@ -9059,7 +9068,7 @@ function buildInvoiceEmailHtml(){
   // than running together in one long list.
   inv.productRows.forEach(r=>{
     const items = [`<b>Product:</b> ${escHtml(r.label)}`];
-    if(r.qty !== null) items.push(`<b>Quantity:</b> ${escHtml(formatNumberDisplay(r.qty.toString()))} ${escHtml(singularUnit(r.unit).toLowerCase())}${r.qty === 1 ? '' : 's'}`);
+    if(r.qty !== null) items.push(`<b>Quantity:</b> ${escHtml(formatNumberDisplay(r.qty.toString()))} ${escHtml(unitInText(r.unit))}${r.qty === 1 ? '' : 's'}`);
     parts.push(ul(items));
     parts.push(blank());
   });
@@ -9112,7 +9121,7 @@ function buildInvoiceEmailPlainText(){
   // prominence as the rich HTML version.
   inv.productRows.forEach(r=>{
     lines.push('- Product: ' + r.label);
-    if(r.qty !== null) lines.push('- Quantity: ' + formatNumberDisplay(r.qty.toString()) + ' ' + singularUnit(r.unit).toLowerCase() + (r.qty === 1 ? '' : 's'));
+    if(r.qty !== null) lines.push('- Quantity: ' + formatNumberDisplay(r.qty.toString()) + ' ' + unitInText(r.unit) + (r.qty === 1 ? '' : 's'));
     lines.push('');
   });
 
@@ -10187,7 +10196,7 @@ function buildPlainText(){
       if(d.quantity) lines.push('- Quantity: ' + formatNumberDisplay(d.quantity) + ' ' + d.unit);
       d.specs.forEach(([k,v])=>lines.push('- '+k+': '+v));
       if(d.specsAttached) lines.push('- specifications attached');
-      if(d.sellingPrice) lines.push('PRICE: ' + d.currency + ' ' + formatNumberDisplay(d.sellingPrice) + ' per ' + singularUnit(d.sellingPriceUnit).toLowerCase());
+      if(d.sellingPrice) lines.push('PRICE: ' + d.currency + ' ' + formatNumberDisplay(d.sellingPrice) + ' per ' + unitInText(d.sellingPriceUnit));
       d.fees.forEach(f=>{ const t = feeDisplayText(f, d.currency); if(t) lines.push('- '+t); });
       lines.push('');
     } else {
@@ -10205,7 +10214,7 @@ function buildPlainText(){
       d.specs.forEach(([k,v])=>lines.push('- '+k+': '+v));
       if(d.specsAttached) lines.push('- specifications attached');
       if(d.sellingPrice){
-        let priceLine = 'PRICE: ' + d.currency + ' ' + formatNumberDisplay(d.sellingPrice) + ' per ' + singularUnit(d.sellingPriceUnit).toLowerCase();
+        let priceLine = 'PRICE: ' + d.currency + ' ' + formatNumberDisplay(d.sellingPrice) + ' per ' + unitInText(d.sellingPriceUnit);
         if(d.sellingPriceDelivered) priceLine += ' delivered';
         lines.push(priceLine);
       }
@@ -10224,7 +10233,7 @@ function buildPlainText(){
         if(r.quantity) line += ': ' + formatNumberDisplay(r.quantity) + (r.unit ? ' '+r.unit : '');
         if(r.sellingPrice){
           line += ' @ ' + formatNumberDisplay(r.sellingPrice);
-          if(r.sellingPriceUnit && r.sellingPriceUnit !== r.unit) line += ' per ' + singularUnit(r.sellingPriceUnit).toLowerCase();
+          if(r.sellingPriceUnit && r.sellingPriceUnit !== r.unit) line += ' per ' + unitInText(r.sellingPriceUnit);
         }
         if(r.excluded) line += ' = (cannot calculate *)';
         else if(r.sellingSubTotal !== null) line += ' = ' + r.currency + ' ' + formatNumberDisplay(r.sellingSubTotal.toFixed(2));
@@ -10347,7 +10356,7 @@ function buildEmailHtml(){
       if(d.quantity) items.push(`<b>Quantity:</b> ${escHtml(formatNumberDisplay(d.quantity))} ${escHtml(d.unit)}`);
       if(d.specs.length) d.specs.forEach(([k,v])=> items.push(`<b>${escHtml(k)}:</b> ${escHtml(v)}`));
       if(d.specsAttached) items.push(`<i>specifications attached</i>`);
-      if(d.sellingPrice) items.push(`<b>PRICE:</b> ${escHtml(d.currency)} ${escHtml(formatNumberDisplay(d.sellingPrice))} per ${escHtml(singularUnit(d.sellingPriceUnit).toLowerCase())}`);
+      if(d.sellingPrice) items.push(`<b>PRICE:</b> ${escHtml(d.currency)} ${escHtml(formatNumberDisplay(d.sellingPrice))} per ${escHtml(unitInText(d.sellingPriceUnit))}`);
       parts.push(ul(items));
       if(d.fees.length) parts.push(ul(d.fees.map(f=>escHtml(feeDisplayText(f, d.currency))).filter(Boolean)));
       parts.push(blank());
@@ -10367,7 +10376,7 @@ function buildEmailHtml(){
       if(d.specs.length) d.specs.forEach(([k,v])=> items.push(`<b>${escHtml(k)}:</b> ${escHtml(v)}`));
       if(d.specsAttached) items.push(`<i>specifications attached</i>`);
       if(d.sellingPrice){
-        let priceLine = `${escHtml(d.currency)} ${escHtml(formatNumberDisplay(d.sellingPrice))} per ${escHtml(singularUnit(d.sellingPriceUnit).toLowerCase())}`;
+        let priceLine = `${escHtml(d.currency)} ${escHtml(formatNumberDisplay(d.sellingPrice))} per ${escHtml(unitInText(d.sellingPriceUnit))}`;
         if(d.sellingPriceDelivered) priceLine += ' delivered';
         items.push(`<b>PRICE:</b> ${priceLine}`);
       }
@@ -10534,15 +10543,15 @@ function buildSupplyEmailHtml(){
     if(isBrokeredDealActiveForCurrentView()){
       let saleUnitLabel = '';
       if(b.sellingPrice){
-        saleUnitLabel = singularUnit(b.sellingPriceUnit || b.unit).toLowerCase();
+        saleUnitLabel = unitInText(b.sellingPriceUnit || b.unit);
         items.push(`<b>CUSTOMER SELLING PRICE:</b> ${escHtml(b.currency)} ${escHtml(formatNumberDisplay(b.sellingPrice))} per ${escHtml(saleUnitLabel)}`);
       }
       const {margin} = computeMarginAndProfit(b);
       if(margin !== null){
-        items.push(`<b>COMMISSION AMOUNT:</b> ${escHtml(b.currency)} ${escHtml(formatNumberDisplay(margin.toFixed(4).replace(/\.?0+$/,'')))} per ${escHtml(saleUnitLabel || singularUnit(b.unit).toLowerCase())}`);
+        items.push(`<b>COMMISSION AMOUNT:</b> ${escHtml(b.currency)} ${escHtml(formatNumberDisplay(margin.toFixed(4).replace(/\.?0+$/,'')))} per ${escHtml(saleUnitLabel || unitInText(b.unit))}`);
       }
     } else if(d.costPrice){
-      const costUnitLabel = singularUnit(d.costPriceUnit).toLowerCase();
+      const costUnitLabel = unitInText(d.costPriceUnit);
       items.push(`<b>PRICE:</b> ${escHtml(d.costCurrency)} ${escHtml(formatNumberDisplay(d.costPrice))} per ${escHtml(costUnitLabel)}`);
     }
     parts.push(ul(items));
@@ -10663,15 +10672,15 @@ function buildSupplyPlainText(){
     if(isBrokeredDealActiveForCurrentView()){
       let saleUnitLabel = '';
       if(b.sellingPrice){
-        saleUnitLabel = singularUnit(b.sellingPriceUnit || b.unit).toLowerCase();
+        saleUnitLabel = unitInText(b.sellingPriceUnit || b.unit);
         lines.push('CUSTOMER SELLING PRICE: ' + b.currency + ' ' + formatNumberDisplay(b.sellingPrice) + ' per ' + saleUnitLabel);
       }
       const {margin} = computeMarginAndProfit(b);
       if(margin !== null){
-        lines.push('COMMISSION AMOUNT: ' + b.currency + ' ' + formatNumberDisplay(margin.toFixed(4).replace(/\.?0+$/,'')) + ' per ' + (saleUnitLabel || singularUnit(b.unit).toLowerCase()));
+        lines.push('COMMISSION AMOUNT: ' + b.currency + ' ' + formatNumberDisplay(margin.toFixed(4).replace(/\.?0+$/,'')) + ' per ' + (saleUnitLabel || unitInText(b.unit)));
       }
     } else if(d.costPrice){
-      lines.push('PRICE: ' + d.costCurrency + ' ' + formatNumberDisplay(d.costPrice) + ' per ' + singularUnit(d.costPriceUnit).toLowerCase());
+      lines.push('PRICE: ' + d.costCurrency + ' ' + formatNumberDisplay(d.costPrice) + ' per ' + unitInText(d.costPriceUnit));
     }
     d.costFees.forEach(f=>{ const t = feeDisplayText(f, d.costCurrency); if(t) lines.push('- '+t); });
     lines.push('');
@@ -10688,12 +10697,12 @@ function buildSupplyPlainText(){
         let line = '- ' + r.label;
         if(r.quantity) line += ': ' + formatNumberDisplay(r.quantity) + (r.unit ? ' '+r.unit : '');
         if(brokered){
-          if(r.sellingPrice) line += ' @ ' + formatNumberDisplay(r.sellingPrice) + ' per ' + singularUnit(r.sellingPriceUnit).toLowerCase();
+          if(r.sellingPrice) line += ' @ ' + formatNumberDisplay(r.sellingPrice) + ' per ' + unitInText(r.sellingPriceUnit);
           line += ' = ' + r.currency + ' ' + formatNumberDisplay(r.sellingSubTotal.toFixed(2));
           lines.push(line);
           byCurrency[r.currency] = (byCurrency[r.currency]||0) + r.sellingSubTotal;
         } else {
-          if(r.buyingPrice) line += ' @ ' + formatNumberDisplay(r.buyingPrice) + ' per ' + singularUnit(r.buyingPriceUnit).toLowerCase();
+          if(r.buyingPrice) line += ' @ ' + formatNumberDisplay(r.buyingPrice) + ' per ' + unitInText(r.buyingPriceUnit);
           line += ' = ' + r.buyingCurrency + ' ' + formatNumberDisplay(r.buyingSubTotal.toFixed(2));
           lines.push(line);
           byCurrency[r.buyingCurrency] = (byCurrency[r.buyingCurrency]||0) + r.buyingSubTotal;
@@ -10711,7 +10720,7 @@ function buildSupplyPlainText(){
         commissionRows.forEach(r=>{
           let line = '- ' + r.label + ' Commission';
           if(r.quantity) line += ': ' + formatNumberDisplay(r.quantity) + (r.unit ? ' '+r.unit : '');
-          line += ' @ ' + r.currency + ' ' + formatNumberDisplay(r.margin.toFixed(4).replace(/\.?0+$/,'')) + ' per ' + singularUnit(r.unit).toLowerCase();
+          line += ' @ ' + r.currency + ' ' + formatNumberDisplay(r.margin.toFixed(4).replace(/\.?0+$/,'')) + ' per ' + unitInText(r.unit);
           line += ' = ' + r.currency + ' ' + formatNumberDisplay(r.profit.toFixed(2));
           lines.push(line);
           byCurrency[r.currency] = (byCurrency[r.currency]||0) + r.profit;
@@ -11069,7 +11078,7 @@ function buildCustomerEmailHtml(){
       if(d.specs.length) d.specs.forEach(([k,v])=> items.push(`<b>${escHtml(k)}:</b> ${escHtml(v)}`));
     }
     if(d.sellingPrice){
-      let priceLine = `${escHtml(d.currency)} ${escHtml(formatNumberDisplay(d.sellingPrice))} per ${escHtml(singularUnit(d.sellingPriceUnit).toLowerCase())}`;
+      let priceLine = `${escHtml(d.currency)} ${escHtml(formatNumberDisplay(d.sellingPrice))} per ${escHtml(unitInText(d.sellingPriceUnit))}`;
       if(d.sellingPriceDelivered) priceLine += ' delivered';
       items.push(`<b>PRICE:</b> ${priceLine}`);
     }
@@ -11198,7 +11207,7 @@ function buildCustomerPlainText(){
       d.specs.forEach(([k,v])=> lines.push(`- ${k}: ${v}`));
     }
     if(d.sellingPrice){
-      let priceLine = 'PRICE: ' + d.currency + ' ' + formatNumberDisplay(d.sellingPrice) + ' per ' + singularUnit(d.sellingPriceUnit).toLowerCase();
+      let priceLine = 'PRICE: ' + d.currency + ' ' + formatNumberDisplay(d.sellingPrice) + ' per ' + unitInText(d.sellingPriceUnit);
       if(d.sellingPriceDelivered) priceLine += ' delivered';
       lines.push(priceLine);
     }
@@ -11215,7 +11224,7 @@ function buildCustomerPlainText(){
       rows.forEach(r=>{
         let line = '- ' + r.label;
         if(r.quantity) line += ': ' + formatNumberDisplay(r.quantity) + (r.unit ? ' '+r.unit : '');
-        if(r.sellingPrice) line += ' @ ' + formatNumberDisplay(r.sellingPrice) + (r.sellingPriceUnit && r.sellingPriceUnit !== '%' ? ' per ' + singularUnit(r.sellingPriceUnit).toLowerCase() : (r.sellingPriceUnit==='%' ? '%' : ''));
+        if(r.sellingPrice) line += ' @ ' + formatNumberDisplay(r.sellingPrice) + (r.sellingPriceUnit && r.sellingPriceUnit !== '%' ? ' per ' + unitInText(r.sellingPriceUnit) : (r.sellingPriceUnit==='%' ? '%' : ''));
         line += ' = ' + r.currency + ' ' + formatNumberDisplay(r.sellingSubTotal.toFixed(2));
         lines.push(line);
         byCurrency[r.currency] = (byCurrency[r.currency]||0) + r.sellingSubTotal;
