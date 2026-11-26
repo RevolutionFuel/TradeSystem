@@ -211,8 +211,23 @@
   .dash-row{display:flex; align-items:center; gap:10px; padding:6px 8px 6px 6px; border-bottom:1px solid #ECE6DA; border-left:3px solid transparent; cursor:pointer;}
   .dash-row:last-child{border-bottom:none;}
   .dash-row:hover{background:#FAF8F3;}
-  .dash-row.urgent{background:#FCEBE7; border-left-color:#B3492E;}
-  .dash-row.urgent:hover{background:#F9E0DA;}
+  .dash-row.tone-red{background:#FCEBE7; border-left-color:#B3492E;}
+  .dash-row.tone-red:hover{background:#F9E0DA;}
+  .dash-row.tone-orange{background:#FDF0DF; border-left-color:#E07B00;}
+  .dash-row.tone-orange:hover{background:#FBE7CF;}
+  .dash-row.tone-stripes, .dash-pill.stripes{background:repeating-linear-gradient(135deg, #F4C4B8 0 7px, #FCEBE7 7px 14px);}
+  .dash-row.tone-stripes{border-left-color:#B3492E;}
+  .dash-pill.stripes{color:#8A2A14; box-shadow:inset 0 0 0 1px #B3492E;}
+  .dash-pill.orange{background:#E07B00;}
+  .dash-section-head.black{color:#111;} .dash-section-head.navy{color:var(--ink);}
+  .dash-section-head.clickable{cursor:pointer;}
+  .dash-section-head.clickable:hover .dash-head-title{text-decoration:underline;}
+  .dash-head-more{margin-left:auto; font-size:11px; font-weight:700; letter-spacing:0.04em; opacity:0.75;}
+  .dash-back{margin-left:auto; font-size:11.5px; font-weight:700; color:var(--teal); cursor:pointer; text-transform:none; letter-spacing:0;}
+  .dash-back:hover{text-decoration:underline;}
+  .dash-key{display:flex; flex-wrap:wrap; align-items:center; gap:6px; background:rgba(255,255,255,0.92); border-radius:10px; padding:7px 12px; margin:0 0 14px; font-size:11px; font-weight:700; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.05em;}
+  .dash-key .dash-pill{text-transform:none; letter-spacing:0.02em; margin-left:0;}
+  .dash-gp-pos{color:#2E7D32; font-weight:700;} .dash-gp-neg{color:#B3492E; font-weight:700;}
   .dash-avatar{flex:0 0 32px; width:32px; height:32px; border-radius:50%; display:block;}
   .dash-avatar-initials{flex:0 0 32px; width:32px; height:32px; border-radius:50%; background:#1D3F8C; color:#fff; font-size:11px; font-weight:800; line-height:32px; text-align:center;}
   .dash-avatar-initials.none{background:#ECEEF1; color:#4B5563;}
@@ -220,7 +235,7 @@
   .dash-line{display:flex; justify-content:space-between; align-items:baseline; gap:4px 12px; flex-wrap:wrap; line-height:1.35;}
   .dash-line + .dash-line{margin-top:2px;}
   .dash-left{min-width:0; flex:1 1 auto;}
-  .dash-right{flex:0 0 auto; text-align:right; margin-left:auto;}
+  .dash-right{flex:0 1 auto; max-width:100%; text-align:right; margin-left:auto;}
   .dash-vessel{font-size:14.5px; font-weight:700; color:var(--ink);}
   .dash-ref{font-size:12.5px; color:#8A94A0; margin-left:6px; text-decoration:none;}
   .dash-ref:hover{text-decoration:underline;}
@@ -230,7 +245,8 @@
   .dash-sep{color:#B8BEC6; margin:0 5px;}
   .dash-label{font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#8A94A0; margin-right:3px;}
   .dash-party{color:var(--ink);}
-  .dash-money{font-size:12.5px; color:var(--ink); white-space:nowrap;}
+  .dash-money{font-size:12.5px; color:var(--ink);}
+  .dash-money .dash-amt{white-space:nowrap;}
   .dash-pill{display:inline-block; font-size:10.5px; font-weight:700; line-height:1; padding:4px 9px; border-radius:999px; white-space:nowrap; letter-spacing:0.02em; color:#fff; vertical-align:middle;}
   .dash-pill + .dash-pill{margin-left:4px;}
   .dash-pill.red{background:#B3492E;} .dash-pill.grey{background:#ECEEF1; color:#4B5563;} .dash-pill.amber{background:#FDF0D9; color:#8A5A00;}
@@ -5428,6 +5444,14 @@ function isUpcomingDeliveryRow(r){
   const d = dashboardRowDate(r);
   return !d || d >= dashboardTodayIso();
 }
+// Delivered in the last 30 days, billed or not.
+function isPastOrderRow(r){
+  if(!r.orderNumber || r.status === 'cancelled') return false;
+  const d = dashboardRowDate(r);
+  if(!d || d >= dashboardTodayIso()) return false;
+  const from = new Date(); from.setDate(from.getDate() - 30);
+  return d >= isoDate(from);
+}
 function isDeliveredUnbilledRow(r){
   if(!r.orderNumber || r.status === 'cancelled' || isOrderBilled(r.status)) return false;
   const d = dashboardRowDate(r);
@@ -5437,7 +5461,8 @@ const DASHBOARD_FILTERS = [
   { key:'home', label:'Dashboard' },
   { key:'open_enquiries', label:'Open enquiries', test:r => isOpenEnquiryRow(r) },
   { key:'upcoming_deliveries', label:'Upcoming deliveries', test:r => isUpcomingDeliveryRow(r) },
-  { key:'unbilled_orders', label:'Unbilled orders', test:r => !!r.orderNumber && !isOrderBilled(r.status) && r.status!=='cancelled' },
+  { key:'unbilled_orders', label:'Unbilled orders', test:r => isDeliveredUnbilledRow(r) },
+  { key:'past_orders', label:'Past orders (30 days)', test:r => isPastOrderRow(r) },
   { key:'unpaid_suppliers', label:'Unpaid suppliers', test:r => !!r.orderNumber && !r.paidDate && r.status!=='cancelled' },
   { key:'unpaid_customers', label:'Unpaid customers', test:r => !!r.orderNumber && !r.receivedDate && r.status!=='cancelled' },
   { key:'all_unpaid', label:'All unpaid', test:r => !!r.orderNumber && (!r.paidDate || !r.receivedDate) && r.status!=='cancelled' },
@@ -5544,6 +5569,7 @@ const DASHBOARD_SORT_GETTERS = {
   supplier: r => (r.supplierName || '').toLowerCase(),
   purchase: r => (r.purchaseTotal === null || r.purchaseTotal === undefined || r.purchaseTotal === '') ? null : Number(r.purchaseTotal),
   sale: r => (r.salesTotal === null || r.salesTotal === undefined || r.salesTotal === '') ? null : Number(r.salesTotal),
+  gp: r => dashboardGp(r),
   status: r => r.status || ''
 };
 let dashboardSort = { field: 'eta', dir: 1 };
@@ -5566,12 +5592,12 @@ function sortDashboardRows(rows){
 function setDashboardSort(field){
   if(dashboardSort.field === field){ dashboardSort.dir = -dashboardSort.dir; }
   else { dashboardSort.field = field; dashboardSort.dir = 1; }
-  if(dashboardActiveFilter === 'home') renderDashboardFilterBar();
+  renderDashboardFilterBar();
   renderDashboardList();
 }
 const DASHBOARD_SORT_CHOICES = [
   ['eta','date'], ['reference','reference'], ['broker','broker'], ['vessel','vessel'], ['port','port'],
-  ['customer','customer'], ['supplier','supplier'], ['purchase','purchase total'], ['sale','sale total'], ['status','status']
+  ['customer','customer'], ['supplier','supplier'], ['purchase','purchase total'], ['sale','sale total'], ['gp','gross profit'], ['status','status']
 ];
 function setDashboardSortField(field){
   dashboardSort.field = field; dashboardSort.dir = 1;
@@ -5589,8 +5615,11 @@ async function loadDashboardData(prefetched){
     return;
   }
   container.innerHTML = '<div class="hint">Loading...</div>';
+  const extrasP = fetchDashboardExtras();
   try{
     dashboardRows = await (prefetched || window.TS.listOrders());
+    const extras = await extrasP;
+    dashboardRows.forEach(r => { const x = extras[r.id]; if(x) r.supplyPaymentTerms = x.supplyPaymentTerms; });
   }catch(e){
     console.error('TS: listOrders failed', e);
     container.innerHTML = '<div class="hint">Could not load right now \u2014 check your connection and press Refresh.</div>';
@@ -5598,11 +5627,25 @@ async function loadDashboardData(prefetched){
   }
   renderDashboardList();
 }
+// The supplier's payment terms aren't part of the shared order list, so
+// they're fetched alongside it for the unbilled due-date colours. If this
+// fails the lists still show, just without those colours.
+async function fetchDashboardExtras(){
+  try{
+    const client = window.TS && window.TS.getClient && window.TS.getClient();
+    if(!client) return {};
+    const { data, error } = await client.from('orders').select('id, supply_payment_terms').is('deleted_at', null).limit(1000);
+    if(error) throw error;
+    const out = {};
+    (data || []).forEach(o => { out[o.id] = { supplyPaymentTerms: o.supply_payment_terms || '' }; });
+    return out;
+  }catch(e){ console.warn('TS: dashboard payment terms fetch failed', e); return {}; }
+}
 function renderDashboardFilterBar(){
   const bar = document.getElementById('dashboardFilterBar');
   // The dashboard's sections have no column headings to click, so sorting
   // there is a "Sort by" menu with the same choices as the table columns.
-  const sortHtml = dashboardActiveFilter === 'home'
+  const sortHtml = 1
     ? `<select id="dashboardSortSelect" class="dash-sort-select" onchange="setDashboardSortField(this.value)">` +
       DASHBOARD_SORT_CHOICES.map(([k, label]) => `<option value="${k}" ${k===dashboardSort.field?'selected':''}>Sort by ${escHtml(label)}</option>`).join('') +
       `</select><button type="button" class="dash-sort-dir" title="Reverse the order" onclick="setDashboardSort(dashboardSort.field)">${dashboardSort.dir === 1 ? '\u25b2' : '\u25bc'}</button>`
@@ -5618,105 +5661,23 @@ function setDashboardFilter(key){
 }
 function renderDashboardList(){
   const container = document.getElementById('dashboardListContainer');
-  const availableWidth = container.clientWidth || window.innerWidth;
   if(dashboardActiveFilter === 'home'){
-    container.innerHTML = dashboardHomeHtml();
+    container.innerHTML = dashboardKeyHtml() + dashboardHomeHtml();
     return;
   }
+  // Every other list uses the dashboard's layout too: one section, with a
+  // link back to the dashboard.
   const filterDef = DASHBOARD_FILTERS.find(f=>f.key===dashboardActiveFilter) || DASHBOARD_FILTERS[1];
-  let rows = dashboardRows.filter(filterDef.test);
-  rows = sortDashboardRows(rows);
-  if(!rows.length){
-    container.innerHTML = '<div class="hint">Nothing here right now.</div>';
-    return;
-  }
-  container.innerHTML = dashboardTableHtml(rows, availableWidth);
+  const rows = sortDashboardRows(dashboardRows.filter(filterDef.test)).map(dashboardRowHtml);
+  container.innerHTML = dashboardKeyHtml() + dashboardSectionHtml(filterDef.label, 'navy', rows, 'Nothing here right now.', null, true);
 }
-// Below this width, several columns are combined into stacked pairs/
-// triples rather than just shrinking further - ten-plus columns of real
-// content (reference, vessel, port, customer, supplier, ETA, purchase,
-// sale, status) doesn't fit even a small laptop screen at any readable
-// font size, not just a phone - this was originally gated at 640px
-// (phone-only), which left it overflowing on laptop widths between that
-// and full desktop. Re-checked on resize (see scheduleDashboardRerender)
-// so resizing the browser window switches layouts live.
-// Compares against the container's actual rendered width, not
-// window.innerWidth - the app itself is capped at max-width (see .app),
-// so on any screen wider than that the available space stops growing
-// regardless of how wide the monitor actually is.
-function dashboardTableHtml(rows, availableWidth){
-  const compact = availableWidth <= 1200;
-  function th(field, label, width){
-    const style = width ? ` style="width:${width}"` : '';
-    return `<th${style} onclick="setDashboardSort('${field}')">${escHtml(label)}${dashboardSortArrow(field)}</th>`;
-  }
-  // A stacked header has independently-clickable parts - clicking "Vessel"
-  // sorts by vessel, clicking "Port" (right below it, same cell) sorts by
-  // port, since these are still logically separate columns that just
-  // happen to share screen space here.
-  function thStacked(width, ...pairs){
-    const parts = [];
-    for(let i = 0; i < pairs.length; i += 2){
-      parts.push(`<span class="dashboard-th-stack-item" onclick="setDashboardSort('${pairs[i]}')">${escHtml(pairs[i+1])}${dashboardSortArrow(pairs[i])}</span>`);
-    }
-    const style = width ? ` style="width:${width}"` : '';
-    return `<th${style}>${parts.join('')}</th>`;
-  }
-  // table-layout:fixed (needed so stacked cells wrap sanely) otherwise
-  // divides space equally across every column regardless of what it
-  // actually holds - Status needs far less room than Vessel/Customer's
-  // stacked, often-long content, so without explicit widths here the
-  // compact layout left a lot of visibly wasted space on the right rather
-  // than actually using it for the columns that need it.
-  //
-  // Broker is stacked into the Reference cell on compact layouts (rather
-  // than getting its own column) - there simply isn't room for a whole
-  // extra column on a narrow screen without making every other column
-  // even tighter than it already is. On the wide layout it gets its own
-  // dedicated column, second, right after Reference.
-  const headHtml = compact
-    ? thStacked('13%','reference','Reference','broker','Broker') + thStacked('28%','vessel','Vessel','port','Port','eta','ETA') + thStacked('30%','customer','Customer','supplier','Supplier') + thStacked('15%','purchase','Purchase','sale','Sale') + th('status','Status','14%')
-    : th('reference','Reference') + th('broker','Broker') + th('vessel','Vessel') + th('port','Port') + th('eta','ETA / Delivery') + th('customer','Customer') + th('supplier','Supplier') + th('purchase','Purchase Total') + th('sale','Sale Total') + th('status','Status','140px');
-  const bodyHtml = rows.map(r=>{
-    const dateText = fmtDashboardDate(r.deliveryDate || r.eta);
-    const refText = r.orderNumber || r.quoteRef || '\u2014';
-    const initials = brokerInitials(r.broker || '');
-    const refCell = compact
-      ? `<td><a href="#" class="dashboard-ref-link" onclick="openOrderFromDashboard('${r.id}'); return false;">${escHtml(refText)}</a>${initials ? `<br><span style="color:var(--ink-soft); font-size:0.9em;">${escHtml(initials)}</span>` : ''}</td>`
-      : `<td><a href="#" class="dashboard-ref-link" onclick="openOrderFromDashboard('${r.id}'); return false;">${escHtml(refText)}</a></td>`;
-    const statusCell = `<td style="text-align:center;"><span class="tsb-status-badge" style="background:${getOrderStatusColor(statusEnumToLabel(r.status))};">${escHtml(statusEnumToLabel(r.status))}</span></td>`;
-    const purchaseText = fmtDashboardMoney(r.purchaseTotal, r.purchaseCurrency);
-    const saleText = fmtDashboardMoney(r.salesTotal, r.salesCurrency);
-    if(compact){
-      return `<tr>${refCell}
-        <td>${escHtml(r.vesselName || '\u2014')}<br>${escHtml(r.portName || '\u2014')}<br>${escHtml(dateText)}</td>
-        <td>${escHtml(r.customerName || '\u2014')}<br>${escHtml(r.supplierName || '\u2014')}</td>
-        <td>${escHtml(purchaseText)}<br>${escHtml(saleText)}</td>
-        ${statusCell}</tr>`;
-    }
-    return `<tr>${refCell}
-      <td>${escHtml(initials || '\u2014')}</td>
-      <td>${escHtml(r.vesselName || '\u2014')}</td>
-      <td>${escHtml(r.portName || '\u2014')}</td>
-      <td>${escHtml(dateText)}</td>
-      <td>${escHtml(r.customerName || '\u2014')}</td>
-      <td>${escHtml(r.supplierName || '\u2014')}</td>
-      <td>${escHtml(purchaseText)}</td>
-      <td>${escHtml(saleText)}</td>
-      ${statusCell}</tr>`;
-  }).join('');
-  return `<table class="dashboard-table">
-    <thead><tr>${headHtml}</tr></thead>
-    <tbody>${bodyHtml}</tbody>
-  </table>`;
-}
-// ---- Default dashboard: three digest-style sections ----
+// ---- Two-line trade rows (dashboard and every list) ----
 function dashboardBrokerAvatar(fullName){
   const name = (fullName || '').trim();
   const key = /^john\b/i.test(name) ? 'john' : /^barnaby\b/i.test(name) ? 'barnaby' : '';
   const initials = brokerInitials(name);
   if(key) return `<img class="dash-avatar" src="digest-assets/avatar-${key}.png" alt="${escHtml(initials)}" title="${escHtml(name)}">`;
-  return `<div class="dash-avatar-initials${initials ? '' : ' none'}" title="${escHtml(name || 'No broker')}">${escHtml(initials || '\u2014')}</div>`;
+  return `<div class="dash-avatar-initials${initials ? '' : ' none'}" title="${escHtml(name || 'No broker')}">${escHtml(initials || '—')}</div>`;
 }
 function dashboardDaysUntil(iso){
   if(!iso) return null;
@@ -5727,53 +5688,105 @@ function dashboardStatusPill(r){
   const label = statusEnumToLabel(r.status);
   return `<span class="dash-pill" style="background:${getOrderStatusColor(label)};">${escHtml(label)}</span>`;
 }
+// Gross profit = sale total - purchase total, only when both are in the
+// same currency (otherwise null - shown as a dash rather than a wrong sum).
+function dashboardGp(r){
+  const has = v => v !== null && v !== undefined && v !== '';
+  if(!has(r.salesTotal) || !has(r.purchaseTotal)) return null;
+  if((r.salesCurrency || '') !== (r.purchaseCurrency || '')) return null;
+  return Number(r.salesTotal) - Number(r.purchaseTotal);
+}
+// When a trade is due - shared by enquiries and booked orders still to be
+// delivered: ETA passed = red stripes, today/tomorrow (within 48 hours) =
+// red, within 7 days = orange.
+function dashboardTiming(days){
+  if(days === null) return { tone:'', pill:'<span class="dash-pill grey">No date</span>' };
+  if(days < 0) return { tone:'stripes', pill:'<span class="dash-pill stripes">ETA passed</span>' };
+  if(days === 0) return { tone:'red', pill:'<span class="dash-pill red">Today</span>' };
+  if(days === 1) return { tone:'red', pill:'<span class="dash-pill red">Tomorrow</span>' };
+  if(days <= 7) return { tone:'orange', pill:`<span class="dash-pill orange">In ${days} days</span>` };
+  return { tone:'', pill:`<span class="dash-pill grey">In ${days} days</span>` };
+}
+// Delivered but not invoiced: how close the supplier's payment due date is
+// (delivery date + the supplier's payment terms). Within 7 days or overdue
+// = red, within 14 days = orange.
+function dashboardSupplierDue(r){
+  const d = dashboardRowDate(r);
+  const m = /^(\d+)\s+days/.exec(r.supplyPaymentTerms || '');
+  if(!d || !m) return { tone:'', pill:'' };
+  const due = new Date(d + 'T00:00:00'); due.setDate(due.getDate() + parseInt(m[1], 10));
+  const days = dashboardDaysUntil(isoDate(due));
+  const text = days < 0 ? `Supplier overdue ${-days} day${days === -1 ? '' : 's'}` : days === 0 ? 'Supplier due today' : days === 1 ? 'Supplier due tomorrow' : `Supplier due in ${days} days`;
+  const tone = days <= 7 ? 'red' : days <= 14 ? 'orange' : '';
+  return { tone, pill:`<span class="dash-pill ${tone || 'grey'}" title="Due ${escHtml(fmtDashboardDate(isoDate(due)))}">${escHtml(text)}</span>` };
+}
+// The colour, labels and date wording for a row, from what kind of trade
+// it is - the same rules everywhere the row appears.
+function dashboardRowDecor(r){
+  const status = dashboardStatusPill(r);
+  const date = dashboardRowDate(r);
+  if(r.status === 'cancelled') return { tone:'', pills:status, dateLabel: r.orderNumber ? 'Delivery' : 'ETA' };
+  if(!r.orderNumber){
+    const t = dashboardTiming(dashboardDaysUntil(date));
+    return { tone:t.tone, pills:status + t.pill, dateLabel:'ETA' };
+  }
+  if(!date || date >= dashboardTodayIso()){
+    const t = dashboardTiming(dashboardDaysUntil(date));
+    return { tone:t.tone, pills:status + t.pill, dateLabel:'Delivery' };
+  }
+  if(!isOrderBilled(r.status)){
+    const due = dashboardSupplierDue(r);
+    return { tone:due.tone, pills:`<span class="dash-pill amber">${escHtml(statusEnumToLabel(r.status))}</span>` + due.pill, dateLabel:'Delivered' };
+  }
+  return { tone:'', pills:status, dateLabel:'Delivered' };
+}
 // Two lines per trade. Line 1: vessel and reference (both open the trade),
-// customer, and the status on the right. Line 2: date, port, supplier, and
-// the purchase and sale totals on the right - everything the old table had.
-function dashboardRowHtml(r, dateLabel, pillsHtml, urgent){
-  const ref = r.orderNumber || r.quoteRef || '\u2014';
-  const sep = '<span class="dash-sep">\u00b7</span>';
+// customer, and the status labels on the right. Line 2: date, port,
+// supplier, and the purchase and sale totals and gross profit on the right.
+function dashboardRowHtml(r){
+  const dec = dashboardRowDecor(r);
+  const ref = r.orderNumber || r.quoteRef || '—';
+  const sep = '<span class="dash-sep">·</span>';
   const open = `openOrderFromDashboard('${r.id}'); return false;`;
-  const party = (label, name) => `<span class="dash-label">${label}</span><span class="dash-party">${escHtml(name || '\u2014')}</span>`;
-  const money = (label, amount, cur) => `<span class="dash-label">${label}</span>${escHtml(fmtDashboardMoney(amount, cur))}`;
-  return `<div class="dash-row${urgent ? ' urgent' : ''}" onclick="${open}">
+  const party = (label, name) => `<span class="dash-label">${label}</span><span class="dash-party">${escHtml(name || '—')}</span>`;
+  const money = (label, amount, cur) => `<span class="dash-amt"><span class="dash-label">${label}</span>${escHtml(fmtDashboardMoney(amount, cur))}</span>`;
+  const gp = dashboardGp(r);
+  const gpHtml = gp === null
+    ? `<span class="dash-amt"><span class="dash-label">GP</span><span title="${(r.salesCurrency && r.purchaseCurrency && r.salesCurrency !== r.purchaseCurrency) ? 'Sale and purchase are in different currencies' : ''}">—</span></span>`
+    : `<span class="dash-amt"><span class="dash-label">GP</span><span class="${gp < 0 ? 'dash-gp-neg' : 'dash-gp-pos'}">${escHtml(fmtDashboardMoney(gp, r.salesCurrency))}</span></span>`;
+  return `<div class="dash-row${dec.tone ? ' tone-' + dec.tone : ''}" onclick="${open}">
     ${dashboardBrokerAvatar(r.broker)}
     <div class="dash-main">
       <div class="dash-line">
-        <div class="dash-left"><a href="#" class="dash-vessel" style="text-decoration:none;" onclick="event.stopPropagation(); ${open}">${escHtml(r.vesselName || '\u2014')}</a><a href="#" class="dash-ref" onclick="event.stopPropagation(); ${open}">${escHtml(ref)}</a><span class="dash-sub">${sep}${party('Customer', r.customerName)}</span></div>
-        <div class="dash-right">${pillsHtml}</div>
+        <div class="dash-left"><a href="#" class="dash-vessel" style="text-decoration:none;" onclick="event.stopPropagation(); ${open}">${escHtml(r.vesselName || '—')}</a><a href="#" class="dash-ref" onclick="event.stopPropagation(); ${open}">${escHtml(ref)}</a><span class="dash-sub">${sep}${party('Customer', r.customerName)}</span></div>
+        <div class="dash-right">${dec.pills}</div>
       </div>
       <div class="dash-line">
-        <div class="dash-left dash-sub"><span class="dash-date">${dateLabel} ${escHtml(fmtDashboardDate(dashboardRowDate(r) || null))}</span>${sep}<span class="dash-port">${escHtml(r.portName || '\u2014')}</span>${sep}${party('Supplier', r.supplierName)}</div>
-        <div class="dash-right dash-money">${money('Purchase', r.purchaseTotal, r.purchaseCurrency)}${sep}${money('Sale', r.salesTotal, r.salesCurrency)}</div>
+        <div class="dash-left dash-sub"><span class="dash-date">${dec.dateLabel} ${escHtml(fmtDashboardDate(dashboardRowDate(r) || null))}</span>${sep}<span class="dash-port">${escHtml(r.portName || '—')}</span>${sep}${party('Supplier', r.supplierName)}</div>
+        <div class="dash-right dash-money">${money('Purchase', r.purchaseTotal, r.purchaseCurrency)}${sep}<wbr>${money('Sale', r.salesTotal, r.salesCurrency)}${sep}<wbr>${gpHtml}</div>
       </div>
     </div>
   </div>`;
 }
-function dashboardSectionHtml(title, tone, rows, emptyText){
-  return `<div class="dash-section"><div class="dash-section-head ${tone}">${escHtml(title)} <span class="dash-count"><span>${rows.length}</span></span></div>` +
+// Key to the row colours, above the lists.
+function dashboardKeyHtml(){
+  return `<div class="dash-key">Key <span class="dash-pill stripes">ETA passed</span><span class="dash-pill red">Within 48 hours</span><span class="dash-pill orange">Within 7 days</span><span class="dash-pill red">Supplier due ≤ 7 days</span><span class="dash-pill orange">Supplier due ≤ 14 days</span></div>`;
+}
+// A section: coloured heading with its count. On the dashboard the heading
+// opens that list on its own (filterKey); on a list, it has a link back.
+function dashboardSectionHtml(title, tone, rows, emptyText, filterKey, backLink){
+  const click = filterKey ? ` clickable" title="Show this list on its own" onclick="setDashboardFilter('${filterKey}')` : '';
+  const right = filterKey ? '<span class="dash-head-more">View list ›</span>' : backLink ? `<span class="dash-back" onclick="setDashboardFilter('home')">‹ Back to dashboard</span>` : '';
+  return `<div class="dash-section"><div class="dash-section-head ${tone}${click}"><span class="dash-head-title">${escHtml(title)}</span> <span class="dash-count"><span>${rows.length}</span></span>${right}</div>` +
     (rows.length ? rows.join('') : `<div class="dash-empty">${escHtml(emptyText)}</div>`) + `</div>`;
 }
 function dashboardHomeHtml(){
-  const today = dashboardTodayIso();
-  const enquiries = sortDashboardRows(dashboardRows.filter(isOpenEnquiryRow)).map(r => {
-    const overdue = !!r.eta && String(r.eta).slice(0, 10) < today;
-    return dashboardRowHtml(r, 'ETA', dashboardStatusPill(r) + (overdue ? '<span class="dash-pill red">Overdue</span>' : ''), overdue);
-  });
-  const upcoming = sortDashboardRows(dashboardRows.filter(isUpcomingDeliveryRow)).map(r => {
-    const days = dashboardDaysUntil(dashboardRowDate(r));
-    const urgent = days === 0 || days === 1;
-    const when = days === null ? '<span class="dash-pill grey">No date</span>'
-      : days === 0 ? '<span class="dash-pill red">Today</span>'
-      : days === 1 ? '<span class="dash-pill red">Tomorrow</span>'
-      : `<span class="dash-pill grey">In ${days} days</span>`;
-    return dashboardRowHtml(r, 'Delivery', dashboardStatusPill(r) + when, urgent);
-  });
-  const unbilled = sortDashboardRows(dashboardRows.filter(isDeliveredUnbilledRow)).map(r =>
-    dashboardRowHtml(r, 'Delivered', `<span class="dash-pill amber">${escHtml(statusEnumToLabel(r.status))}</span>`, false));
-  return dashboardSectionHtml('Open Enquiries', 'red', enquiries, 'No open enquiries right now.') +
-    dashboardSectionHtml('Upcoming Deliveries', 'orange', upcoming, 'Nothing booked for delivery right now.') +
-    dashboardSectionHtml('Unbilled Orders', 'green', unbilled, 'No unbilled orders right now.');
+  const section = (title, tone, test, empty, filterKey) =>
+    dashboardSectionHtml(title, tone, sortDashboardRows(dashboardRows.filter(test)).map(dashboardRowHtml), empty, filterKey);
+  return section('Open Enquiries', 'red', isOpenEnquiryRow, 'No open enquiries right now.', 'open_enquiries') +
+    section('Upcoming Deliveries', 'orange', isUpcomingDeliveryRow, 'Nothing booked for delivery right now.', 'upcoming_deliveries') +
+    section('Unbilled Orders', 'green', isDeliveredUnbilledRow, 'No unbilled orders right now.', 'unbilled_orders') +
+    section('Past Orders (30 days)', 'black', isPastOrderRow, 'No orders delivered in the last 30 days.', 'all_orders');
 }
 let dashboardResizeScheduled = false;
 function scheduleDashboardRerender(){
