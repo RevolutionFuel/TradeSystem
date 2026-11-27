@@ -392,6 +392,12 @@
   .signature-box-body{padding:14px; display:none; border-top:1px solid var(--line);}
   .signature-box.expanded .signature-box-body{display:block;}
   fieldset:last-child{margin-bottom:0;}
+  .entity-tag{display:inline-block; font-family:inherit; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:0.06em; padding:2px 8px; border-radius:999px; margin-left:6px; vertical-align:1px;}
+  .entity-tag.supplier{background:#DCEAF9; color:#1D4E89;} .entity-tag.customer{background:#EEE8F7; color:#1F064F;} .entity-tag.vessel{background:#E3F1E4; color:#2E6B3F;}
+  .contact-group-head{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:5px; font-size:13px; color:var(--ink);}
+  .contact-group-head .entity-tag{margin-left:0;}
+  .salutation-opts{display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px; margin-top:7px; font-size:12.5px;}
+  .sal-opt-label{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--ink-soft);}
   legend{font-family:var(--disp); font-size:11.5px; text-transform:uppercase; letter-spacing:0.08em; color:var(--amber); padding:0 0 7px; width:100%; border-bottom:1px dashed var(--line); margin-bottom:10px;}
   .row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
   .field{margin-bottom:9px;}
@@ -823,9 +829,9 @@ body.file-dragging .file-drop-zone{outline:2px dashed #7FA9B3;outline-offset:4px
           <div class="panel-body scroll-col" id="enquireFormCol">
 
             <fieldset>
-              <legend>Contacts</legend>
+              <legend>Contacts <span class="entity-tag supplier" id="contactEntity-enquire">Supplier</span></legend>
               <button class="btn-ghost btn-sm" type="button" onclick="loadContactPicker('enquire')">Show available contacts</button>
-              <div class="hint" style="margin-top:6px;">Pick any number of the supplier's contacts to address this to — selecting any updates the salutation below.</div>
+              <div class="hint" style="margin-top:6px;">Choose who at the <b>supplier</b> this enquiry goes to — selecting any updates the salutation below.</div>
               <div id="contactPickerEnquire" style="margin-top:8px;"></div>
             </fieldset>
 
@@ -834,7 +840,8 @@ body.file-dragging .file-drop-zone{outline:2px dashed #7FA9B3;outline-offset:4px
               <div class="field">
                 <label for="enqGreeting">Salutation</label>
                 <input type="text" id="enqGreeting" oninput="renderEnquiry()">
-                <div class="hint">Auto-fills from the supplier's default contact when one is set — edit freely. Defaults to "Dear Sir," if no supplier is set yet.</div>
+                <div class="salutation-opts" data-page="enquire"></div>
+                <div class="hint">Auto-fills from the supplier's default contact when one is set — edit freely. Defaults to "Dear Sir," (or "Hi Sir,") if no supplier is set yet.</div>
               </div>
             </fieldset>
 
@@ -1003,9 +1010,9 @@ body.file-dragging .file-drop-zone{outline:2px dashed #7FA9B3;outline-offset:4px
           </fieldset>
 
           <fieldset>
-            <legend>Contacts</legend>
+            <legend>Contacts <span class="entity-tag customer" id="contactEntity-quote">Customer</span></legend>
             <button class="btn-ghost btn-sm" type="button" onclick="loadContactPicker('quote')">Show available contacts</button>
-            <div class="hint" style="margin-top:6px;">Pick any number of vessel or registered owner contacts to address this to — selecting any updates the salutation below.</div>
+            <div class="hint" style="margin-top:6px;">Choose who on the <b>customer</b> side this quote goes to — the vessel's own contacts or the registered owner / buyer's — selecting any updates the salutation below.</div>
             <div id="contactPickerQuote" style="margin-top:8px;"></div>
           </fieldset>
 
@@ -1014,6 +1021,7 @@ body.file-dragging .file-drop-zone{outline:2px dashed #7FA9B3;outline-offset:4px
             <div class="field">
               <label for="greeting">Salutation</label>
               <input type="text" id="greeting" value="Dear Captain," oninput="render()">
+              <div class="salutation-opts" data-page="quote"></div>
               <div class="hint">Defaults to the registered owner's listed contact when you pick a vessel — edit freely, or use "Show available contacts" above.</div>
             </div>
           </fieldset>
@@ -1212,7 +1220,7 @@ body.file-dragging .file-drop-zone{outline:2px dashed #7FA9B3;outline-offset:4px
             </fieldset>
 
             <fieldset>
-              <legend>Contacts</legend>
+              <legend>Contacts <span class="entity-tag supplier" id="contactEntity-supply">Supplier</span></legend>
               <button class="btn-ghost btn-sm" type="button" onclick="loadContactPicker('supply')">Show available contacts</button>
               <div class="hint" style="margin-top:6px;">Pick any number of the supplier's contacts to address this to — selecting any updates the salutation below. In multi-supplier mode, this follows whichever supplier's confirmation you're currently viewing.</div>
               <div id="contactPickerSupply" style="margin-top:8px;"></div>
@@ -1223,6 +1231,7 @@ body.file-dragging .file-drop-zone{outline:2px dashed #7FA9B3;outline-offset:4px
               <div class="field">
                 <label for="supGreeting">Salutation</label>
                 <input type="text" id="supGreeting" oninput="renderSupply()">
+                <div class="salutation-opts" data-page="supply"></div>
                 <div class="hint">Auto-fills from the supplier's default contact when you pick one above — edit freely.</div>
               </div>
             </fieldset>
@@ -1364,7 +1373,7 @@ body.file-dragging .file-drop-zone{outline:2px dashed #7FA9B3;outline-offset:4px
             </fieldset>
 
             <fieldset>
-              <legend>Contacts</legend>
+              <legend>Contacts <span class="entity-tag customer" id="contactEntity-customer">Customer</span></legend>
               <button class="btn-ghost btn-sm" type="button" onclick="loadContactPicker('customer')">Show available contacts</button>
               <div class="hint" style="margin-top:6px;">Pick any number of vessel or registered owner contacts to address this to — selecting any updates the salutation below. This also feeds the Invoice, which uses this same salutation.</div>
               <div id="contactPickerCustomer" style="margin-top:8px;"></div>
@@ -1375,6 +1384,7 @@ body.file-dragging .file-drop-zone{outline:2px dashed #7FA9B3;outline-offset:4px
               <div class="field">
                 <label for="custGreeting">Salutation</label>
                 <input type="text" id="custGreeting" oninput="renderCustomer()">
+                <div class="salutation-opts" data-page="customer"></div>
                 <div class="hint">Auto-fills from the registered owner's listed contact when you pick a vessel on the Quote page — edit freely, or use "Show available contacts" above.</div>
               </div>
             </fieldset>
@@ -1499,7 +1509,7 @@ body.file-dragging .file-drop-zone{outline:2px dashed #7FA9B3;outline-offset:4px
             </fieldset>
 
             <fieldset>
-              <legend>Contacts</legend>
+              <legend>Contacts <span class="entity-tag customer" id="contactEntity-invoice">Customer</span></legend>
               <button class="btn-ghost btn-sm" type="button" onclick="loadContactPicker('invoice')">Show available contacts</button>
               <div class="hint" style="margin-top:6px;" id="invContactsHint"></div>
               <div id="contactPickerInvoice" style="margin-top:8px;"></div>
@@ -1510,6 +1520,7 @@ body.file-dragging .file-drop-zone{outline:2px dashed #7FA9B3;outline-offset:4px
               <div class="field">
                 <label for="invGreeting">Salutation</label>
                 <input type="text" id="invGreeting" oninput="onInvGreetingInput()">
+                <div class="salutation-opts" data-page="invoice"></div>
               </div>
             </fieldset>
 
@@ -2093,6 +2104,56 @@ const SIGNATURE_OPTIONS = [
   {value:'barnaby', label:'Barnaby Skipwith'},
   {value:'company', label:'Revolution Fuel (generic company signature)'}
 ];
+// Salutation options (John, 27 Nov 2026): "Dear" or "Hi", and an optional
+// "I hope all is well." after the salutation. One choice for every page,
+// remembered per person (this browser straight away, and the person's saved
+// preferences so it follows them to other devices).
+let SALUTATION_WORD = 'Dear';
+let HOPE_ALL_WELL = false;
+try{
+  const saved = JSON.parse(localStorage.getItem('ts-salutation') || 'null');
+  if(saved){ if(saved.word === 'Hi' || saved.word === 'Dear') SALUTATION_WORD = saved.word; HOPE_ALL_WELL = !!saved.hopeWell; }
+}catch(e){}
+const HOPE_ALL_WELL_TEXT = 'I hope all is well.';
+const GREETING_FIELD_IDS = ['enqGreeting', 'greeting', 'supGreeting', 'custGreeting', 'invGreeting'];
+function greetingText(rest){ return `${SALUTATION_WORD} ${rest}`; }
+// Swaps a leading "Dear"/"Hi" for the chosen word, leaving the rest as typed.
+function swapSalutationWord(text){ return String(text || '').replace(/^(Dear|Hi)\b/, SALUTATION_WORD); }
+function applySalutationWordToFields(){
+  GREETING_FIELD_IDS.forEach(id => { const el = document.getElementById(id); if(el && el.value) el.value = swapSalutationWord(el.value); });
+}
+function applySalutationPrefs(pref){
+  if(!pref) return;
+  if(pref.word === 'Hi' || pref.word === 'Dear') SALUTATION_WORD = pref.word;
+  if(pref.hopeWell !== undefined) HOPE_ALL_WELL = !!pref.hopeWell;
+  try{ localStorage.setItem('ts-salutation', JSON.stringify({ word: SALUTATION_WORD, hopeWell: HOPE_ALL_WELL })); }catch(e){}
+  applySalutationWordToFields();
+  renderSalutationOptions();
+  rerenderEmailPreviews();
+}
+function setSalutationWord(word){ applySalutationPrefs({ word }); scheduleSaveFormattingPrefs(); }
+function setHopeAllWell(on){ applySalutationPrefs({ hopeWell: !!on }); scheduleSaveFormattingPrefs(); }
+function rerenderEmailPreviews(){
+  ['render', 'renderEnquiry', 'renderSupply', 'renderCustomer', 'renderInvoicePreviewOnly'].forEach(fn => {
+    try{ if(typeof window[fn] === 'function') window[fn](); }catch(e){ console.warn('TS: preview refresh failed', fn, e); }
+  });
+}
+function renderSalutationOptions(){
+  document.querySelectorAll('.salutation-opts').forEach(el => {
+    const page = el.dataset.page;
+    el.innerHTML = `<span class="sal-opt-label">Start with</span>` +
+      ['Dear', 'Hi'].map(w => `<label class="opt-inline" style="margin:0;"><input type="radio" name="salWord-${page}" value="${w}" ${SALUTATION_WORD === w ? 'checked' : ''} onchange="setSalutationWord('${w}')"> ${w}</label>`).join('') +
+      `<label class="opt-inline" style="margin:0;"><input type="checkbox" ${HOPE_ALL_WELL ? 'checked' : ''} onchange="setHopeAllWell(this.checked)"> Add \u201c${HOPE_ALL_WELL_TEXT}\u201d after the salutation</label>`;
+  });
+}
+// The extra line in the emails, as its own paragraph after the salutation.
+function hopeAllWellHtml(p, blank){ return HOPE_ALL_WELL ? [p(HOPE_ALL_WELL_TEXT), blank()] : []; }
+function hopeAllWellLines(){ return HOPE_ALL_WELL ? [HOPE_ALL_WELL_TEXT, ''] : []; }
+// Every email's signature ends with the company's legal notice (it used to
+// be on the Quote email only).
+function legalFooterHtml(FF){
+  return LEGAL_FOOTER.split('\n\n').map(t => `<p style="${FF} font-size:8pt; color:#8A8577; margin:0 0 4pt 0; mso-margin-top-alt:0; mso-margin-bottom-alt:4pt; line-height:100%;">${escHtml(t)}</p>`).join('');
+}
 const LEGAL_FOOTER = 'Revolution Fuel (Marine) Limited \u2013 "Revolution Fuel"; Registered in England and Wales. Registered No: 10142387.\n\nThis message and any attachments are intended for the recipient only and contains confidential and privileged information. Any review, disclosure, copying, use, or distribution is not permitted. If you have received this communication in error, please notify us and erase the communication from your system.';
 
 const FLAG_NAMES = {
@@ -3793,7 +3854,7 @@ function collectFormattingPrefs(){
       formatting[opt][page] = el ? el.checked : false;
     });
   });
-  return { signatures, formatting, draftOptions: collectDraftOptions() };
+  return { signatures, formatting, draftOptions: collectDraftOptions(), salutation: { word: SALUTATION_WORD, hopeWell: HOPE_ALL_WELL } };
 }
 // Both formatting/signature changes and draft-option checkbox changes save
 // through this one function, into one shared preferences blob — two
@@ -3850,6 +3911,7 @@ async function loadFormattingPrefs(prefetched){
         if(el) el.checked = saved;
       });
     }
+    if(prefs.salutation) applySalutationPrefs(prefs.salutation);
   }finally{
     restoringFormattingPrefs = false;
   }
@@ -4313,7 +4375,7 @@ function invoiceContactsSource(){ return getInvoiceType() === 'commission' ? 'su
 function invoiceFollowPage(){ return invoiceContactsSource() === 'supplier' ? 'supply' : 'customer'; }
 function invoiceContactsDiverged(){ return invContactsManuallySet && invContactsSource === invoiceContactsSource(); }
 function invoiceFollowGreeting(){
-  return invoiceContactsSource() === 'supplier' ? (fv('supGreeting') || 'Dear Sir/Madam,') : (fv('custGreeting') || 'Dear Captain,');
+  return invoiceContactsSource() === 'supplier' ? (fv('supGreeting') || greetingText('Sir/Madam,')) : (fv('custGreeting') || greetingText('Captain,'));
 }
 // The salutation the invoice email actually uses.
 function invoiceGreeting(){
@@ -4349,6 +4411,12 @@ let invPickerShownSource = null;
 function syncInvoiceContactsUi(){
   const el = document.getElementById('invGreeting');
   if(el && !invoiceContactsDiverged() && document.activeElement !== el) el.value = invoiceFollowGreeting();
+  const tag = document.getElementById('contactEntity-invoice');
+  if(tag){
+    const sup = invoiceContactsSource() === 'supplier';
+    tag.textContent = sup ? 'Supplier' : 'Customer';
+    tag.className = 'entity-tag ' + (sup ? 'supplier' : 'customer');
+  }
   const hint = document.getElementById('invContactsHint');
   if(hint){
     const pageName = invoiceFollowPage() === 'supply' ? 'Supply Confirmation' : 'Customer Confirmation';
@@ -4412,8 +4480,8 @@ function contactGreetingName(c){ return c.alias || contactDisplayName(c); }
 function buildGreetingFromContacts(contacts){
   if(!contacts.length) return '';
   const names = contacts.map(contactGreetingName);
-  if(names.length === 1) return `Dear ${names[0]},`;
-  return `Dear ${names.slice(0,-1).join(', ')} and ${names[names.length-1]},`;
+  if(names.length === 1) return `${SALUTATION_WORD} ${names[0]},`;
+  return `${SALUTATION_WORD} ${names.slice(0,-1).join(', ')} and ${names[names.length-1]},`;
 }
 // For the PDF's "Contact:" line specifically - always the full, formal
 // name and job title (e.g. "Captain Lawrence Cockx"), never the casual
@@ -4493,6 +4561,14 @@ async function loadContactPicker(page){
   // default (e.g. captain and chief engineer both), so all of them get
   // pre-selected here, not just the first.
   if(page === 'invoice') invPickerShownSource = source;
+  // Names for the group headings, so it's clear whose contacts these are.
+  const vesselRec = vesselId ? VESSELS.find(v => v.id === vesselId) : null;
+  const orgRec = ownerId ? (source === 'supplier' ? SUPPLIERS.find(x => x.id === ownerId) : null) : null;
+  result.names = {
+    vessel: vesselRec ? vesselRec.name : '',
+    owner: (vesselRec && vesselRec.owner) || '',
+    supplier: orgRec ? orgRec.name : ''
+  };
   if(!contactsListForPage(page).length && !(page === 'invoice' && !invoiceContactsDiverged())){
     const primaries = [...result.vesselContacts, ...result.orgContacts].filter(c=>c.isPrimary);
     primaries.forEach(primary => toggleContactSelection(page, {name:primary.name, jobTitle:primary.jobTitle, alias:primary.alias||'', contactId:primary.id}, true));
@@ -4511,7 +4587,8 @@ function renderContactPicker(page, result){
   const selectedTo = contactsListForPage(page, 'to');
   const selectedCc = contactsListForPage(page, 'cc');
   const isChecked = (list, c) => list.some(s => s.name === c.name && s.jobTitle === c.jobTitle);
-  const group = (title, contacts, targetKind) => {
+  const names = result.names || {};
+  const group = (title, contacts, targetKind, tagClass, entityName) => {
     const noDefaultYet = contacts.length > 1 && !contacts.some(c=>c.isPrimary);
     const rows = contacts.length ? contacts.map(c=>{
         const editKey = `${page}-${targetKind}-${c.id}`;
@@ -4539,15 +4616,15 @@ function renderContactPicker(page, result){
       ? contactPickerEditFormHtml(page, targetKind, null)
       : `<button class="btn-ghost btn-sm" type="button" style="margin-top:4px;" onclick="contactPickerEditingKey='${addKey}'; loadContactPicker('${page}');">+ Add a new contact here</button>`;
     return `<div style="margin-bottom:10px;">
-      <div style="font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; color:var(--ink-soft); margin-bottom:4px;">${escHtml(title)}</div>
+      <div class="contact-group-head"><span class="entity-tag ${tagClass}">${escHtml(title)}</span>${entityName ? `<b>${escHtml(entityName)}</b>` : ''}</div>
       ${rows}
       ${noDefaultHint}
       ${addFormOrBtn}
     </div>`;
   };
   container.innerHTML = source === 'supplier'
-    ? group('Supplier contacts', result.orgContacts, 'supplier')
-    : group('Vessel contacts', result.vesselContacts, 'vessel') + group('Registered owner / buyer contacts', result.orgContacts, 'owner');
+    ? group('Supplier', result.orgContacts, 'supplier', 'supplier', names.supplier)
+    : group('Customer \u00b7 vessel', result.vesselContacts, 'vessel', 'vessel', names.vessel) + group('Customer \u00b7 registered owner / buyer', result.orgContacts, 'owner', 'customer', names.owner);
 }
 function startEditContactInPicker(page, targetKind, contactId){
   contactPickerEditingKey = `${page}-${targetKind}-${contactId}`;
@@ -4663,7 +4740,7 @@ function syncSupContactsFromEnquiry(){
   supSelectedContacts = enqSelectedContacts.slice();
   supCcContacts = enqCcContacts.slice();
   const greetingEl = document.getElementById('supGreeting');
-  if(greetingEl) greetingEl.value = buildGreetingFromContacts(supSelectedContacts) || 'Dear Sir/Madam,';
+  if(greetingEl) greetingEl.value = buildGreetingFromContacts(supSelectedContacts) || greetingText('Sir/Madam,');
   renderSupply();
   if(document.getElementById('contactPickerSupply') && document.getElementById('contactPickerSupply').innerHTML.trim()){
     loadContactPicker('supply');
@@ -4817,8 +4894,8 @@ function pickVessel(v){
   // Contacts picker below (auto-selecting the registered owner's default
   // contact, if one is set) — these are just safe starting fallbacks for
   // when there's nothing on file yet.
-  document.getElementById('greeting').value = 'Dear Captain,';
-  document.getElementById('custGreeting').value = 'Dear Captain,';
+  document.getElementById('greeting').value = greetingText('Captain,');
+  document.getElementById('custGreeting').value = greetingText('Captain,');
   quoteSelectedContacts = [];
   custSelectedContacts = [];
   quoteCcContacts = [];
@@ -6003,9 +6080,9 @@ function pickSupplier(s){
   // Contacts picker below (auto-selecting this supplier's default contact,
   // if one is set) — these are just safe starting fallbacks for when
   // there's nothing on file yet.
-  document.getElementById('supGreeting').value = 'Dear Sir/Madam,';
+  document.getElementById('supGreeting').value = greetingText('Sir/Madam,');
   const enqGreetingEl = document.getElementById('enqGreeting');
-  if(enqGreetingEl) enqGreetingEl.value = 'Dear Sir,';
+  if(enqGreetingEl) enqGreetingEl.value = greetingText('Sir,');
   enqSelectedContacts = [];
   supSelectedContacts = [];
   enqCcContacts = [];
@@ -6102,7 +6179,7 @@ function renderSupplierViewSelector(){
 function onSupplierViewChange(value){
   currentSupplyViewSupplier = value;
   const greetingEl = document.getElementById('supGreeting');
-  if(greetingEl) greetingEl.value = 'Dear Sir/Madam,';
+  if(greetingEl) greetingEl.value = greetingText('Sir/Madam,');
   supSelectedContacts = [];
   supCcContacts = [];
   supContactsManuallySet = false;
@@ -8707,7 +8784,7 @@ function buildPdfQuotationHtml(docType){
     </div>
 
     ${isConfirmation ? '' : `
-    <div class="intro">${escHtml((docType === 'supplier' ? fv('supGreeting') : fv('greeting')) || 'Dear Captain,')}</div>
+    <div class="intro">${escHtml((docType === 'supplier' ? fv('supGreeting') : fv('greeting')) || greetingText('Captain,'))}</div>
     <div class="intro">${escHtml(introText)}</div>`}
 
     <div class="terms-heading">${isBrokered ? 'Customer Order Summary' : (docType === 'quotation' ? 'Summary' : 'Order Summary')}</div>
@@ -9232,6 +9309,7 @@ function buildInvoiceEmailHtml(){
   const parts = [];
   parts.push(p(escHtml(greeting)));
   parts.push(blank());
+  parts.push(...hopeAllWellHtml(p, blank));
   parts.push(p(`Please find attached your ${escHtml(docNoun)} for the following supply:`));
   parts.push(blank());
 
@@ -9280,6 +9358,8 @@ function buildInvoiceEmailHtml(){
     if(s.mobile) parts.push(p(`<b style="color:#1F064F;">Mob/WhatsApp:</b> ${escHtml(s.mobile)}`));
     else parts.push(p(`<b style="color:#1F064F;">London Office:</b> ${escHtml(s.office)}`));
     parts.push(p(`<b style="color:#1F064F;">Email:</b> <a href="mailto:${escHtml(s.email)}" style="color:#1F064F;">${escHtml(s.email)}</a>`));
+    parts.push(blank());
+    parts.push(legalFooterHtml(FF));
   }
 
   return applyFormattingOptions(`<div style="${TXT} line-height:100%;">${parts.join('')}</div>`, 'Invoice');
@@ -9290,7 +9370,7 @@ function buildInvoiceEmailPlainText(){
   const docNoun = inv.invType === 'proforma' ? 'proforma invoice' : inv.invType === 'commission' ? 'commission invoice' : 'invoice';
 
   const lines = [];
-  lines.push(greeting, '', `Please find attached your ${docNoun} for the following supply:`, '');
+  lines.push(greeting, '', ...hopeAllWellLines(), `Please find attached your ${docNoun} for the following supply:`, '');
   const detailLines = [];
   if(inv.vesselName) detailLines.push('- Vessel: ' + inv.vesselName);
   if(fv('port')) detailLines.push('- Port: ' + fv('port'));
@@ -9325,6 +9405,7 @@ function buildInvoiceEmailPlainText(){
     lines.push('Best regards,', '', s.name || s.company);
     if(s.name) lines.push(s.company);
     lines.push(s.mobile ? 'Mob/WhatsApp: ' + s.mobile : 'London Office: ' + s.office, 'Email: ' + s.email);
+    lines.push('', LEGAL_FOOTER);
   }
   return lines.join('\n');
 }
@@ -10347,8 +10428,8 @@ function renderVesselMetaLine(){
 function buildPlainText(){
   // Derive from the same data model, in plain form
   let lines = [];
-  const greeting = fv('greeting') || 'Dear Captain,';
-  lines.push(greeting, '', getOpeningLine(), '');
+  const greeting = fv('greeting') || greetingText('Captain,');
+  lines.push(greeting, '', ...hopeAllWellLines(), getOpeningLine(), '');
 
   const vesselName = fv('vessel');
   if(vesselName){
@@ -10493,8 +10574,9 @@ function buildEmailHtml(){
 
   const parts = [];
 
-  parts.push(p(escHtml(fv('greeting') || 'Dear Captain,')));
+  parts.push(p(escHtml(fv('greeting') || greetingText('Captain,'))));
   parts.push(blank());
+  parts.push(...hopeAllWellHtml(p, blank));
   parts.push(p(escHtml(getOpeningLine())));
   parts.push(blank());
 
@@ -10625,9 +10707,7 @@ function buildEmailHtml(){
     parts.push(p(`<b style="color:#1F064F;">Email:</b> <a href="mailto:${escHtml(s.email)}" style="color:#1F064F;">${escHtml(s.email)}</a>`));
     if(s.web) parts.push(p(`<b style="color:#1F064F;">Web:</b> <a href="https://${escHtml(s.web.replace(/^https?:\/\//,''))}" style="color:#1F064F;">${escHtml(s.web)}</a>`));
     parts.push(blank());
-    LEGAL_FOOTER.split('\n\n').forEach(t=>{
-      parts.push(`<p style="${FF} font-size:8pt; color:#8A8577; margin:0 0 4pt 0; mso-margin-top-alt:0; mso-margin-bottom-alt:4pt; line-height:100%;">${escHtml(t)}</p>`);
-    });
+    parts.push(legalFooterHtml(FF));
   }
 
   return applyFormattingOptions(`<div style="${TXT} line-height:100%;">${parts.join('')}</div>`, 'Quote');
@@ -10649,8 +10729,9 @@ function buildSupplyEmailHtml(){
   const blank = () => `<p style="${TXT} margin:0; mso-margin-top-alt:0; mso-margin-bottom-alt:0; line-height:1;">&nbsp;</p>`;
 
   const parts = [];
-  parts.push(p(escHtml(fv('supGreeting') || 'Dear Sir/Madam,')));
+  parts.push(p(escHtml(fv('supGreeting') || greetingText('Sir/Madam,'))));
   parts.push(blank());
+  parts.push(...hopeAllWellHtml(p, blank));
   parts.push(p(escHtml(getSupOpeningLine())));
   parts.push(blank());
 
@@ -10793,6 +10874,8 @@ function buildSupplyEmailHtml(){
     if(s.mobile) parts.push(p(`<b style="color:#1F064F;">Mob/WhatsApp:</b> ${escHtml(s.mobile)}`));
     else parts.push(p(`<b style="color:#1F064F;">London Office:</b> ${escHtml(s.office)}`));
     parts.push(p(`<b style="color:#1F064F;">Email:</b> <a href="mailto:${escHtml(s.email)}" style="color:#1F064F;">${escHtml(s.email)}</a>`));
+    parts.push(blank());
+    parts.push(legalFooterHtml(FF));
   }
 
   return applyFormattingOptions(`<div style="${TXT} line-height:100%;">${parts.join('')}</div>`, 'Supply');
@@ -10800,7 +10883,7 @@ function buildSupplyEmailHtml(){
 
 function buildSupplyPlainText(){
   let lines = [];
-  lines.push(fv('supGreeting') || 'Dear Sir/Madam,', '', getSupOpeningLine(), '');
+  lines.push(fv('supGreeting') || greetingText('Sir/Madam,'), '', ...hopeAllWellLines(), getSupOpeningLine(), '');
 
   const vesselName = fv('vessel');
   if(vesselName || fv('port') || fv('eta') || fv('deliveryTime')){
@@ -10941,6 +11024,7 @@ function buildSupplyPlainText(){
     lines.push('Best regards,', '', s.name || s.company);
     if(s.name) lines.push(s.company);
     lines.push(s.mobile ? 'Mob/WhatsApp: ' + s.mobile : 'London Office: ' + s.office, 'Email: ' + s.email);
+    lines.push('', LEGAL_FOOTER);
   }
 
   return lines.join('\n');
@@ -10956,10 +11040,11 @@ function buildEnquiryEmailHtml(){
   const blank = () => `<p style="${TXT} margin:0; mso-margin-top-alt:0; mso-margin-bottom-alt:0; line-height:1;">&nbsp;</p>`;
   const ul = (items) => items.length ? `<ul style="${TXT} margin:0; padding-left:20pt; mso-margin-top-alt:0; mso-margin-bottom-alt:0;">${items.map(li=>`<li style="margin:0; mso-margin-top-alt:0; mso-margin-bottom-alt:0; line-height:100%;">${li}</li>`).join('')}</ul>` : '';
 
-  const greeting = fv('enqGreeting') || (fv('supplierName') ? 'Dear Sir/Madam,' : 'Dear Sir,');
+  const greeting = fv('enqGreeting') || (fv('supplierName') ? greetingText('Sir/Madam,') : greetingText('Sir,'));
   const parts = [];
   parts.push(p(escHtml(greeting)));
   parts.push(blank());
+  parts.push(...hopeAllWellHtml(p, blank));
   parts.push(p(escHtml(getEnqOpeningLine())));
   parts.push(blank());
 
@@ -11035,14 +11120,16 @@ function buildEnquiryEmailHtml(){
     if(s.mobile) parts.push(p(`<b style="color:#1F064F;">Mob/WhatsApp:</b> ${escHtml(s.mobile)}`));
     else parts.push(p(`<b style="color:#1F064F;">London Office:</b> ${escHtml(s.office)}`));
     parts.push(p(`<b style="color:#1F064F;">Email:</b> <a href="mailto:${escHtml(s.email)}" style="color:#1F064F;">${escHtml(s.email)}</a>`));
+    parts.push(blank());
+    parts.push(legalFooterHtml(FF));
   }
 
   return applyFormattingOptions(`<div style="${TXT} line-height:100%;">${parts.join('')}</div>`, 'Enquire');
 }
 function buildEnquiryPlainText(){
-  const greeting = fv('enqGreeting') || (fv('supplierName') ? 'Dear Sir/Madam,' : 'Dear Sir,');
+  const greeting = fv('enqGreeting') || (fv('supplierName') ? greetingText('Sir/Madam,') : greetingText('Sir,'));
   const lines = [];
-  lines.push(greeting, '', getEnqOpeningLine(), '');
+  lines.push(greeting, '', ...hopeAllWellLines(), getEnqOpeningLine(), '');
   if(fv('vessel')) lines.push('Vessel: ' + fv('vessel'));
   if(fv('port')) lines.push('Port: ' + fv('port'));
   if(fv('eta')) lines.push('ETA: ' + getEtaDisplayText());
@@ -11080,6 +11167,7 @@ function buildEnquiryPlainText(){
     lines.push('Best regards,', '', s.name || s.company);
     if(s.name) lines.push(s.company);
     lines.push(s.mobile ? 'Mob/WhatsApp: ' + s.mobile : 'London Office: ' + s.office, 'Email: ' + s.email);
+    lines.push('', LEGAL_FOOTER);
   }
   return lines.join('\n');
 }
@@ -11180,8 +11268,9 @@ function buildCustomerEmailHtml(){
   const blank = () => `<p style="${TXT} margin:0; mso-margin-top-alt:0; mso-margin-bottom-alt:0; line-height:1;">&nbsp;</p>`;
 
   const parts = [];
-  parts.push(p(escHtml(fv('custGreeting') || 'Dear Captain,')));
+  parts.push(p(escHtml(fv('custGreeting') || greetingText('Captain,'))));
   parts.push(blank());
+  parts.push(...hopeAllWellHtml(p, blank));
   parts.push(p(escHtml(getCustOpeningLine())));
   parts.push(blank());
 
@@ -11316,6 +11405,8 @@ function buildCustomerEmailHtml(){
     if(s.mobile) parts.push(p(`<b style="color:#1F064F;">Mob/WhatsApp:</b> ${escHtml(s.mobile)}`));
     else parts.push(p(`<b style="color:#1F064F;">London Office:</b> ${escHtml(s.office)}`));
     parts.push(p(`<b style="color:#1F064F;">Email:</b> <a href="mailto:${escHtml(s.email)}" style="color:#1F064F;">${escHtml(s.email)}</a>`));
+    parts.push(blank());
+    parts.push(legalFooterHtml(FF));
   }
 
   return applyFormattingOptions(`<div style="${TXT} line-height:100%;">${parts.join('')}</div>`, 'Customer');
@@ -11323,7 +11414,7 @@ function buildCustomerEmailHtml(){
 
 function buildCustomerPlainText(){
   let lines = [];
-  lines.push(fv('custGreeting') || 'Dear Captain,', '', getCustOpeningLine(), '');
+  lines.push(fv('custGreeting') || greetingText('Captain,'), '', ...hopeAllWellLines(), getCustOpeningLine(), '');
 
   const vesselName = fv('vessel');
   if(vesselName){
@@ -11449,6 +11540,7 @@ function buildCustomerPlainText(){
     lines.push('Best regards,', '', s.name || s.company);
     if(s.name) lines.push(s.company);
     lines.push(s.mobile ? 'Mob/WhatsApp: ' + s.mobile : 'London Office: ' + s.office, 'Email: ' + s.email);
+    lines.push('', LEGAL_FOOTER);
   }
 
   return lines.join('\n');
@@ -11739,7 +11831,7 @@ async function clearOrder(){
   }
   document.getElementById('quoteDate').value = new Date().toISOString().slice(0,10);
   document.getElementById('orderBroker').value = defaultBrokerForCurrentUser();
-  document.getElementById('greeting').value = 'Dear Captain,';
+  document.getElementById('greeting').value = greetingText('Captain,');
   document.getElementById('vessel').value = '';
   document.getElementById('vesselOrder').value = '';
   document.getElementById('showVesselSpecifics').checked = false;
@@ -11874,7 +11966,7 @@ async function clearOrder(){
 async function clearQuoteFields(){
   document.getElementById('quoteRef').value = await generateQuoteReference();
   document.getElementById('quoteDate').value = new Date().toISOString().slice(0,10);
-  document.getElementById('greeting').value = 'Dear Captain,';
+  document.getElementById('greeting').value = greetingText('Captain,');
   document.getElementById('vessel').value = '';
   document.getElementById('vesselOrder').value = '';
   document.getElementById('showVesselSpecifics').checked = false;
@@ -16120,7 +16212,7 @@ async function applyQuoteState(data){
   document.getElementById('quoteRef').value = data.quoteRef || await generateQuoteReference();
   document.getElementById('quoteDate').value = data.quoteDate || new Date().toISOString().slice(0,10);
   document.getElementById('orderBroker').value = data.broker || defaultBrokerForCurrentUser();
-  document.getElementById('greeting').value = data.greeting || 'Dear Captain,';
+  document.getElementById('greeting').value = data.greeting || greetingText('Captain,');
   applyTextToCustomizableGroup('openingGroup', 'opening', data.openingLineText, 'custom', 'openingCustom');
 
   if(document.getElementById('reminderEnabled')){
@@ -16488,6 +16580,7 @@ async function checkSystemAlerts(){
   await Promise.all([loadReleaseNotes(), init()]); // init() must finish (including building the signature radio groups) before restoring saved preferences onto them
   document.getElementById('versionBadge').textContent = 'v' + currentVersion();
   await loadFormattingPrefs(prefsP || undefined);
+  applySalutationWordToFields(); renderSalutationOptions(); rerenderEmailPreviews();
   initGraphAuth(); // not awaited — Outlook connect state has no bearing on the main app's own startup
   // Skip restoring the last view/order if the person has already moved on
   // (switched tab, opened an order, pressed New order) while startup ran.
